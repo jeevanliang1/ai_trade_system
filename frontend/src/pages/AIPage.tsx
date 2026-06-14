@@ -1,11 +1,17 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 
-import { DataTable } from "../components/DataTable";
 import { MetricStrip } from "../components/MetricStrip";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { ToolbarButton } from "../components/ToolbarButton";
 import type { PageProps } from "./pageTypes";
+
+type EvidenceGroupProps = {
+  title: string;
+  items: string[];
+  emptyText: string;
+  tone: "technical" | "information" | "risk";
+};
 
 export function AIPage({ state, actions }: PageProps) {
   const [mode, setMode] = useState("balanced");
@@ -72,15 +78,24 @@ export function AIPage({ state, actions }: PageProps) {
             { label: "建议动作", value: state.insight?.suggested_action ?? "-" }
           ]}
         />
+        <section className="provider-boundary-panel" aria-label="Provider边界">
+          <div className="provider-boundary-icon">
+            <ShieldCheck size={16} />
+          </div>
+          <div>
+            <div className="provider-boundary-title">Provider边界</div>
+            <p>
+              MockLLMProvider 仅生成研究观点，用于回测/纸面交易前的人工复核；不会下单，不能绕过风控、纸面执行或未来实盘前置规则。
+            </p>
+          </div>
+        </section>
         <section className="panel">
           <div className="panel-title">证据链</div>
-          <DataTable
-            rows={[
-              ...(state.insight?.technical_evidence ?? []).map((value) => ({ 类型: "技术", 内容: value })),
-              ...(state.insight?.information_evidence ?? []).map((value) => ({ 类型: "信息面", 内容: value })),
-              ...(state.insight?.risk_warnings ?? []).map((value) => ({ 类型: "风险", 内容: value }))
-            ]}
-          />
+          <div className="evidence-grid">
+            <EvidenceGroup title="技术证据" tone="technical" items={state.insight?.technical_evidence ?? []} emptyText="生成观点后显示技术指标、价格结构和信号证据。" />
+            <EvidenceGroup title="信息面证据" tone="information" items={state.insight?.information_evidence ?? []} emptyText="生成观点后显示信息面摘要如何影响判断。" />
+            <EvidenceGroup title="风险提示" tone="risk" items={state.insight?.risk_warnings ?? []} emptyText="生成观点后显示需要优先复核的风险。" />
+          </div>
         </section>
         {state.aiPrompt ? (
           <details className="prompt-snapshot-panel">
@@ -90,5 +105,22 @@ export function AIPage({ state, actions }: PageProps) {
         ) : null}
       </section>
     </div>
+  );
+}
+
+function EvidenceGroup({ title, items, emptyText, tone }: EvidenceGroupProps) {
+  return (
+    <section className={`evidence-group evidence-${tone}`}>
+      <div className="evidence-group-title">{title}</div>
+      {items.length ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>{emptyText}</p>
+      )}
+    </section>
   );
 }

@@ -96,6 +96,45 @@ test("AIPage shows generated prompt snapshot in a collapsible audit panel", asyn
   expect(screen.getByText(/信息面：北向资金连续净流入/)).toBeVisible();
 });
 
+test("AIPage groups generated evidence into technical information and risk sections", () => {
+  render(
+    <AIPage
+      {...makeProps({
+        insight: {
+          symbol: "000001",
+          horizon: "5个交易日",
+          direction: "bullish",
+          confidence: 79,
+          suggested_action: "保持观察，等待回踩确认。",
+          technical_evidence: ["短均线 23.22，高于长均线 22.66。"],
+          information_evidence: ["政策支持流动性改善"],
+          risk_warnings: ["关注短线追高风险"],
+          prompt_version: "mock-v1",
+          provider: "MockLLMProvider",
+          created_at: "2026-06-14T00:00:00Z"
+        }
+      })}
+    />
+  );
+
+  expect(screen.getByText("技术证据")).toBeVisible();
+  expect(screen.getByText("信息面证据")).toBeVisible();
+  expect(screen.getByText("风险提示")).toBeVisible();
+  expect(screen.getByText("短均线 23.22，高于长均线 22.66。")).toBeVisible();
+  expect(screen.getByText("政策支持流动性改善")).toBeVisible();
+  expect(screen.getByText("关注短线追高风险")).toBeVisible();
+});
+
+test("AIPage shows the MockLLMProvider research-only boundary", () => {
+  render(<AIPage {...makeProps()} />);
+
+  expect(screen.getByText("Provider边界")).toBeVisible();
+  expect(screen.getByText(/MockLLMProvider/)).toBeVisible();
+  expect(screen.getByText(/研究观点/)).toBeVisible();
+  expect(screen.getByText(/不会下单/)).toBeVisible();
+  expect(screen.getByText(/不能绕过风控/)).toBeVisible();
+});
+
 test("AIPage adds and removes recent-note rows before generating research", async () => {
   const user = userEvent.setup();
   const props = makeProps();
