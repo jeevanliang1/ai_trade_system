@@ -64,6 +64,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     message: "运行组合策略回测中...",
     busy: true,
     activeBacktestMode: "portfolio",
+    activePaperMode: null,
     ...overrides
   };
   const actions: PlatformActions = {

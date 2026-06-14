@@ -29,6 +29,7 @@ export type PlatformState = {
   message: string;
   busy: boolean;
   activeBacktestMode: "single" | "portfolio" | null;
+  activePaperMode: "single" | "portfolio" | null;
 };
 
 export type PlatformActions = {

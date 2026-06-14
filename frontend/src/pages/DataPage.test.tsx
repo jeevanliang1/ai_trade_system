@@ -91,6 +91,7 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
     message: "准备就绪",
     busy: false,
     activeBacktestMode: null,
+    activePaperMode: null,
     ...overrides
   };
   const actions: PlatformActions = {

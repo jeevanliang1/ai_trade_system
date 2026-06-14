@@ -88,6 +88,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     message: "准备就绪",
     busy: false,
     activeBacktestMode: null,
+    activePaperMode: null,
     ...overrides
   };
   const actions: PlatformActions = {

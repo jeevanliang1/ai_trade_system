@@ -102,7 +102,8 @@ function initialState(): PlatformState {
     paper: null,
     message: "准备就绪",
     busy: false,
-    activeBacktestMode: null
+    activeBacktestMode: null,
+    activePaperMode: null
   };
 }
 
@@ -215,7 +216,7 @@ export function AppShell() {
       runPaper: (mode = "single") =>
         runTask(setState, "运行纸面交易", async (current) => ({
           paper: await api.runPaper(current.settings, currentSelection(current), current.portfolio, mode)
-        })),
+        }), { startPatch: { activePaperMode: mode }, finishPatch: { activePaperMode: null } }),
       evaluateRisk: () =>
         runTask(setState, "检查风控", async (current) => ({
           riskStatus: await api.evaluateRisk({ max_drawdown_pct: current.backtest?.metrics.max_drawdown_pct ?? 0 }, current.settings)
