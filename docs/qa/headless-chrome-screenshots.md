@@ -31,6 +31,33 @@ Use this form for pages that render without asynchronous delays:
   http://localhost:5173
 ```
 
+## Repeatable React Platform Script
+
+Use the repository script when responsive desktop plus narrow screenshots are needed:
+
+```bash
+node scripts/capture_app_screenshots.mjs
+```
+
+Defaults:
+
+- Target URL: `http://localhost:5173`
+- Output directory: `/tmp`
+- Output files:
+  - `/tmp/ai_trade_system_desktop_1440.png`
+  - `/tmp/ai_trade_system_mobile_390.png`
+
+Options:
+
+```bash
+node scripts/capture_app_screenshots.mjs \
+  --url http://localhost:5173 \
+  --out-dir /tmp \
+  --prefix ai_trade_system_round_10
+```
+
+The script launches headless Chrome through DevTools Protocol, waits for `.app-shell`, `.content-shell`, and `AI量化平台` text, captures 1440x1024 and 390x844 viewports, writes PNG files, and prints the measured PNG dimensions as JSON.
+
 ## Robust Capture
 
 For Streamlit or other asynchronous pages, prefer a Chrome DevTools Protocol flow:

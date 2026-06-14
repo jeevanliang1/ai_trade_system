@@ -48,6 +48,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Risk Workspace warning guidance is complete for current scope: frontend-only warning mapping adds high/medium/info severity labels plus remediation hints for drawdown, order cash, cash balance, position concentration, disabled, and no-warning states.
 - Risk Workspace UI/API hardening is complete for current scope: focused tests cover RiskPage rendering, AppShell risk evaluation failure recovery, and `/api/risk/evaluate` valid plus invalid payload route behavior.
 - Responsive platform collapse is complete for current scope: at 390px narrow width the shell uses natural scrolling, navigation wraps, content and inspector stack to one column, and Browser QA confirmed no horizontal overflow.
+- Repeatable headless screenshots are complete for current scope: `scripts/capture_app_screenshots.mjs` captures desktop 1440x1024 and narrow 390x844 React platform PNGs after waiting for real app content, with usage documented in `docs/qa/headless-chrome-screenshots.md`.
 
 ## Pending
 
@@ -65,7 +66,6 @@ No current pending items.
 
 ### Responsive And Visual QA
 
-- Add a repeatable headless screenshot script for desktop 1440x1024 and narrow mobile width.
 - Add visual regression notes or baseline screenshots under `docs/qa/` after each major fidelity pass.
 
 ### API And Error Handling
@@ -83,7 +83,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Responsive QA - Add a repeatable headless screenshot script for desktop 1440x1024 and narrow mobile width". This is the best next task because manual responsive QA now passes and should be captured in a repeatable script.
+Start with "Responsive QA - Add visual regression notes or baseline screenshots under docs/qa after each major fidelity pass". This is the best next task because repeatable screenshot capture now exists and can support a durable visual baseline workflow.
 
 ## Update Rules
 
