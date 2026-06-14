@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import { RiskPage } from "./RiskPage";
 import type { PageProps, PlatformActions, PlatformState } from "./pageTypes";
@@ -61,6 +61,30 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
   return { state, actions };
 }
 
+function backtestResult(): PlatformState["backtest"] {
+  return {
+    bars: [],
+    metrics: {
+      final_equity: 98500,
+      total_return_pct: -1.5,
+      annualized_return_pct: -3.2,
+      benchmark_return_pct: -0.5,
+      excess_return_pct: -1,
+      annual_volatility_pct: 18.4,
+      sharpe_ratio: -0.2,
+      max_drawdown_pct: -12.4,
+      trade_count: 8,
+      win_rate_pct: 37.5,
+      profit_factor: 0.8,
+      exposure_pct: 42
+    },
+    equity_curve: [],
+    drawdowns: [],
+    trades: [],
+    risk_status: { ok: false, warnings: ["最大回撤超过阈值"], enabled: true }
+  };
+}
+
 test("RiskPage renders the full threshold editor", () => {
   render(<RiskPage {...makeProps()} />);
 
@@ -93,4 +117,27 @@ test("RiskPage updates settings through the single setSettings path", () => {
 
   fireEvent.change(screen.getByLabelText("止损模式"), { target: { value: "trailing" } });
   expect(props.actions.setSettings).toHaveBeenLastCalledWith({ ...props.state.settings, stop_loss_mode: "trailing" });
+});
+
+test("RiskPage shows an empty deterministic example state without backtest metrics", () => {
+  render(<RiskPage {...makeProps()} />);
+
+  expect(screen.getByText("评估样例")).toBeVisible();
+  expect(screen.getByText("暂无回测指标")).toBeVisible();
+});
+
+test("RiskPage shows deterministic risk inputs from current backtest metrics", () => {
+  const props = makeProps({ backtest: backtestResult() });
+  render(<RiskPage {...props} />);
+
+  expect(screen.getByText("评估样例")).toBeVisible();
+  const examples = screen.getByLabelText("风控评估样例");
+  expect(within(examples).getByRole("table")).toHaveTextContent("max_drawdown_pct");
+  expect(within(examples).getByRole("table")).toHaveTextContent("-12.40%");
+  expect(within(examples).getByRole("table")).toHaveTextContent("20%");
+  expect(within(examples).getByRole("table")).toHaveTextContent("8");
+
+  fireEvent.click(screen.getByRole("button", { name: "检查风控" }));
+
+  expect(props.actions.evaluateRisk).toHaveBeenCalledTimes(1);
 });
