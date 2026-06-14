@@ -1,17 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${ROOT_DIR}"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="${SCRIPT_PATH%/*}"
+if [ "${SCRIPT_DIR}" = "${SCRIPT_PATH}" ]; then
+  SCRIPT_DIR="."
+fi
 
-cleanup() {
-  if [ -n "${API_PID:-}" ]; then
-    kill "${API_PID}" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
-
-./scripts/run_api.sh &
-API_PID=$!
-
-./scripts/run_frontend.sh
+exec "${SCRIPT_DIR}/run_all.sh" "$@"

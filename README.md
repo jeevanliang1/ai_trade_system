@@ -102,11 +102,21 @@ python -m pip install -e ".[api,data]"
 cd frontend && npm install && cd ..
 ```
 
+启动前也可以先做一次环境和依赖检查：
+
+```bash
+./scripts/run_all.sh --check
+```
+
+检查会覆盖 Python 版本、FastAPI/uvicorn/API 模块、Node.js/npm、前端依赖和默认端口占用；失败时会输出明确原因和推荐修复命令。
+
 启动 React 平台：
 
 ```bash
 ./scripts/run_app.sh
 ```
+
+`run_app.sh` 兼容旧入口，实际会转调 `scripts/run_all.sh`，一次性启动 FastAPI 和 React/Vite。
 
 默认访问地址：
 

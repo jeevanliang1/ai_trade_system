@@ -17,13 +17,27 @@ npm install
 cd ..
 ```
 
+启动前检查：
+
+```bash
+./scripts/run_all.sh --check
+```
+
+检查项包括 Python 3.10+、FastAPI/uvicorn/API 模块导入、Node.js 20 LTS+、npm、`frontend/package.json`、`frontend/node_modules` 和默认端口 `8000/5173` 是否可用。缺前端依赖时脚本会尝试 `npm install`；其他问题会输出 `原因：...` 与 `建议：...`。
+
 启动：
 
 ```bash
 ./scripts/run_app.sh
 ```
 
-如果仓库根目录存在 `.venv/bin/python`，启动脚本会优先使用该虚拟环境；否则使用当前 shell 的 `python`。本项目建议 Python 3.10 或 3.11。
+`run_app.sh` 保留为兼容入口，实际转调 `scripts/run_all.sh`。如果仓库根目录存在 `.venv/bin/python`，启动脚本会优先使用该虚拟环境；否则使用当前 shell 的 `python3` 或 `python`。本项目建议 Python 3.10 或 3.11。
+
+常见失败处理：
+
+- 提示缺 Python API 依赖：运行 `python -m pip install -e ".[api,data]"`。
+- 提示缺 Node.js/npm 或版本过低：安装 Node.js 20 LTS 或更高版本。
+- 提示端口被占用：结束占用进程，或使用 `API_PORT=8001 FRONTEND_PORT=5174 ./scripts/run_all.sh` 换端口启动。
 
 默认地址：
 

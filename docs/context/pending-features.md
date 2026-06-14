@@ -51,6 +51,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Repeatable headless screenshots are complete for current scope: `scripts/capture_app_screenshots.mjs` captures desktop 1440x1024 and narrow 390x844 React platform PNGs after waiting for real app content, with usage documented in `docs/qa/headless-chrome-screenshots.md`.
 - Market Analysis Strategy Fusion first slice is complete for current scope: backend `ai_trade_system.research` modules generate lightweight Chan plus enhanced RSI previews, FastAPI exposes `/api/research/signals/preview`, and Strategy Workshop can request and render score, blockers, and signal rows.
 - Market Analysis Strategy Fusion backtest wrapper is complete for current scope: `ChanRsiResearchStrategy` is a built-in `Strategy` that reuses the research preview semantics, appears in strategy discovery, emits backtestable `Signal` objects, and can run through the existing local backtest engine.
+- One-shot React + FastAPI startup preflight is complete for current scope: `scripts/run_all.sh` checks Python/API dependencies, Node/npm/frontend dependencies, installs missing frontend packages, validates ports, reports clear `原因/建议` failures, and `scripts/run_app.sh` remains a compatibility wrapper.
 
 ## Pending
 
