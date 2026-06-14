@@ -764,6 +764,95 @@ button {
   line-height: 1.55;
 }
 
+.paper-timeline-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.paper-timeline {
+  display: grid;
+  gap: 8px;
+}
+
+.paper-event {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  border: 1px solid var(--border-soft);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: #fbfdff;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.paper-event-badge {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.paper-event strong {
+  color: #111827;
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.paper-event small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.paper-event.accepted {
+  border-left-color: var(--green);
+}
+
+.paper-event.accepted .paper-event-badge {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.paper-event.rejected {
+  border-left-color: var(--red);
+  background: #fff7f7;
+}
+
+.paper-event.rejected .paper-event-badge {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.paper-event.equity {
+  border-left-color: var(--blue);
+}
+
+.paper-event.equity .paper-event-badge {
+  background: #eaf3ff;
+  color: #0b70d9;
+}
+
+.paper-event.service {
+  border-left-color: var(--amber);
+}
+
+.paper-event.service .paper-event-badge {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.paper-timeline-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;

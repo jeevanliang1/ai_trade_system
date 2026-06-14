@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { PaperPage } from "./PaperPage";
@@ -106,4 +106,43 @@ test("PaperPage disables duplicate run clicks while a paper run is active", asyn
   await user.click(runButton);
 
   expect(props.actions.runPaper).not.toHaveBeenCalled();
+});
+
+test("PaperPage renders a styled event timeline for accepted and rejected orders", () => {
+  const props = makeProps({
+    paper: {
+      events: [
+        { event: "service_started" },
+        { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "" },
+        { event: "order_rejected", trading_day: "2024-01-06", side: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "cash limit" },
+        { event: "equity", trading_day: "2024-01-06", equity: 100800, cash: 90800 },
+        { event: "service_stopped", final_equity: 100800 }
+      ],
+      orders: [
+        { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "" },
+        { event: "order_rejected", trading_day: "2024-01-06", side: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "cash limit" }
+      ],
+      equity: [{ trading_day: "2024-01-06", equity: 100800, cash: 90800 }],
+      summary: { event: "service_stopped", final_equity: 100800 }
+    }
+  });
+
+  render(<PaperPage {...props} />);
+
+  const timeline = screen.getByLabelText("纸面事件时间线");
+  expect(within(timeline).getByText("事件时间线")).toBeVisible();
+  expect(within(timeline).getByText("已接受")).toBeVisible();
+  expect(within(timeline).getByText("已拒绝")).toBeVisible();
+  expect(within(timeline).getByText("服务事件")).toBeVisible();
+  expect(within(timeline).getByText("权益快照")).toBeVisible();
+  expect(within(timeline).getByText(/2024-01-05 buy 000001/)).toBeVisible();
+  expect(within(timeline).getByText(/2024-01-06 sell 000001/)).toBeVisible();
+  expect(within(timeline).getByText(/cash limit/)).toBeVisible();
+});
+
+test("PaperPage shows an empty event timeline before paper events exist", () => {
+  render(<PaperPage {...makeProps()} />);
+
+  expect(screen.getByText("事件时间线")).toBeVisible();
+  expect(screen.getByText("运行纸面交易后显示服务、订单和权益事件。")).toBeVisible();
 });

@@ -40,6 +40,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - AI Researcher evidence grouping is complete for current scope: generated technical evidence, information-side evidence, and risk warnings render as separate evidence groups with their own empty states.
 - AI Researcher provider boundary copy is complete for current scope: the page states MockLLMProvider is research-only, never places orders, and cannot bypass risk or execution controls.
 - Paper Trading run configuration and status are complete for current scope: the page shows symbol, date range, selected strategy or portfolio mode, cash, commission, slippage, log path, idle/running/complete status, and disables duplicate run clicks while a paper run is active.
+- Paper Trading event timeline is complete for current scope: paper events render as a readable chronology with accepted, rejected, service, and equity event styling while retaining the dense order table.
 
 ## Pending
 
@@ -49,7 +50,6 @@ No current pending items.
 
 ### Paper Trading
 
-- Add paper event timeline with accepted/rejected order styling.
 - Add filters for event type, side, and symbol.
 - Add log file path health check and "load latest events" action.
 
@@ -81,7 +81,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Paper Trading - Add paper event timeline with accepted/rejected order styling". This is the best next task because paper runs now expose their configuration and status, and the next missing execution-facing surface is readable event chronology.
+Start with "Paper Trading - Add filters for event type, side, and symbol". This is the best next task because the event timeline and order table are now visible, and filtering is the next step for inspecting dense paper-trading logs.
 
 ## Update Rules
 

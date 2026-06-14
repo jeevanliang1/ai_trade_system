@@ -47,6 +47,7 @@ export function PaperPage({ state, actions }: PageProps) {
           )}
           height={320}
         />
+        <PaperEventTimeline events={state.paper?.events ?? []} />
         <section className="panel">
           <div className="panel-title">订单事件</div>
           <DataTable rows={(state.paper?.orders ?? []) as Record<string, unknown>[]} />
@@ -54,6 +55,78 @@ export function PaperPage({ state, actions }: PageProps) {
       </section>
     </div>
   );
+}
+
+function PaperEventTimeline({ events }: { events: Record<string, unknown>[] }) {
+  return (
+    <section className="panel paper-timeline-panel" aria-label="纸面事件时间线">
+      <div className="panel-title">事件时间线</div>
+      {events.length ? (
+        <div className="paper-timeline">
+          {events.map((event, index) => {
+            const view = paperEventView(event);
+            return (
+              <article className={`paper-event ${view.tone}`} key={`${view.eventName}-${view.tradingDay}-${index}`}>
+                <span className="paper-event-badge">{view.label}</span>
+                <strong>{view.title}</strong>
+                <small>{view.detail}</small>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="paper-timeline-empty">运行纸面交易后显示服务、订单和权益事件。</p>
+      )}
+    </section>
+  );
+}
+
+function paperEventView(event: Record<string, unknown>) {
+  const eventName = String(event.event ?? "unknown");
+  const tradingDay = String(event.trading_day ?? "-");
+  const side = String(event.side ?? "-");
+  const symbol = String(event.symbol ?? "-");
+  const price = event.price == null ? "-" : String(event.price);
+  const volume = event.volume == null ? "-" : String(event.volume);
+  const reason = String(event.reason ?? "").trim();
+  if (eventName === "order_accepted") {
+    return {
+      eventName,
+      tradingDay,
+      label: "已接受",
+      tone: "accepted",
+      title: `${tradingDay} ${side} ${symbol}`,
+      detail: `价格 ${price}，数量 ${volume}${reason ? `，原因 ${reason}` : ""}`
+    };
+  }
+  if (eventName === "order_rejected") {
+    return {
+      eventName,
+      tradingDay,
+      label: "已拒绝",
+      tone: "rejected",
+      title: `${tradingDay} ${side} ${symbol}`,
+      detail: `价格 ${price}，数量 ${volume}${reason ? `，原因 ${reason}` : ""}`
+    };
+  }
+  if (eventName === "equity") {
+    return {
+      eventName,
+      tradingDay,
+      label: "权益快照",
+      tone: "equity",
+      title: `${tradingDay} 权益 ${String(event.equity ?? "-")}`,
+      detail: `现金 ${String(event.cash ?? "-")}`
+    };
+  }
+  return {
+    eventName,
+    tradingDay,
+    label: eventName === "service_stopped" ? "服务完成" : "服务事件",
+    tone: "service",
+    title: eventName === "service_stopped" ? `最终权益 ${String(event.final_equity ?? "-")}` : eventName,
+    detail: "纸面交易服务状态事件"
+  };
 }
 
 function PaperRunStatus({ runningMode, busy, hasResult }: { runningMode: PaperMode | null; busy: boolean; hasResult: boolean }) {
