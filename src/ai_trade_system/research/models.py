@@ -52,3 +52,9 @@ class EnhancedRsiResult:
     signals: list[ResearchSignal]
     latest_rsi: float | None
     rsi_score: float
+
+
+@dataclass(frozen=True)
+class ChanPatternResult:
+    signals: list[ResearchSignal]
+    chan_score: float
