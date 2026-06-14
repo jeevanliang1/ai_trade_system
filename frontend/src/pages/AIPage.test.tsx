@@ -33,6 +33,7 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
     portfolio: { allocations: [], mode: "weighted_vote", ai_adjust: false, ai_direction: null },
     backtest: null,
     insight: null,
+    aiPrompt: null,
     riskStatus: null,
     paper: null,
     message: "准备就绪",
@@ -76,6 +77,23 @@ test("AIPage edits information notes as separate recent-note rows before generat
   await user.click(screen.getByRole("button", { name: "生成AI观点" }));
 
   expect(props.actions.researchAI).toHaveBeenCalledWith(["北向资金连续净流入", "关注短线追高风险"], "balanced", "5个交易日");
+});
+
+test("AIPage shows generated prompt snapshot in a collapsible audit panel", async () => {
+  const user = userEvent.setup();
+  const prompt = "你是 A 股量化研究员\\n标的：000001\\n信息面：北向资金连续净流入";
+
+  render(<AIPage {...makeProps({ aiPrompt: prompt })} />);
+
+  const promptPanel = screen.getByText("生成 Prompt 快照").closest("details");
+  expect(promptPanel).not.toBeNull();
+  expect(promptPanel).not.toHaveAttribute("open");
+
+  await user.click(screen.getByText("生成 Prompt 快照"));
+
+  expect(promptPanel).toHaveAttribute("open");
+  expect(screen.getByText(/标的：000001/)).toBeVisible();
+  expect(screen.getByText(/信息面：北向资金连续净流入/)).toBeVisible();
 });
 
 test("AIPage adds and removes recent-note rows before generating research", async () => {

@@ -36,12 +36,12 @@ Each pending item below should be small enough to finish in one focused implemen
 - Backtest Center export actions are complete for current scope: trades, metrics, and equity curve can be downloaded from the result column after a backtest result exists.
 - Backtest Center empty/error states are complete for current scope: missing CSV or unloaded行情, missing single-strategy selection, and invalid portfolio allocation now show explicit blockers, disable the page run button, and explain the result empty state.
 - AI Researcher information note editor is complete for current scope: the single plain note area is now multiple editable recent-note rows with add/remove controls, and research generation submits only non-empty trimmed notes.
+- AI Researcher prompt snapshot is complete for current scope: successful research responses persist the generated prompt in platform state, and the AI Researcher page shows it in a collapsible audit panel.
 
 ## Pending
 
 ### AI Researcher
 
-- Show the generated prompt snapshot in a collapsible panel.
 - Show AI evidence grouped into technical, information-side, and risk warnings.
 - Add provider boundary copy that clearly states MockLLMProvider is research-only and never places orders.
 
@@ -80,7 +80,7 @@ Each pending item below should be small enough to finish in one focused implemen
 
 ## Next Recommended Feature
 
-Start with "AI Researcher - Show the generated prompt snapshot in a collapsible panel". This is the best next task because the AI Researcher now has structured information-note input, so the next usability gap is showing exactly what prompt/context was generated for auditability.
+Start with "AI Researcher - Show AI evidence grouped into technical, information-side, and risk warnings". This is the best next task because prompt auditability is now visible, and grouped evidence is the next step for making the AI research output easier to inspect and trust.
 
 ## Update Rules
 

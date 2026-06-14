@@ -23,6 +23,7 @@ export type PlatformState = {
   portfolio: PortfolioRequest;
   backtest: BacktestResponse | null;
   insight: AIInsight | null;
+  aiPrompt: string | null;
   riskStatus: RiskStatus | null;
   paper: PaperResponse | null;
   message: string;

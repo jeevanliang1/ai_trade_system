@@ -625,6 +625,36 @@ button {
   min-height: 32px;
 }
 
+.prompt-snapshot-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.prompt-snapshot-panel summary {
+  cursor: pointer;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.prompt-snapshot-panel pre {
+  margin: 10px 0 0;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #1f2937;
+  padding: 10px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;

@@ -97,6 +97,7 @@ function initialState(): PlatformState {
     portfolio: defaultPortfolio(FALLBACK_STRATEGIES[0].id),
     backtest: null,
     insight: null,
+    aiPrompt: null,
     riskStatus: { ok: true, warnings: [], enabled: true },
     paper: null,
     message: "准备就绪",
@@ -205,7 +206,7 @@ export function AppShell() {
       researchAI: (notes, promptMode, horizon) =>
         runTask(setState, "生成AI观点", async (current) => {
           const research = await api.research(current.settings, notes, promptMode, horizon);
-          const patch: Partial<PlatformState> = { insight: research.insight };
+          const patch: Partial<PlatformState> = { insight: research.insight, aiPrompt: research.prompt };
           if (current.portfolio.ai_adjust) {
             patch.portfolio = { ...current.portfolio, ai_direction: research.insight.direction };
           }

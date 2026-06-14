@@ -82,6 +82,12 @@ export function AIPage({ state, actions }: PageProps) {
             ]}
           />
         </section>
+        {state.aiPrompt ? (
+          <details className="prompt-snapshot-panel">
+            <summary>生成 Prompt 快照</summary>
+            <pre>{state.aiPrompt}</pre>
+          </details>
+        ) : null}
       </section>
     </div>
   );
