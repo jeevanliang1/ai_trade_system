@@ -68,6 +68,12 @@ No current pending items.
 
 - Add visual regression notes or baseline screenshots under `docs/qa/` after each major fidelity pass.
 
+### Market Analysis Strategy Fusion
+
+- Add current-symbol Chan plus enhanced RSI signal preview: backend research modules, `/api/research/signals/preview`, Strategy Workshop signal table/chart markers, focused backend/frontend tests, and browser screenshot acceptance.
+- Wrap the confirmed Chan plus enhanced RSI preview as a backtestable `Strategy` after the preview semantics are validated.
+- Add a dedicated Signal Radar page and batch scan mode after the single-symbol preview is stable.
+
 ### API And Error Handling
 
 - Add frontend error-state tests for failed `/api/data/load`, `/api/backtest`, and `/api/ai/research`.
@@ -83,7 +89,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Responsive QA - Add visual regression notes or baseline screenshots under docs/qa after each major fidelity pass". This is the best next task because repeatable screenshot capture now exists and can support a durable visual baseline workflow.
+Start with "Market Analysis Strategy Fusion - Add current-symbol Chan plus enhanced RSI signal preview". This is the best next task because the first market_analysis fusion slice has been scoped to a single-symbol research signal preview that can use the existing React + FastAPI data and chart surface without adding ClickHouse, full-market scanning, or live execution behavior.
 
 ## Update Rules
 
