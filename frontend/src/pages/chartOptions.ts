@@ -2,6 +2,8 @@ import type { BacktestResponse, Bar, SignalRow } from "../types";
 
 export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
   const start = visibleRangeStart(bars.length);
+  const barsByDay = new Map(bars.map((bar) => [bar.trading_day, bar]));
+  const markerOffset = signalMarkerOffset(bars);
   return {
     animation: false,
     legend: { top: 0, right: 8, textStyle: { color: "#667085" } },
@@ -42,7 +44,7 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
       {
         type: "scatter",
         name: "买入",
-        data: signals.filter((row) => row.action === "buy").map((row) => signalMarker(row, "买入")),
+        data: signals.filter((row) => row.action === "buy").map((row) => signalMarker(row, "买入", "buy", barsByDay.get(row.trading_day), markerOffset)),
         symbol: "triangle",
         symbolSize: 13,
         z: 5,
@@ -51,7 +53,7 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
       {
         type: "scatter",
         name: "卖出",
-        data: signals.filter((row) => row.action === "sell").map((row) => signalMarker(row, "卖出")),
+        data: signals.filter((row) => row.action === "sell").map((row) => signalMarker(row, "卖出", "sell", barsByDay.get(row.trading_day), markerOffset)),
         symbol: "triangle",
         symbolRotate: 180,
         symbolSize: 13,
@@ -62,11 +64,13 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
   };
 }
 
-function signalMarker(row: SignalRow, label: string) {
+function signalMarker(row: SignalRow, label: string, action: SignalRow["action"], bar: Bar | undefined, offset: number) {
+  const markerPrice = bar ? signalMarkerPrice(bar, action, offset) : row.price;
   return {
     name: `${label} ${row.symbol}`,
-    value: [row.trading_day, row.price],
+    value: [row.trading_day, markerPrice],
     stockSymbol: row.symbol,
+    tradePrice: row.price,
     volume: row.volume,
     reason: row.reason,
     tooltip: {
@@ -79,6 +83,18 @@ function signalMarker(row: SignalRow, label: string) {
       ].join("<br/>")
     }
   };
+}
+
+function signalMarkerPrice(bar: Bar, action: SignalRow["action"], offset: number) {
+  return Number((action === "buy" ? bar.low_price - offset : bar.high_price + offset).toFixed(4));
+}
+
+function signalMarkerOffset(bars: Bar[]) {
+  if (bars.length === 0) return 0;
+  const lows = bars.map((bar) => bar.low_price);
+  const highs = bars.map((bar) => bar.high_price);
+  const range = Math.max(...highs) - Math.min(...lows);
+  return Math.max(range * 0.018, 0.01);
 }
 
 function movingAverage(bars: Bar[], window: number) {

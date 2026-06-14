@@ -287,12 +287,16 @@ test("BacktestResultPanel renders buy and sell trade markers on the buy-sell cha
   render(<BacktestResultPanel result={result} />);
 
   const buySellChart = screen.getByLabelText("买卖点 图表");
-  const option = JSON.parse(buySellChart.getAttribute("data-chart-option") ?? "{}") as { series: Array<{ name: string; data: Array<{ value: [string, number]; reason: string }> }> };
+  const option = JSON.parse(buySellChart.getAttribute("data-chart-option") ?? "{}") as {
+    series: Array<{ name: string; data: Array<{ value: [string, number]; tradePrice: number; reason: string }> }>;
+  };
   const buySeries = option.series.find((item) => item.name === "买入");
   const sellSeries = option.series.find((item) => item.name === "卖出");
 
-  expect(buySeries?.data[0]).toMatchObject({ value: ["2024-01-02", 10.2], reason: "回测成交" });
-  expect(sellSeries?.data[0]).toMatchObject({ value: ["2024-01-03", 10.6], reason: "回测成交" });
+  expect(buySeries?.data[0]).toMatchObject({ value: ["2024-01-02", expect.any(Number)], tradePrice: 10.2, reason: "回测成交" });
+  expect(buySeries?.data[0].value[1]).toBeLessThan(result.bars[0].low_price);
+  expect(sellSeries?.data[0]).toMatchObject({ value: ["2024-01-03", expect.any(Number)], tradePrice: 10.6, reason: "回测成交" });
+  expect(sellSeries?.data[0].value[1]).toBeGreaterThan(result.bars[1].high_price);
 });
 
 test("BacktestResultPanel disables exports until a result exists", () => {

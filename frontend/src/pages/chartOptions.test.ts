@@ -73,9 +73,14 @@ test("priceOption renders buy and sell markers with tooltip detail payloads", ()
 
   const option = priceOption(bars, signals);
   const series = option.series as Array<Record<string, unknown>>;
-  const buySeries = series.find((item) => item.name === "买入") as { data: Array<Record<string, unknown>>; symbol: string; symbolSize: number; itemStyle: Record<string, string> };
+  const buySeries = series.find((item) => item.name === "买入") as {
+    data: Array<Record<string, unknown> & { value: [string, number] }>;
+    symbol: string;
+    symbolSize: number;
+    itemStyle: Record<string, string>;
+  };
   const sellSeries = series.find((item) => item.name === "卖出") as {
-    data: Array<Record<string, unknown>>;
+    data: Array<Record<string, unknown> & { value: [string, number] }>;
     symbol: string;
     symbolRotate: number;
     symbolSize: number;
@@ -88,9 +93,13 @@ test("priceOption renders buy and sell markers with tooltip detail payloads", ()
   expect(sellSeries.symbolSize).toBeGreaterThanOrEqual(12);
   expect(buySeries.itemStyle.color).toBe("#facc15");
   expect(sellSeries.itemStyle.color).toBe("#a855f7");
+  expect(buySeries.data[0].value).toEqual(["2024-01-02", expect.any(Number)]);
+  expect(buySeries.data[0].value[1]).toBeLessThan(bars[0].low_price);
+  expect(sellSeries.data[0].value).toEqual(["2024-01-03", expect.any(Number)]);
+  expect(sellSeries.data[0].value[1]).toBeGreaterThan(bars[1].high_price);
   expect(buySeries.data[0]).toMatchObject({
     name: "买入 000001",
-    value: ["2024-01-02", 10.8],
+    tradePrice: 10.8,
     reason: "fast MA crossed above slow MA",
     volume: 100
   });
