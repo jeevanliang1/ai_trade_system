@@ -1516,6 +1516,74 @@ button {
   gap: 8px;
 }
 
+.risk-warning-list {
+  display: grid;
+  gap: 8px;
+}
+
+.risk-warning-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  border: 1px solid var(--border-soft);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: #fbfdff;
+  padding: 8px 10px;
+}
+
+.risk-warning-row.high {
+  border-left-color: var(--red);
+  background: #fff7f7;
+}
+
+.risk-warning-row.medium {
+  border-left-color: var(--amber);
+}
+
+.risk-warning-row.info {
+  border-left-color: var(--blue);
+}
+
+.risk-severity {
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #f2f4f7;
+  color: #344054;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.risk-warning-row.high .risk-severity {
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.risk-warning-row.medium .risk-severity {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.risk-warning-row.info .risk-severity {
+  background: #eaf3ff;
+  color: #0b70d9;
+}
+
+.risk-warning-row strong {
+  color: var(--text);
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.risk-warning-row small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .config-item {
   display: grid;
   gap: 4px;

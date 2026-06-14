@@ -45,6 +45,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Paper Trading log health and reload are complete for current scope: the page shows whether the configured log path is loaded, displays loaded event count and last-event summary, and can reload persisted events through `/api/paper/events`.
 - Risk Workspace threshold editor is complete for current scope: the dedicated page mirrors the right inspector fields for risk enablement, drawdown, order cash, cash balance, position shares, and stop-loss mode while preserving `actions.setSettings` as the single update path.
 - Risk Workspace deterministic examples are complete for current scope: the page shows an empty example state before backtests and, once metrics exist, renders stable API input rows for max drawdown, trade count, win rate, and risk enablement with the active drawdown threshold.
+- Risk Workspace warning guidance is complete for current scope: frontend-only warning mapping adds high/medium/info severity labels plus remediation hints for drawdown, order cash, cash balance, position concentration, disabled, and no-warning states.
 
 ## Pending
 
@@ -58,7 +59,6 @@ No current pending items.
 
 ### Risk Workspace
 
-- Add risk warning severity levels and remediation hints.
 - Add tests for risk UI rendering and API error handling.
 
 ### Responsive And Visual QA
@@ -82,7 +82,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Risk Workspace - Add risk warning severity levels and remediation hints". This is the best next task because deterministic risk inputs are now visible, and the resulting warnings need operator-facing priority and next-action guidance.
+Start with "Risk Workspace - Add tests for risk UI rendering and API error handling". This is the best next task because Risk Workspace rendering is now feature-complete enough to harden failure surfaces and backend route validation.
 
 ## Update Rules
 

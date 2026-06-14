@@ -141,3 +141,42 @@ test("RiskPage shows deterministic risk inputs from current backtest metrics", (
 
   expect(props.actions.evaluateRisk).toHaveBeenCalledTimes(1);
 });
+
+test("RiskPage maps risk warnings to severity labels and remediation hints", () => {
+  render(
+    <RiskPage
+      {...makeProps({
+        riskStatus: {
+          ok: false,
+          enabled: true,
+          warnings: ["最大回撤超过阈值", "单笔订单金额超过限制", "现金余额低于阈值", "持仓集中度过高"]
+        }
+      })}
+    />
+  );
+
+  const status = screen.getByLabelText("风控状态明细");
+  expect(within(status).getByText("高")).toBeVisible();
+  expect(within(status).getAllByText("中")).toHaveLength(3);
+  expect(within(status).getByText("降低仓位或收紧止损")).toBeVisible();
+  expect(within(status).getByText("降低单笔最大金额或拆分订单")).toBeVisible();
+  expect(within(status).getByText("提高现金保留或减少开仓")).toBeVisible();
+  expect(within(status).getByText("降低最大持仓股数或分散标的")).toBeVisible();
+});
+
+test("RiskPage shows info remediation rows for disabled and no-warning states", () => {
+  const disabled = makeProps({ riskStatus: { ok: true, enabled: false, warnings: [] } });
+  const { rerender } = render(<RiskPage {...disabled} />);
+
+  let status = screen.getByLabelText("风控状态明细");
+  expect(within(status).getByText("信息")).toBeVisible();
+  expect(within(status).getByText("风控已关闭")).toBeVisible();
+  expect(within(status).getByText("开启风控后再评估")).toBeVisible();
+
+  rerender(<RiskPage {...makeProps({ riskStatus: { ok: true, enabled: true, warnings: [] } })} />);
+
+  status = screen.getByLabelText("风控状态明细");
+  expect(within(status).getByText("信息")).toBeVisible();
+  expect(within(status).getByText("未触发主要风控警示。")).toBeVisible();
+  expect(within(status).getByText("保持当前阈值并定期复核")).toBeVisible();
+});

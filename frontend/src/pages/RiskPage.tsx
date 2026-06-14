@@ -3,6 +3,13 @@ import { ToolbarButton } from "../components/ToolbarButton";
 import type { PageProps } from "./pageTypes";
 import type { PlatformSettings } from "../types";
 
+type RiskWarningView = {
+  severity: "高" | "中" | "信息";
+  tone: "high" | "medium" | "info";
+  warning: string;
+  hint: string;
+};
+
 export function RiskPage({ state, actions }: PageProps) {
   const updateSettings = (patch: Partial<PlatformSettings>) => actions.setSettings({ ...state.settings, ...patch });
   const updateNumber = (key: "max_drawdown_pct" | "max_order_cash" | "min_cash_balance" | "max_position_shares", raw: string) => {
@@ -66,16 +73,66 @@ export function RiskPage({ state, actions }: PageProps) {
       </section>
       <section className="main-column">
         <RiskExamplePanel state={state} />
-        <section className="panel">
+        <section className="panel" aria-label="风控状态明细">
           <div className="panel-title">风控状态</div>
-          <p className={state.riskStatus?.ok ? "positive" : "negative"}>{state.riskStatus?.ok ? "当前已通过风控校验" : "当前存在风控警示"}</p>
-          <DataTable
-            rows={(state.riskStatus?.warnings.length ? state.riskStatus.warnings : ["未触发主要风控警示。"]).map((warning) => ({ 风险项: warning }))}
-          />
+          <p className={riskStatusOk(state) ? "positive" : "negative"}>{riskStatusOk(state) ? "当前已通过风控校验" : "当前存在风控警示"}</p>
+          <RiskWarningList rows={riskWarningViews(state)} />
         </section>
       </section>
     </div>
   );
+}
+
+function RiskWarningList({ rows }: { rows: RiskWarningView[] }) {
+  return (
+    <div className="risk-warning-list">
+      {rows.map((row) => (
+        <article className={`risk-warning-row ${row.tone}`} key={`${row.warning}-${row.hint}`}>
+          <span className="risk-severity">{row.severity}</span>
+          <strong>{row.warning}</strong>
+          <small>{row.hint}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function riskStatusOk(state: PageProps["state"]) {
+  if (!state.settings.risk_enabled || state.riskStatus?.enabled === false) return true;
+  return state.riskStatus?.ok !== false;
+}
+
+function riskWarningViews(state: PageProps["state"]): RiskWarningView[] {
+  if (!state.settings.risk_enabled || state.riskStatus?.enabled === false) {
+    return [{ severity: "信息", tone: "info", warning: "风控已关闭", hint: "开启风控后再评估" }];
+  }
+  const warnings = state.riskStatus?.warnings ?? [];
+  if (!warnings.length) {
+    return [{ severity: "信息", tone: "info", warning: "未触发主要风控警示。", hint: "保持当前阈值并定期复核" }];
+  }
+  return warnings.map((warning) => {
+    const severity = riskWarningSeverity(warning);
+    return {
+      severity,
+      tone: severity === "高" ? "high" : severity === "中" ? "medium" : "info",
+      warning,
+      hint: riskRemediationHint(warning)
+    };
+  });
+}
+
+function riskWarningSeverity(warning: string): RiskWarningView["severity"] {
+  if (warning.includes("最大回撤") || warning.toLowerCase().includes("drawdown")) return "高";
+  if (warning.includes("单笔") || warning.includes("现金") || warning.includes("持仓") || warning.includes("仓位")) return "中";
+  return "信息";
+}
+
+function riskRemediationHint(warning: string) {
+  if (warning.includes("最大回撤") || warning.toLowerCase().includes("drawdown")) return "降低仓位或收紧止损";
+  if (warning.includes("单笔")) return "降低单笔最大金额或拆分订单";
+  if (warning.includes("现金")) return "提高现金保留或减少开仓";
+  if (warning.includes("持仓") || warning.includes("仓位")) return "降低最大持仓股数或分散标的";
+  return "人工复核该风险项";
 }
 
 function RiskExamplePanel({ state }: { state: PageProps["state"] }) {
