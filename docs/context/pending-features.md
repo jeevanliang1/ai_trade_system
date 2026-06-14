@@ -47,6 +47,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Risk Workspace deterministic examples are complete for current scope: the page shows an empty example state before backtests and, once metrics exist, renders stable API input rows for max drawdown, trade count, win rate, and risk enablement with the active drawdown threshold.
 - Risk Workspace warning guidance is complete for current scope: frontend-only warning mapping adds high/medium/info severity labels plus remediation hints for drawdown, order cash, cash balance, position concentration, disabled, and no-warning states.
 - Risk Workspace UI/API hardening is complete for current scope: focused tests cover RiskPage rendering, AppShell risk evaluation failure recovery, and `/api/risk/evaluate` valid plus invalid payload route behavior.
+- Responsive platform collapse is complete for current scope: at 390px narrow width the shell uses natural scrolling, navigation wraps, content and inspector stack to one column, and Browser QA confirmed no horizontal overflow.
 
 ## Pending
 
@@ -64,7 +65,6 @@ No current pending items.
 
 ### Responsive And Visual QA
 
-- Fix narrow viewport behavior for the three-column platform: nav, center chart, and inspector should collapse predictably without overlapping.
 - Add a repeatable headless screenshot script for desktop 1440x1024 and narrow mobile width.
 - Add visual regression notes or baseline screenshots under `docs/qa/` after each major fidelity pass.
 
@@ -83,7 +83,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Responsive QA - Fix narrow viewport behavior for the three-column platform". This is the best next task because the Paper and Risk workflows are now feature-complete enough to verify and harden across desktop and narrow widths.
+Start with "Responsive QA - Add a repeatable headless screenshot script for desktop 1440x1024 and narrow mobile width". This is the best next task because manual responsive QA now passes and should be captured in a repeatable script.
 
 ## Update Rules
 
