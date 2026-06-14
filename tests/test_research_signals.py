@@ -94,3 +94,24 @@ def test_chan_scanner_marks_second_sell_after_lower_high_breakdown():
 
     assert any(signal.kind == "CHAN_SELL_T2" for signal in result.signals)
     assert result.chan_score < 0
+
+
+def test_preview_returns_insufficient_bars_blocker_before_running_detectors():
+    preview = preview_research_signals(_bars([10, 10.2, 10.1]), min_bars=10)
+
+    assert preview.blockers[0].code == "INSUFFICIENT_BARS"
+    assert preview.signals == []
+    assert preview.score.direction == "neutral"
+
+
+def test_preview_combines_chan_and_rsi_scores_for_valid_bars():
+    closes = [12, 11.4, 10.8, 10.1, 9.8, 10.4, 11.1, 11.6, 10.9, 10.4, 10.8, 11.5, 12.0, 12.4, 12.8, 13.0]
+    preview = preview_research_signals(_bars(closes), min_bars=12, lookback=40)
+
+    assert preview.symbol == "000001"
+    assert preview.exchange == "SZSE"
+    assert preview.start.isoformat() == "2024-01-01"
+    assert preview.end.isoformat() == "2024-01-16"
+    assert preview.blockers == []
+    assert preview.score.direction in {"bullish", "bearish", "neutral"}
+    assert preview.signals
