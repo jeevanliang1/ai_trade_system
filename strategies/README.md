@@ -15,6 +15,7 @@ src/ai_trade_system/strategies/
 - `DualMovingAverageStrategy`: 双均线趋势跟随。
 - `RsiMeanReversionStrategy`: RSI 均值回归。
 - `BollingerMeanReversionStrategy`: 布林带均值回归。
+- `ChanRsiResearchStrategy`: 缠论 + 增强 RSI 研究预览策略。
 - `DonchianBreakoutStrategy`: 通道突破。
 - `PriceMomentumStrategy`: 价格动量。
 

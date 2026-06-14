@@ -50,6 +50,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Responsive platform collapse is complete for current scope: at 390px narrow width the shell uses natural scrolling, navigation wraps, content and inspector stack to one column, and Browser QA confirmed no horizontal overflow.
 - Repeatable headless screenshots are complete for current scope: `scripts/capture_app_screenshots.mjs` captures desktop 1440x1024 and narrow 390x844 React platform PNGs after waiting for real app content, with usage documented in `docs/qa/headless-chrome-screenshots.md`.
 - Market Analysis Strategy Fusion first slice is complete for current scope: backend `ai_trade_system.research` modules generate lightweight Chan plus enhanced RSI previews, FastAPI exposes `/api/research/signals/preview`, and Strategy Workshop can request and render score, blockers, and signal rows.
+- Market Analysis Strategy Fusion backtest wrapper is complete for current scope: `ChanRsiResearchStrategy` is a built-in `Strategy` that reuses the research preview semantics, appears in strategy discovery, emits backtestable `Signal` objects, and can run through the existing local backtest engine.
 
 ## Pending
 
@@ -71,7 +72,6 @@ No current pending items.
 
 ### Market Analysis Strategy Fusion
 
-- Wrap the confirmed Chan plus enhanced RSI preview as a backtestable `Strategy` after the preview semantics are validated.
 - Add a dedicated Signal Radar page and batch scan mode after the single-symbol preview is stable.
 
 ### API And Error Handling
@@ -89,7 +89,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Market Analysis Strategy Fusion - Wrap the confirmed Chan plus enhanced RSI preview as a backtestable Strategy". This is the best next task because the first single-symbol research preview is now available, and the next useful integration step is to validate the same semantics through the existing backtest path before any batch scan or Signal Radar page.
+Start with "Market Analysis Strategy Fusion - Add a dedicated Signal Radar page and batch scan mode". This is the best next task because the single-symbol Chan plus enhanced RSI preview is now available both as a research preview and as a backtestable strategy, so the next useful product step is broader discovery across a selected stock universe.
 
 ## Update Rules
 

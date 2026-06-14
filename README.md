@@ -136,6 +136,7 @@ python -m pip install -e ".[web,data]"
 - `DualMovingAverageStrategy`: 双均线趋势跟随。
 - `RsiMeanReversionStrategy`: RSI 超卖/超买均值回归。
 - `BollingerMeanReversionStrategy`: 布林带下轨买入、回归中轨卖出。
+- `ChanRsiResearchStrategy`: 将缠论 + 增强 RSI 研究预览包装为可回测策略。
 - `DonchianBreakoutStrategy`: Donchian/Turtle 突破入场、跌破退出通道离场。
 - `PriceMomentumStrategy`: 价格动量入场、负动量退出。
 
