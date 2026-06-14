@@ -5,7 +5,7 @@ import { DataTable } from "../components/DataTable";
 import { MetricStrip } from "../components/MetricStrip";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { ToolbarButton } from "../components/ToolbarButton";
-import type { BacktestResponse, PortfolioRequest, PlatformSettings, StrategySpec } from "../types";
+import type { BacktestResponse, PortfolioRequest, PlatformSettings, SignalRow, StrategySpec } from "../types";
 import { drawdownOption, equityOption, priceOption } from "./chartOptions";
 import type { PageProps, PlatformState } from "./pageTypes";
 import { useState } from "react";
@@ -169,7 +169,7 @@ export function BacktestResultPanel({
       {!result ? <BacktestResultStatePanel issues={readinessIssues} /> : null}
       <ChartPanel title="资金曲线" option={equityOption(result)} height={260} />
       <ChartPanel title="回撤曲线" option={drawdownOption(result)} height={220} />
-      <ChartPanel title="买卖点" option={priceOption(result?.bars ?? [])} height={320} />
+      <ChartPanel title="买卖点" option={priceOption(result?.bars ?? [], backtestTradeSignals(result?.trades ?? []))} height={320} />
       <section className="panel">
         <div className="panel-title">交易明细</div>
         <DataTable rows={(result?.trades ?? []) as unknown as Record<string, unknown>[]} />
@@ -196,6 +196,23 @@ function BacktestResultStatePanel({ issues }: { issues: BacktestReadinessIssue[]
       ) : null}
     </section>
   );
+}
+
+function backtestTradeSignals(trades: BacktestResponse["trades"]): SignalRow[] {
+  return trades.flatMap((trade) => {
+    const action: SignalRow["action"] | null = trade.side === "buy" ? "buy" : trade.side === "sell" ? "sell" : null;
+    if (!action) return [];
+    return [
+      {
+        trading_day: trade.trading_day,
+        action,
+        symbol: trade.symbol,
+        price: trade.price,
+        volume: trade.volume,
+        reason: "回测成交"
+      }
+    ];
+  });
 }
 
 function BacktestExportPanel({ result }: { result: BacktestResponse | null }) {

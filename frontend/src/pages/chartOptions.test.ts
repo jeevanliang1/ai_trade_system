@@ -73,11 +73,21 @@ test("priceOption renders buy and sell markers with tooltip detail payloads", ()
 
   const option = priceOption(bars, signals);
   const series = option.series as Array<Record<string, unknown>>;
-  const buySeries = series.find((item) => item.name === "买入") as { data: Array<Record<string, unknown>>; symbol: string };
-  const sellSeries = series.find((item) => item.name === "卖出") as { data: Array<Record<string, unknown>>; symbol: string; symbolRotate: number };
+  const buySeries = series.find((item) => item.name === "买入") as { data: Array<Record<string, unknown>>; symbol: string; symbolSize: number; itemStyle: Record<string, string> };
+  const sellSeries = series.find((item) => item.name === "卖出") as {
+    data: Array<Record<string, unknown>>;
+    symbol: string;
+    symbolRotate: number;
+    symbolSize: number;
+    itemStyle: Record<string, string>;
+  };
 
   expect(buySeries.symbol).toBe("triangle");
   expect(sellSeries.symbolRotate).toBe(180);
+  expect(buySeries.symbolSize).toBeGreaterThanOrEqual(12);
+  expect(sellSeries.symbolSize).toBeGreaterThanOrEqual(12);
+  expect(buySeries.itemStyle.color).toBe("#facc15");
+  expect(sellSeries.itemStyle.color).toBe("#a855f7");
   expect(buySeries.data[0]).toMatchObject({
     name: "买入 000001",
     value: ["2024-01-02", 10.8],

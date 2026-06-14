@@ -5,6 +5,14 @@ import { BacktestPage, BacktestResultPanel } from "./BacktestPage";
 import type { PageProps, PlatformActions, PlatformState } from "./pageTypes";
 import type { BacktestResponse } from "../types";
 
+vi.mock("../components/ChartPanel", () => ({
+  ChartPanel: ({ title, option }: { title: string; option: unknown }) => (
+    <section aria-label={`${title} 图表`} data-chart-option={JSON.stringify(option)}>
+      <span>{title}</span>
+    </section>
+  )
+}));
+
 function readBlobText(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -225,6 +233,66 @@ test("BacktestResultPanel renders metrics, chart title, and trade table", () => 
   expect(screen.getByText("112,000.00")).toBeInTheDocument();
   expect(screen.getByText("资金曲线")).toBeInTheDocument();
   expect(screen.getByText("交易明细")).toBeInTheDocument();
+});
+
+test("BacktestResultPanel renders buy and sell trade markers on the buy-sell chart", () => {
+  const result: BacktestResponse = {
+    bars: [
+      {
+        symbol: "000001",
+        exchange: "SZSE",
+        trading_day: "2024-01-02",
+        open_price: 10,
+        high_price: 10.5,
+        low_price: 9.8,
+        close_price: 10.2,
+        volume: 1000,
+        turnover: 10200
+      },
+      {
+        symbol: "000001",
+        exchange: "SZSE",
+        trading_day: "2024-01-03",
+        open_price: 10.2,
+        high_price: 10.8,
+        low_price: 10.1,
+        close_price: 10.6,
+        volume: 1200,
+        turnover: 12720
+      }
+    ],
+    metrics: {
+      final_equity: 112000,
+      total_return_pct: 12,
+      annualized_return_pct: 18,
+      benchmark_return_pct: 7.5,
+      excess_return_pct: 4.5,
+      annual_volatility_pct: 16.2,
+      sharpe_ratio: 1.11,
+      max_drawdown_pct: -6,
+      trade_count: 2,
+      win_rate_pct: 50,
+      profit_factor: 1.8,
+      exposure_pct: 40
+    },
+    equity_curve: [],
+    drawdowns: [],
+    trades: [
+      { trading_day: "2024-01-02", side: "buy", symbol: "000001", price: 10.2, volume: 100, commission: 0.31 },
+      { trading_day: "2024-01-03", side: "sell", symbol: "000001", price: 10.6, volume: 100, commission: 0.32 }
+    ],
+    risk_status: { ok: true, warnings: [], enabled: true }
+  };
+
+  render(<BacktestResultPanel result={result} />);
+
+  const buySellChart = screen.getByLabelText("买卖点 图表");
+  const option = JSON.parse(buySellChart.getAttribute("data-chart-option") ?? "{}") as { series: Array<{ name: string; data: Array<{ value: [string, number]; reason: string }> }> };
+  const buySeries = option.series.find((item) => item.name === "买入");
+  const sellSeries = option.series.find((item) => item.name === "卖出");
+
+  expect(buySeries?.data[0]).toMatchObject({ value: ["2024-01-02", 10.2], reason: "回测成交" });
+  expect(sellSeries?.data[0]).toMatchObject({ value: ["2024-01-03", 10.6], reason: "回测成交" });
 });
 
 test("BacktestResultPanel disables exports until a result exists", () => {

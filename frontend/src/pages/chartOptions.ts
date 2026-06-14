@@ -44,8 +44,9 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
         name: "买入",
         data: signals.filter((row) => row.action === "buy").map((row) => signalMarker(row, "买入")),
         symbol: "triangle",
-        symbolSize: 9,
-        itemStyle: { color: "#059669" }
+        symbolSize: 13,
+        z: 5,
+        itemStyle: { color: "#facc15", borderColor: "#854d0e", borderWidth: 1 }
       },
       {
         type: "scatter",
@@ -53,8 +54,9 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
         data: signals.filter((row) => row.action === "sell").map((row) => signalMarker(row, "卖出")),
         symbol: "triangle",
         symbolRotate: 180,
-        symbolSize: 9,
-        itemStyle: { color: "#dc2626" }
+        symbolSize: 13,
+        z: 5,
+        itemStyle: { color: "#a855f7", borderColor: "#581c87", borderWidth: 1 }
       }
     ]
   };
