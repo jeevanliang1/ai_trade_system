@@ -1651,6 +1651,30 @@ button {
   color: var(--red);
 }
 
+.research-signal-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.status-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.status-pill.bullish {
+  background: #ecfdf3;
+  color: #027a48;
+}
+
+.status-pill.bearish {
+  background: #fef3f2;
+  color: #b42318;
+}
+
 .table-wrap {
   overflow: auto;
   max-height: 360px;

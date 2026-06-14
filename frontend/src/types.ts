@@ -60,6 +60,45 @@ export type SignalRow = {
   reason: string;
 };
 
+export type ResearchSignal = {
+  trading_day: string;
+  symbol: string;
+  exchange: string;
+  kind: string;
+  action: "buy" | "sell" | "watch" | string;
+  price: number;
+  strength: number;
+  score: number;
+  title: string;
+  reason: string;
+  tags: string[];
+};
+
+export type ResearchSignalBlocker = {
+  code: "NO_BARS" | "INSUFFICIENT_BARS" | "UNSUPPORTED_DATA" | "OPTIONAL_ENGINE_UNAVAILABLE" | string;
+  message: string;
+};
+
+export type ResearchSignalScore = {
+  total_score: number;
+  direction: "bullish" | "bearish" | "neutral" | string;
+  confidence: number;
+  chan_score: number;
+  rsi_score: number;
+  summary: string;
+};
+
+export type ResearchSignalPreview = {
+  symbol: string;
+  exchange: string;
+  start: string | null;
+  end: string | null;
+  bars: number;
+  signals: ResearchSignal[];
+  score: ResearchSignalScore;
+  blockers: ResearchSignalBlocker[];
+};
+
 export type TradeRow = {
   trading_day: string;
   side: string;

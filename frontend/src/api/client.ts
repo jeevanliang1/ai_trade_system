@@ -6,6 +6,7 @@ import type {
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
+  ResearchSignalPreview,
   RiskStatus,
   SignalsResponse,
   Stock,
@@ -69,6 +70,11 @@ export const api = {
     apiRequest<SignalsResponse>("/api/signals/preview", { method: "POST", body: JSON.stringify({ settings, strategy }) }),
   previewPortfolio: (settings: PlatformSettings, portfolio: PortfolioRequest) =>
     apiRequest<SignalsResponse>("/api/portfolio/preview", { method: "POST", body: JSON.stringify({ settings, portfolio }) }),
+  previewResearchSignals: (settings: PlatformSettings, min_bars = 60, lookback = 120) =>
+    apiRequest<ResearchSignalPreview>("/api/research/signals/preview", {
+      method: "POST",
+      body: JSON.stringify({ settings, min_bars, lookback })
+    }),
   runBacktest: (settings: PlatformSettings, strategy: StrategySelection | null, portfolio: PortfolioRequest | null, mode: "single" | "portfolio") =>
     apiRequest<BacktestResponse>("/api/backtest", { method: "POST", body: JSON.stringify({ settings, strategy, portfolio, mode }) }),
   research: (settings: PlatformSettings, information_notes: string[], prompt_mode: string, horizon: string) =>

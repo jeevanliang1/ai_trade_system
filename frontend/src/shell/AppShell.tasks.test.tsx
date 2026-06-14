@@ -25,6 +25,7 @@ const apiMock = vi.hoisted(() => {
       strategies: vi.fn(),
       previewSignals: vi.fn(),
       previewPortfolio: vi.fn(),
+      previewResearchSignals: vi.fn(),
       runBacktest: vi.fn(),
       research: vi.fn(),
       runPaper: vi.fn(),
@@ -132,6 +133,33 @@ function paperResponse() {
     orders: [{ event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100 }],
     equity: [{ trading_day: "2024-01-05", equity: 100800, cash: 99750 }],
     summary: { event: "service_stopped", final_equity: 100800 }
+  };
+}
+
+function researchSignalResponse() {
+  return {
+    symbol: "000001",
+    exchange: "SZSE",
+    start: "2024-01-02",
+    end: "2024-01-02",
+    bars: 1,
+    score: { total_score: 32, direction: "bullish", confidence: 0.58, chan_score: 32, rsi_score: 0, summary: "发现 1 个研究信号，综合方向为 bullish" },
+    blockers: [],
+    signals: [
+      {
+        trading_day: "2024-01-02",
+        symbol: "000001",
+        exchange: "SZSE",
+        kind: "CHAN_BUY_T2",
+        action: "buy",
+        price: 10.2,
+        strength: 0.62,
+        score: 32,
+        title: "缠论二买",
+        reason: "回落低点抬高后向上修复",
+        tags: ["chan", "second-buy"]
+      }
+    ]
   };
 }
 
@@ -274,6 +302,29 @@ test("AppShell loads paper events from the configured log path", async () => {
   await waitFor(() => expect(apiMock.api.paperEvents).toHaveBeenCalledWith(settings.log_path));
   expect(screen.getByText("已加载 3 条事件")).toBeVisible();
   expect(screen.getByText(/最后事件 service_stopped/)).toBeVisible();
+});
+
+test("AppShell previews Chan RSI research signals from Strategy Workshop", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.previewResearchSignals.mockResolvedValueOnce(researchSignalResponse());
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "缠论/RSI研判" }));
+
+  await waitFor(() => expect(apiMock.api.previewResearchSignals).toHaveBeenCalledWith(settings));
+  expect(await screen.findByText("CHAN_BUY_T2")).toBeVisible();
+  expect(screen.getByText("回落低点抬高后向上修复")).toBeVisible();
 });
 
 test("AppShell shows risk evaluation API errors and clears busy state", async () => {

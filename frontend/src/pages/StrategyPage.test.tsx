@@ -66,6 +66,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     bars: [],
     dataSummary: null,
     signals: { bars: [], signals: [], summary: { signals: 3, buys: 2, sells: 1 } },
+    researchSignals: null,
     backtest: {
       bars: [],
       metrics: {
@@ -107,6 +108,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     downloadData: vi.fn(),
     previewSignals: vi.fn(),
     previewPortfolio: vi.fn(),
+    previewResearchSignals: vi.fn(),
     runBacktest: vi.fn(),
     researchAI: vi.fn(),
     runPaper: vi.fn(),
@@ -238,4 +240,52 @@ test("StrategyPage blocks preview when numeric strategy parameters are empty", a
 
   expect(previewSignals).not.toHaveBeenCalled();
   expect(screen.getByText("fast 不能为空")).toBeInTheDocument();
+});
+
+test("StrategyPage can request Chan RSI research preview", async () => {
+  const user = userEvent.setup();
+  const previewResearchSignals = vi.fn().mockResolvedValue(undefined);
+
+  render(<StrategyPage {...makeProps({}, { previewResearchSignals })} />);
+
+  await user.click(screen.getByRole("button", { name: "缠论/RSI研判" }));
+
+  expect(previewResearchSignals).toHaveBeenCalled();
+});
+
+test("StrategyPage renders research blockers and populated signal rows", () => {
+  render(
+    <StrategyPage
+      {...makeProps({
+        researchSignals: {
+          symbol: "000001",
+          exchange: "SZSE",
+          start: "2024-01-01",
+          end: "2024-04-01",
+          bars: 80,
+          score: { total_score: 32, direction: "bullish", confidence: 0.58, chan_score: 32, rsi_score: 0, summary: "发现 1 个研究信号，综合方向为 bullish" },
+          blockers: [],
+          signals: [
+            {
+              trading_day: "2024-03-29",
+              symbol: "000001",
+              exchange: "SZSE",
+              kind: "CHAN_BUY_T2",
+              action: "buy",
+              price: 12.4,
+              strength: 0.62,
+              score: 32,
+              title: "缠论二买",
+              reason: "回落低点抬高后向上修复",
+              tags: ["chan", "second-buy"]
+            }
+          ]
+        }
+      })}
+    />
+  );
+
+  expect(screen.getAllByText("缠论/RSI研判").length).toBeGreaterThan(0);
+  expect(screen.getByText("CHAN_BUY_T2")).toBeInTheDocument();
+  expect(screen.getByText("回落低点抬高后向上修复")).toBeInTheDocument();
 });

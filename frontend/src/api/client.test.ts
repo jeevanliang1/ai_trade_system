@@ -1,4 +1,5 @@
 import { ApiError, api, apiRequest } from "./client";
+import type { PlatformSettings } from "../types";
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -26,6 +27,41 @@ test("paperEvents fetches the encoded paper event log path", async () => {
     "/api/paper/events?path=logs%2Fpaper%20events.jsonl",
     expect.objectContaining({
       headers: expect.objectContaining({ "Content-Type": "application/json" })
+    })
+  );
+});
+
+test("previewResearchSignals posts settings with default research windows", async () => {
+  const settings: PlatformSettings = {
+    symbol: "000001",
+    exchange: "SZSE",
+    start_date: "20240101",
+    end_date: "20241231",
+    adjust: "qfq",
+    csv_path: "data/000001_daily.csv",
+    log_path: "logs/paper_events.jsonl",
+    initial_cash: 100000,
+    commission_rate: 0.0003,
+    slippage: 0.01,
+    max_order_cash: 50000,
+    max_drawdown_pct: 20,
+    min_cash_balance: 0,
+    max_position_shares: 50000,
+    risk_enabled: true,
+    stop_loss_mode: "fixed_pct"
+  };
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ symbol: "000001", exchange: "SZSE", start: null, end: null, bars: 0, signals: [], blockers: [], score: {} })
+  }) as unknown as typeof fetch;
+
+  await api.previewResearchSignals(settings);
+
+  expect(global.fetch).toHaveBeenCalledWith(
+    "/api/research/signals/preview",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ settings, min_bars: 60, lookback: 120 })
     })
   );
 });

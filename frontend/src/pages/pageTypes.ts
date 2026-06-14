@@ -6,6 +6,7 @@ import type {
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
+  ResearchSignalPreview,
   RiskStatus,
   SignalsResponse,
   StrategySelection,
@@ -20,6 +21,7 @@ export type PlatformState = {
   bars: Bar[];
   dataSummary: DataSummary | null;
   signals: SignalsResponse | null;
+  researchSignals: ResearchSignalPreview | null;
   portfolio: PortfolioRequest;
   backtest: BacktestResponse | null;
   insight: AIInsight | null;
@@ -43,6 +45,7 @@ export type PlatformActions = {
   downloadData: () => Promise<void>;
   previewSignals: () => Promise<void>;
   previewPortfolio: () => Promise<void>;
+  previewResearchSignals: () => Promise<void>;
   runBacktest: (mode?: "single" | "portfolio") => Promise<void>;
   researchAI: (notes: string[], mode: string, horizon: string) => Promise<void>;
   runPaper: (mode?: "single" | "portfolio") => Promise<void>;

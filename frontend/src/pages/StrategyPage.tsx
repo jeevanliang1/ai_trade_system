@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Expand, LocateFixed, Plus, RotateCcw, Save, Search, Star } from "lucide-react";
+import { Activity, Circle, Expand, LocateFixed, Plus, RotateCcw, Save, Search, Star } from "lucide-react";
 
 import { api } from "../api/client";
 import { ChartPanel } from "../components/ChartPanel";
@@ -12,7 +12,7 @@ import { ToolbarButton } from "../components/ToolbarButton";
 import { drawdownOption, priceOption, volumeOption } from "./chartOptions";
 import { currentStrategy } from "./pageTypes";
 import type { PageProps } from "./pageTypes";
-import type { Bar, BacktestResponse, SignalsResponse, StrategySpec } from "../types";
+import type { Bar, BacktestResponse, ResearchSignalPreview, SignalsResponse, StrategySpec } from "../types";
 
 type WorkshopMode = "strategy" | "portfolio" | "backtest";
 type ResultTab = "summary" | "trades" | "positions" | "factors" | "risk" | "attribution";
@@ -64,6 +64,7 @@ export function StrategyPage({ state, actions }: PageProps) {
 
   const maLegend = useMemo(() => movingAverageLegend(state.bars), [state.bars]);
   const comparisonRows = useMemo(() => strategyComparisonRows(state.signals, state.backtest), [state.signals, state.backtest]);
+  const researchRows = useMemo(() => researchSignalRows(state.researchSignals), [state.researchSignals]);
 
   useEffect(() => {
     let mounted = true;
@@ -203,6 +204,9 @@ export function StrategyPage({ state, actions }: PageProps) {
         <ToolbarButton icon={<Save size={16} />} variant="primary" onClick={previewSignals}>
           预览信号
         </ToolbarButton>
+        <ToolbarButton icon={<Activity size={16} />} onClick={actions.previewResearchSignals}>
+          缠论/RSI研判
+        </ToolbarButton>
         <div className="panel-title">策略源码</div>
         {selected?.editable ? (
           <>
@@ -298,6 +302,7 @@ export function StrategyPage({ state, actions }: PageProps) {
             comparisonRows={comparisonRows}
           />
         </section>
+        <ResearchSignalPanel preview={state.researchSignals} rows={researchRows} />
       </main>
     </div>
   );
@@ -387,6 +392,57 @@ function ResultTabContent({
       <DataTable rows={comparisonRows} columns={["指标", "策略回测", "现金基准", "长持"]} emptyText="等待预览或回测数据" />
     </>
   );
+}
+
+function ResearchSignalPanel({ preview, rows }: { preview: ResearchSignalPreview | null; rows: Record<string, unknown>[] }) {
+  if (!preview) {
+    return (
+      <section className="panel research-signal-panel">
+        <div className="panel-title between">
+          <span>缠论/RSI研判</span>
+          <span className="caption">未生成</span>
+        </div>
+        <div className="empty-table">暂无研判结果</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel research-signal-panel">
+      <div className="panel-title between">
+        <span>缠论/RSI研判</span>
+        <span className={`status-pill ${preview.score.direction}`}>{preview.score.direction}</span>
+      </div>
+      <MetricStrip
+        metrics={[
+          { label: "综合分", value: preview.score.total_score.toFixed(1), tone: preview.score.total_score >= 0 ? "positive" : "negative" },
+          { label: "置信度", value: `${Math.round(preview.score.confidence * 100)}%` },
+          { label: "缠论", value: preview.score.chan_score.toFixed(1) },
+          { label: "RSI", value: preview.score.rsi_score.toFixed(1) }
+        ]}
+      />
+      {preview.blockers.length ? (
+        <div className="parameter-errors" role="alert">
+          {preview.blockers.map((blocker) => (
+            <span key={blocker.code}>{blocker.message}</span>
+          ))}
+        </div>
+      ) : null}
+      <p className="caption">{preview.score.summary}</p>
+      <DataTable rows={rows} columns={["日期", "类型", "方向", "价格", "分数", "原因"]} emptyText="暂无缠论/RSI触发信号" />
+    </section>
+  );
+}
+
+function researchSignalRows(preview: ResearchSignalPreview | null): Record<string, unknown>[] {
+  return (preview?.signals ?? []).map((signal) => ({
+    日期: signal.trading_day,
+    类型: signal.kind,
+    方向: signal.action,
+    价格: signal.price,
+    分数: signal.score,
+    原因: signal.reason
+  }));
 }
 
 function strategyComparisonRows(signals: SignalsResponse | null, backtest: BacktestResponse | null): Record<string, unknown>[] {

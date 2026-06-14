@@ -94,6 +94,7 @@ function initialState(): PlatformState {
     bars: [],
     dataSummary: null,
     signals: null,
+    researchSignals: null,
     portfolio: defaultPortfolio(FALLBACK_STRATEGIES[0].id),
     backtest: null,
     insight: null,
@@ -151,6 +152,7 @@ export function AppShell() {
             bars: [],
             dataSummary: null,
             signals: null,
+            researchSignals: null,
             backtest: null,
             paper: null,
             message: `已切换数据目标：${settings.symbol} ${settings.exchange}，请加载或下载行情`
@@ -199,6 +201,8 @@ export function AppShell() {
         runTask(setState, "预览信号", async (current) => ({ signals: await api.previewSignals(current.settings, currentSelection(current)) })),
       previewPortfolio: () =>
         runTask(setState, "预览组合", async (current) => ({ signals: await api.previewPortfolio(current.settings, current.portfolio) })),
+      previewResearchSignals: () =>
+        runTask(setState, "生成缠论/RSI研判", async (current) => ({ researchSignals: await api.previewResearchSignals(current.settings) })),
       runBacktest: (mode = "single") =>
         runTask(setState, `运行${backtestModeLabel(mode)}回测`, async (current) => {
           const backtest = await api.runBacktest(current.settings, currentSelection(current), current.portfolio, mode);
