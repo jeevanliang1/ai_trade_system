@@ -10,6 +10,7 @@
 - `indicators`: 计算均线、RSI、布林带、动量、回撤和最新技术指标快照。
 - `analytics`: 将回测资金曲线和交易记录转换为收益、基准收益、超额收益、波动、夏普比率、回撤、胜率、盈亏比和持仓暴露等指标。
 - `portfolio`: 将多个 `Strategy` 按加权投票、等权投票或优先级合成为一个可回测的组合策略。
+- `research`: 研究信号层，当前将本地 K线转换为分析帧，并生成轻量缠论二买/二卖、增强 RSI 超买/超卖/修复/背离和综合评分预览。
 - `risk`: 汇总确定性风控阈值和回测风险状态。
 - `llm`: Mock LLM 研究员接口，基于技术指标、信息面摘要和风控上下文输出结构化研究观点。
 - `strategies`: 示例策略和后续自定义策略目录。
@@ -28,6 +29,7 @@ AKShare/public stock list -> stock_catalog -> data/a_share_stocks.csv -> Web/CLI
 AKShare/public data -> normalize_bars -> CSV/local storage
 CSV/local storage -> Strategy.on_bar -> Signal -> PaperBroker -> equity/trades/logs
 CSV/local storage -> indicators/analytics -> FastAPI -> React charts/tables
+CSV/local storage -> research Chan/RSI preview -> FastAPI -> React Strategy Workshop
 strategies/*.py -> strategy registry -> selected Strategy -> backtest/paper service
 selected Strategy[] -> portfolio aggregation -> backtest/paper service
 technical snapshot + information notes + risk context -> MockLLMProvider -> LLMInsight

@@ -49,6 +49,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Risk Workspace UI/API hardening is complete for current scope: focused tests cover RiskPage rendering, AppShell risk evaluation failure recovery, and `/api/risk/evaluate` valid plus invalid payload route behavior.
 - Responsive platform collapse is complete for current scope: at 390px narrow width the shell uses natural scrolling, navigation wraps, content and inspector stack to one column, and Browser QA confirmed no horizontal overflow.
 - Repeatable headless screenshots are complete for current scope: `scripts/capture_app_screenshots.mjs` captures desktop 1440x1024 and narrow 390x844 React platform PNGs after waiting for real app content, with usage documented in `docs/qa/headless-chrome-screenshots.md`.
+- Market Analysis Strategy Fusion first slice is complete for current scope: backend `ai_trade_system.research` modules generate lightweight Chan plus enhanced RSI previews, FastAPI exposes `/api/research/signals/preview`, and Strategy Workshop can request and render score, blockers, and signal rows.
 
 ## Pending
 
@@ -70,7 +71,6 @@ No current pending items.
 
 ### Market Analysis Strategy Fusion
 
-- Add current-symbol Chan plus enhanced RSI signal preview: backend research modules, `/api/research/signals/preview`, Strategy Workshop signal table/chart markers, focused backend/frontend tests, and browser screenshot acceptance.
 - Wrap the confirmed Chan plus enhanced RSI preview as a backtestable `Strategy` after the preview semantics are validated.
 - Add a dedicated Signal Radar page and batch scan mode after the single-symbol preview is stable.
 
@@ -89,7 +89,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Market Analysis Strategy Fusion - Add current-symbol Chan plus enhanced RSI signal preview". This is the best next task because the first market_analysis fusion slice has been scoped to a single-symbol research signal preview that can use the existing React + FastAPI data and chart surface without adding ClickHouse, full-market scanning, or live execution behavior.
+Start with "Market Analysis Strategy Fusion - Wrap the confirmed Chan plus enhanced RSI preview as a backtestable Strategy". This is the best next task because the first single-symbol research preview is now available, and the next useful integration step is to validate the same semantics through the existing backtest path before any batch scan or Signal Radar page.
 
 ## Update Rules
 
