@@ -188,6 +188,16 @@ test("AppShell clears busy state and shows backend detail when a data task rejec
   expect(screen.queryByText("加载CSV中...")).not.toBeInTheDocument();
 });
 
+test("AppShell explains fetch failures as local API connection issues", async () => {
+  apiMock.api.bootstrap.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+  render(<AppShell />);
+
+  await waitFor(() =>
+    expect(screen.getAllByText("请求失败：本地 API 未连接，请确认 ./scripts/run_app.sh 正在运行。").length).toBeGreaterThan(0)
+  );
+});
+
 test("AppShell clears stale bars and summaries when Data Center selects a different stock target", async () => {
   const user = userEvent.setup();
   apiMock.api.bootstrap.mockResolvedValue({

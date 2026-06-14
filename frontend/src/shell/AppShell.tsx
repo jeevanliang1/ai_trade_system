@@ -21,7 +21,8 @@ import {
   UserRound
 } from "lucide-react";
 
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
+import { formatRequestError } from "../api/errors";
 import { InspectorPanel } from "../components/InspectorPanel";
 import { ToolbarButton } from "../components/ToolbarButton";
 import { AIPage } from "../pages/AIPage";
@@ -416,7 +417,5 @@ function backtestModeLabel(mode: "single" | "portfolio") {
 }
 
 function formatError(error: unknown): string {
-  if (error instanceof ApiError) return `请求失败：${error.message}`;
-  if (error instanceof Error) return `请求失败：${error.message}`;
-  return "请求失败";
+  return `请求失败：${formatRequestError(error)}`;
 }

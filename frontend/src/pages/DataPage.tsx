@@ -2,6 +2,7 @@ import { AlertTriangle, Download, FileDown, RefreshCw, Search } from "lucide-rea
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
+import { formatRequestError } from "../api/errors";
 import { ChartPanel } from "../components/ChartPanel";
 import { DataTable } from "../components/DataTable";
 import { MetricStrip } from "../components/MetricStrip";
@@ -14,6 +15,7 @@ export function DataPage({ state, actions }: PageProps) {
   const [stockQuery, setStockQuery] = useState("");
   const [stockResults, setStockResults] = useState<Stock[]>([]);
   const [stockSearchStatus, setStockSearchStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [stockSearchMessage, setStockSearchMessage] = useState("");
 
   const update = (key: keyof typeof state.settings, value: string | number) => {
     actions.setSettings({ ...state.settings, [key]: value });
@@ -28,21 +30,25 @@ export function DataPage({ state, actions }: PageProps) {
     if (!query) {
       setStockResults([]);
       setStockSearchStatus("idle");
+      setStockSearchMessage("");
       return;
     }
     let cancelled = false;
     setStockSearchStatus("loading");
+    setStockSearchMessage("");
     void api
       .stocks(query, 8)
       .then((stocks) => {
         if (cancelled) return;
         setStockResults(stocks);
         setStockSearchStatus("idle");
+        setStockSearchMessage("");
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
         setStockResults([]);
         setStockSearchStatus("error");
+        setStockSearchMessage(`股票搜索失败：${formatRequestError(error)}`);
       });
     return () => {
       cancelled = true;
@@ -79,7 +85,7 @@ export function DataPage({ state, actions }: PageProps) {
         {(stockResults.length > 0 || stockSearchStatus !== "idle") && (
           <div className="stock-results" aria-label="股票搜索结果">
             {stockSearchStatus === "loading" && <div className="stock-result-note">搜索中...</div>}
-            {stockSearchStatus === "error" && <div className="stock-result-note negative">股票搜索失败</div>}
+            {stockSearchStatus === "error" && <div className="stock-result-note negative">{stockSearchMessage || "股票搜索失败"}</div>}
             {stockSearchStatus === "idle" &&
               stockResults.map((stock) => (
                 <button

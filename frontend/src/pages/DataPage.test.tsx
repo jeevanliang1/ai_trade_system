@@ -134,6 +134,18 @@ test("DataPage searches stocks and selecting a result updates symbol exchange an
   });
 });
 
+test("DataPage explains stock search network failures as local API connection issues", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.stocks).mockRejectedValue(new TypeError("Failed to fetch"));
+  const props = makeProps();
+
+  render(<DataPage {...props} />);
+
+  await user.type(screen.getByLabelText("搜索股票名称或代码"), "平安");
+
+  expect(await screen.findByText("股票搜索失败：本地 API 未连接，请确认 ./scripts/run_app.sh 正在运行。")).toBeInTheDocument();
+});
+
 test("DataPage validates date range and CSV path before load or download actions", async () => {
   const user = userEvent.setup();
   const props = makeProps({
