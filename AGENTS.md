@@ -14,6 +14,8 @@
 - `docs/README.md`: AI documentation index.
 - `docs/auto-sedimentation-skill.md`: required task close-out documentation workflow.
 - `docs/rules/auto-sedimentation-closeout.md`: mandatory sedimentation close-out rule.
+- `docs/rules/feature-backlog-continuation.md`: mandatory feature decomposition and continuation backlog rule.
+- `docs/context/pending-features.md`: durable pending feature list and next recommended feature.
 - `docs/qa/headless-chrome-screenshots.md`: required headless Chrome screenshot acceptance workflow.
 
 ## Product And Engineering Rules
@@ -38,6 +40,7 @@
 - For docs-only changes, run lightweight file existence/non-empty checks relevant to the changed docs.
 - Report any verification command that was not run and why.
 - At task close-out, provide a headless Chrome screenshot for user acceptance whenever a browser-renderable project surface is available; if no such surface can be captured, report the exact reason.
+- When the user gives a persona, requirement, page/function to replicate, or asks to continue broad product work, first decompose the work into concrete feature items and update `docs/context/pending-features.md`. Remove completed items from the pending list, add newly discovered pending work before starting it, and keep exactly one next recommended feature recorded there.
 
 ## AI Auto Sedimentation Rules
 
@@ -45,4 +48,5 @@
 - Capture durable project knowledge under the smallest appropriate `docs/` file; avoid duplicating facts already obvious from code.
 - Any rule that changes future AI default behavior must be mirrored here in concise form.
 - Close-out evidence should include a headless Chrome screenshot path or an explicit not-applicable/blocker note.
+- For broad product/page/function work, sediment pending features in `docs/context/pending-features.md`; final responses must mention pending-list changes and the recorded next recommended feature.
 - Final responses must include either `沉淀：已更新 ...` or `沉淀：无需新增文档，原因是 ...`.

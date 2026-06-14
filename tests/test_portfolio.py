@@ -38,6 +38,55 @@ def test_weighted_vote_keeps_buy_when_buy_weight_is_larger(sample_bar):
     assert "portfolio_weighted_vote" in signals[0].reason
 
 
+def test_weighted_vote_records_strategy_signal_contributions(sample_bar):
+    strategy = PortfolioStrategy(
+        [
+            StrategyAllocation("buy", BuyStrategy(), 0.7),
+            StrategyAllocation("sell", SellStrategy(), 0.3),
+        ],
+        mode="weighted_vote",
+    )
+
+    strategy.on_bar(sample_bar)
+
+    assert strategy.last_breakdown.buy_score == 0.7
+    assert strategy.last_breakdown.sell_score == 0.3
+    assert len(strategy.last_breakdown.contributions) == 2
+    buy, sell = strategy.last_breakdown.contributions
+    assert buy.allocation_index == 0
+    assert buy.name == "buy"
+    assert buy.action == "buy"
+    assert buy.score == 0.7
+    assert buy.weight == 0.7
+    assert buy.volume == 100
+    assert buy.reason == "buy"
+    assert buy.selected is True
+    assert sell.allocation_index == 1
+    assert sell.name == "sell"
+    assert sell.action == "sell"
+    assert sell.score == 0.3
+    assert sell.selected is False
+
+
+def test_first_active_records_selected_and_ignored_contributions(sample_bar):
+    strategy = PortfolioStrategy(
+        [
+            StrategyAllocation("buy", BuyStrategy(), 0.7),
+            StrategyAllocation("sell", SellStrategy(), 0.3),
+        ],
+        mode="first_active",
+    )
+
+    signals = strategy.on_bar(sample_bar)
+
+    assert signals[0].action == "buy"
+    assert len(strategy.last_breakdown.contributions) == 2
+    assert strategy.last_breakdown.contributions[0].selected is True
+    assert strategy.last_breakdown.contributions[0].allocation_index == 0
+    assert strategy.last_breakdown.contributions[1].selected is False
+    assert strategy.last_breakdown.contributions[1].allocation_index == 1
+
+
 def test_equal_vote_returns_no_signal_on_tie(sample_bar):
     strategy = PortfolioStrategy(
         [

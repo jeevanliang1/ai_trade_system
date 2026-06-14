@@ -8,6 +8,7 @@ import type {
   PortfolioRequest,
   RiskStatus,
   SignalsResponse,
+  Stock,
   StrategySelection,
   StrategySpec
 } from "../types";
@@ -45,6 +46,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 
 export const api = {
   bootstrap: () => apiRequest<BootstrapResponse>("/api/bootstrap"),
+  stocks: (query: string, limit = 20) => apiRequest<Stock[]>(`/api/stocks?query=${encodeURIComponent(query)}&limit=${limit}`),
   strategies: () => apiRequest<StrategySpec[]>("/api/strategies"),
   strategySource: (path: string) => apiRequest<{ path: string; source: string }>(`/api/strategies/source?path=${encodeURIComponent(path)}`),
   saveStrategySource: (filename: string, source: string) =>
@@ -87,7 +89,7 @@ export const api = {
           min_cash_balance: settings.min_cash_balance,
           max_position_shares: settings.max_position_shares,
           cooldown_days: 0,
-          enabled: true
+          enabled: settings.risk_enabled
         }
       })
     })

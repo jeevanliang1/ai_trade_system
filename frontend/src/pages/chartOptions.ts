@@ -1,7 +1,6 @@
 import type { BacktestResponse, Bar, SignalRow } from "../types";
 
 export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
-  const rows = signals;
   const start = visibleRangeStart(bars.length);
   return {
     animation: false,
@@ -43,7 +42,7 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
       {
         type: "scatter",
         name: "买入",
-        data: rows.filter((row) => row.action === "buy").map((row) => [row.trading_day, row.price]),
+        data: signals.filter((row) => row.action === "buy").map((row) => signalMarker(row, "买入")),
         symbol: "triangle",
         symbolSize: 9,
         itemStyle: { color: "#059669" }
@@ -51,13 +50,32 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
       {
         type: "scatter",
         name: "卖出",
-        data: rows.filter((row) => row.action === "sell").map((row) => [row.trading_day, row.price]),
+        data: signals.filter((row) => row.action === "sell").map((row) => signalMarker(row, "卖出")),
         symbol: "triangle",
         symbolRotate: 180,
         symbolSize: 9,
         itemStyle: { color: "#dc2626" }
       }
     ]
+  };
+}
+
+function signalMarker(row: SignalRow, label: string) {
+  return {
+    name: `${label} ${row.symbol}`,
+    value: [row.trading_day, row.price],
+    stockSymbol: row.symbol,
+    volume: row.volume,
+    reason: row.reason,
+    tooltip: {
+      formatter: [
+        `${label} ${row.symbol}`,
+        `日期：${row.trading_day}`,
+        `价格：${row.price}`,
+        `数量：${row.volume}`,
+        `原因：${row.reason}`
+      ].join("<br/>")
+    }
   };
 }
 
@@ -104,11 +122,27 @@ export function equityOption(result: BacktestResponse | null) {
 
 export function drawdownOption(result: BacktestResponse | null) {
   const drawdowns = result?.drawdowns ?? [];
+  const start = visibleRangeStart(drawdowns.length);
   return {
+    animation: false,
     grid: { left: 42, right: 18, top: 18, bottom: 24 },
     tooltip: { trigger: "axis" },
+    dataZoom: [
+      { type: "inside", start, end: 100 },
+      { type: "slider", show: false, start, end: 100 }
+    ],
     xAxis: { type: "category", data: drawdowns.map((point) => point.trading_day), axisLabel: { color: "#667085" } },
-    yAxis: { type: "value", splitLine: { lineStyle: { color: "#edf1f7" } } },
-    series: [{ type: "line", name: "回撤", areaStyle: {}, data: drawdowns.map((point) => point.drawdown_pct), color: "#ef4444" }]
+    yAxis: { type: "value", splitLine: { lineStyle: { color: "#edf1f7" } }, axisLabel: { formatter: "{value}%" } },
+    series: [
+      {
+        type: "line",
+        name: "回撤",
+        smooth: true,
+        showSymbol: false,
+        areaStyle: { color: "rgba(220, 38, 38, 0.14)" },
+        data: drawdowns.map((point) => point.drawdown_pct),
+        color: "#dc2626"
+      }
+    ]
   };
 }

@@ -1,5 +1,5 @@
-import { priceOption, volumeOption } from "./chartOptions";
-import type { Bar } from "../types";
+import { drawdownOption, priceOption, volumeOption } from "./chartOptions";
+import type { BacktestResponse, Bar, SignalRow } from "../types";
 
 const bars: Bar[] = [
   {
@@ -51,6 +51,42 @@ test("priceOption renders A-share candlesticks with MA overlays", () => {
   expect(option.animation).toBe(false);
 });
 
+test("priceOption renders buy and sell markers with tooltip detail payloads", () => {
+  const signals: SignalRow[] = [
+    {
+      trading_day: "2024-01-02",
+      action: "buy",
+      symbol: "000001",
+      price: 10.8,
+      volume: 100,
+      reason: "fast MA crossed above slow MA"
+    },
+    {
+      trading_day: "2024-01-03",
+      action: "sell",
+      symbol: "000001",
+      price: 10.4,
+      volume: 100,
+      reason: "fast MA crossed below slow MA"
+    }
+  ];
+
+  const option = priceOption(bars, signals);
+  const series = option.series as Array<Record<string, unknown>>;
+  const buySeries = series.find((item) => item.name === "买入") as { data: Array<Record<string, unknown>>; symbol: string };
+  const sellSeries = series.find((item) => item.name === "卖出") as { data: Array<Record<string, unknown>>; symbol: string; symbolRotate: number };
+
+  expect(buySeries.symbol).toBe("triangle");
+  expect(sellSeries.symbolRotate).toBe(180);
+  expect(buySeries.data[0]).toMatchObject({
+    name: "买入 000001",
+    value: ["2024-01-02", 10.8],
+    reason: "fast MA crossed above slow MA",
+    volume: 100
+  });
+  expect(typeof buySeries.data[0].tooltip).toBe("object");
+});
+
 test("volumeOption renders visible volume bars from zero baseline", () => {
   const option = volumeOption(bars);
   const series = option.series as Array<Record<string, unknown>>;
@@ -60,4 +96,51 @@ test("volumeOption renders visible volume bars from zero baseline", () => {
   expect(series[0].type).toBe("bar");
   expect(series[0].barWidth).toBeGreaterThanOrEqual(4);
   expect(option.animation).toBe(false);
+});
+
+test("price and volume options keep matching visible windows", () => {
+  const longBars = Array.from({ length: 200 }, (_, index) => ({
+    ...bars[0],
+    trading_day: `2024-01-${String(index + 1).padStart(2, "0")}`,
+    close_price: 10 + index
+  }));
+
+  const priceZoom = priceOption(longBars).dataZoom as Array<Record<string, unknown>>;
+  const volumeZoom = volumeOption(longBars).dataZoom as Array<Record<string, unknown>>;
+
+  expect(volumeZoom[0].start).toBe(priceZoom[0].start);
+  expect(volumeZoom[0].end).toBe(priceZoom[0].end);
+});
+
+test("drawdownOption renders red underwater area with synchronized zoom", () => {
+  const result: BacktestResponse = {
+    bars: [],
+    metrics: {
+      final_equity: 100000,
+      total_return_pct: 0,
+      annualized_return_pct: 0,
+      benchmark_return_pct: 0,
+      excess_return_pct: 0,
+      annual_volatility_pct: 0,
+      sharpe_ratio: null,
+      max_drawdown_pct: -3,
+      trade_count: 0,
+      win_rate_pct: null,
+      profit_factor: null,
+      exposure_pct: 0
+    },
+    equity_curve: [],
+    drawdowns: [{ trading_day: "2024-01-02", equity: 100000, drawdown_pct: -3 }],
+    trades: [],
+    risk_status: { ok: true, warnings: [], enabled: true }
+  };
+
+  const option = drawdownOption(result);
+  const dataZoom = option.dataZoom as Array<Record<string, unknown>>;
+  const series = option.series as Array<Record<string, unknown>>;
+
+  expect(option.animation).toBe(false);
+  expect(dataZoom[0].type).toBe("inside");
+  expect(series[0]).toMatchObject({ type: "line", name: "回撤" });
+  expect(series[0].color).toBe("#dc2626");
 });

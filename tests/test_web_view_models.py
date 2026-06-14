@@ -121,13 +121,28 @@ def test_indicator_snapshot_to_frame_exposes_latest_technical_state():
 
 
 def test_metrics_and_drawdowns_to_frame_support_dashboard_tables():
-    metrics = BacktestMetrics(110, 10, 12, -8, 3, 50, 1.5, 30)
+    metrics = BacktestMetrics(
+        final_equity=110,
+        total_return_pct=10,
+        annualized_return_pct=12,
+        benchmark_return_pct=6,
+        excess_return_pct=4,
+        annual_volatility_pct=14,
+        sharpe_ratio=0.86,
+        max_drawdown_pct=-8,
+        trade_count=3,
+        win_rate_pct=50,
+        profit_factor=1.5,
+        exposure_pct=30,
+    )
     drawdowns = [DrawdownPoint(date(2024, 1, 2), 100, -5)]
 
     metric_frame = metrics_to_frame(metrics)
     drawdown_frame = drawdowns_to_frame(drawdowns)
 
     assert metric_frame.iloc[0]["metric"] == "最终权益"
+    assert "基准收益(%)" in list(metric_frame["metric"])
+    assert "夏普比率" in list(metric_frame["metric"])
     assert drawdown_frame.iloc[0]["drawdown_pct"] == -5
 
 

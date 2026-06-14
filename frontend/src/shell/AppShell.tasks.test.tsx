@@ -1,0 +1,239 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import { AppShell } from "./AppShell";
+
+const apiMock = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+    }
+  }
+
+  return {
+    ApiError: MockApiError,
+    api: {
+      bootstrap: vi.fn(),
+      stocks: vi.fn(),
+      loadData: vi.fn(),
+      demoData: vi.fn(),
+      downloadData: vi.fn(),
+      strategies: vi.fn(),
+      previewSignals: vi.fn(),
+      previewPortfolio: vi.fn(),
+      runBacktest: vi.fn(),
+      research: vi.fn(),
+      runPaper: vi.fn(),
+      evaluateRisk: vi.fn()
+    }
+  };
+});
+
+vi.mock("../api/client", () => apiMock);
+
+const settings = {
+  symbol: "000001",
+  exchange: "SZSE",
+  start_date: "20240101",
+  end_date: "20241231",
+  adjust: "qfq",
+  csv_path: "data/000001_daily.csv",
+  log_path: "logs/paper_events.jsonl",
+  initial_cash: 100000,
+  commission_rate: 0.0003,
+  slippage: 0.01,
+  max_order_cash: 50000,
+  max_drawdown_pct: 20,
+  min_cash_balance: 0,
+  max_position_shares: 50000,
+  risk_enabled: true,
+  stop_loss_mode: "fixed_pct"
+};
+
+const strategy = {
+  id: "builtin:dual:DualMovingAverageStrategy",
+  name: "DualMovingAverageStrategy",
+  class_name: "DualMovingAverageStrategy",
+  source: "builtin",
+  path: null,
+  editable: false,
+  parameters: [{ name: "symbol", annotation: "str", default: "000001" }]
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+function loadedDataResponse() {
+  return {
+    bars: [
+      {
+        symbol: "000001",
+        exchange: "SZSE",
+        trading_day: "2024-01-02",
+        open_price: 10,
+        high_price: 10.5,
+        low_price: 9.8,
+        close_price: 10.2,
+        volume: 1000,
+        turnover: 10200
+      }
+    ],
+    summary: {
+      rows: 1,
+      csv_path: settings.csv_path,
+      symbol: "000001",
+      exchange: "SZSE",
+      start: "2024-01-02",
+      end: "2024-01-02",
+      latest_close: 10.2,
+      latest_volume: 1000,
+      latest_turnover: 10200
+    }
+  };
+}
+
+function backtestResponse() {
+  return {
+    bars: [],
+    metrics: {
+      final_equity: 100000,
+      total_return_pct: 0,
+      annualized_return_pct: 0,
+      benchmark_return_pct: 0,
+      excess_return_pct: 0,
+      annual_volatility_pct: 0,
+      sharpe_ratio: null,
+      max_drawdown_pct: 0,
+      trade_count: 0,
+      win_rate_pct: null,
+      profit_factor: null,
+      exposure_pct: 0
+    },
+    equity_curve: [],
+    drawdowns: [],
+    trades: [],
+    risk_status: { ok: true, warnings: [], enabled: true }
+  };
+}
+
+test("AppShell clears busy state and shows backend detail when a data task rejects", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [],
+    limits: {}
+  });
+  apiMock.api.loadData
+    .mockResolvedValueOnce({ bars: [], summary: { rows: 0, csv_path: settings.csv_path } })
+    .mockRejectedValueOnce(new apiMock.ApiError(400, "CSV data not found: data/missing.csv"));
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 0 根K线");
+
+  await user.click(screen.getByRole("button", { name: "数据中心" }));
+  await user.click(screen.getByRole("button", { name: "加载CSV" }));
+
+  await waitFor(() => expect(screen.getAllByText("请求失败：CSV data not found: data/missing.csv").length).toBeGreaterThan(0));
+  expect(screen.queryByText("加载CSV中...")).not.toBeInTheDocument();
+});
+
+test("AppShell clears stale bars and summaries when Data Center selects a different stock target", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce({
+    bars: [
+      {
+        symbol: "000001",
+        exchange: "SZSE",
+        trading_day: "2024-01-02",
+        open_price: 10,
+        high_price: 10.5,
+        low_price: 9.8,
+        close_price: 10.2,
+        volume: 1000,
+        turnover: 10200
+      }
+    ],
+    summary: {
+      rows: 1,
+      csv_path: settings.csv_path,
+      symbol: "000001",
+      exchange: "SZSE",
+      start: "2024-01-02",
+      end: "2024-01-02",
+      latest_close: 10.2,
+      latest_volume: 1000,
+      latest_turnover: 10200
+    }
+  });
+  apiMock.api.stocks.mockResolvedValue([{ code: "601318", name: "中国平安", exchange: "SSE" }]);
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "数据中心" }));
+  expect(screen.getByText("1 行")).toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("搜索股票名称或代码"), "平安");
+  await user.click(await screen.findByRole("button", { name: "601318 中国平安 SSE" }));
+
+  await waitFor(() => expect(screen.getByDisplayValue("data/601318_daily.csv")).toBeInTheDocument());
+  expect(screen.getByText("0 行")).toBeInTheDocument();
+  expect(screen.getByText("暂无数据")).toBeInTheDocument();
+  expect(screen.queryByText("000001")).not.toBeInTheDocument();
+});
+
+test("AppShell disables duplicate backtest runs and shows the active mode while pending", async () => {
+  const user = userEvent.setup();
+  let resolveBacktest: (value: ReturnType<typeof backtestResponse>) => void = () => undefined;
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.runBacktest.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveBacktest = resolve;
+      })
+  );
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "回测中心" }));
+  const backtestSettings = screen.getAllByText("回测设置").at(-1)!.closest("section")!;
+  await user.click(within(backtestSettings).getByRole("button", { name: "运行回测" }));
+
+  await waitFor(() => expect(screen.getByLabelText("回测运行状态")).toHaveTextContent("单策略回测运行中"));
+  expect(within(backtestSettings).getByRole("button", { name: "运行中..." })).toBeDisabled();
+
+  await user.click(within(backtestSettings).getByRole("button", { name: "运行中..." }));
+
+  expect(apiMock.api.runBacktest).toHaveBeenCalledTimes(1);
+
+  resolveBacktest(backtestResponse());
+
+  await waitFor(() => expect(within(backtestSettings).getByRole("button", { name: "运行回测" })).toBeEnabled());
+  expect(screen.getByLabelText("回测运行状态")).toHaveTextContent("等待运行");
+});

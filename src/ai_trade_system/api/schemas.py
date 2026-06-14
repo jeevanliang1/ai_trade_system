@@ -20,6 +20,8 @@ class PlatformSettings(BaseModel):
     max_drawdown_pct: float = 20.0
     min_cash_balance: float = 0.0
     max_position_shares: int = 50_000
+    risk_enabled: bool = True
+    stop_loss_mode: str = "fixed_pct"
 
 
 class StrategyParameterView(BaseModel):
@@ -118,4 +120,3 @@ class PaperRunRequest(DataRequest):
 class RiskEvaluateRequest(BaseModel):
     metrics: dict[str, float | int | None] = Field(default_factory=dict)
     config: RiskConfigView
-

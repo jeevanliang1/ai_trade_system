@@ -4,15 +4,20 @@ import {
   Bell,
   Bot,
   CalendarDays,
+  Copy,
   Database,
+  FileDown,
   FlaskConical,
   Gauge,
   Home,
   Layers3,
   NotebookTabs,
   Play,
+  Plus,
+  Save,
   ShieldCheck,
   SlidersHorizontal,
+  Square,
   UserRound
 } from "lucide-react";
 
@@ -58,7 +63,9 @@ const DEFAULT_SETTINGS: PlatformSettings = {
   max_order_cash: 50000,
   max_drawdown_pct: 20,
   min_cash_balance: 0,
-  max_position_shares: 50000
+  max_position_shares: 50000,
+  risk_enabled: true,
+  stop_loss_mode: "fixed_pct"
 };
 
 const FALLBACK_STRATEGIES: StrategySpec[] = [
@@ -85,6 +92,7 @@ function initialState(): PlatformState {
     selectedStrategyId: FALLBACK_STRATEGIES[0].id,
     strategyParams: { symbol: "000001", fast: 5, slow: 20, size: 100 },
     bars: [],
+    dataSummary: null,
     signals: null,
     portfolio: defaultPortfolio(FALLBACK_STRATEGIES[0].id),
     backtest: null,
@@ -92,7 +100,8 @@ function initialState(): PlatformState {
     riskStatus: { ok: true, warnings: [], enabled: true },
     paper: null,
     message: "准备就绪",
-    busy: false
+    busy: false,
+    activeBacktestMode: null
   };
 }
 
@@ -110,11 +119,11 @@ export function AppShell() {
         try {
           const data = await api.loadData(bootstrap.settings);
           if (!mounted) return;
-          setState((current) => ({ ...current, bars: data.bars, message: `已加载 ${data.bars.length} 根K线` }));
+          setState((current) => ({ ...current, bars: data.bars, dataSummary: data.summary, message: `已加载 ${data.bars.length} 根K线` }));
         } catch {
           const demo = await api.demoData(bootstrap.settings, 260);
           if (!mounted) return;
-          setState((current) => ({ ...current, bars: demo.bars, message: `已生成 ${demo.bars.length} 根演示K线` }));
+          setState((current) => ({ ...current, bars: demo.bars, dataSummary: demo.summary, message: `已生成 ${demo.bars.length} 根演示K线` }));
         }
       } catch (error) {
         if (!mounted) return;
@@ -129,32 +138,79 @@ export function AppShell() {
 
   const actions = useMemo<PlatformActions>(
     () => ({
-      setSettings: (settings) => setState((current) => ({ ...current, settings })),
+      setSettings: (settings) =>
+        setState((current) => {
+          if (!dataRequestChanged(current.settings, settings)) {
+            return { ...current, settings };
+          }
+          return {
+            ...current,
+            settings,
+            bars: [],
+            dataSummary: null,
+            signals: null,
+            backtest: null,
+            paper: null,
+            message: `已切换数据目标：${settings.symbol} ${settings.exchange}，请加载或下载行情`
+          };
+        }),
       setSelectedStrategyId: (id) => {
-        const strategy = state.strategies.find((item) => item.id === id);
-        setState((current) => ({
-          ...current,
-          selectedStrategyId: id,
-          strategyParams: paramsFromStrategy(strategy, current.settings.symbol)
-        }));
+        setState((current) => {
+          const strategy = current.strategies.find((item) => item.id === id);
+          return {
+            ...current,
+            selectedStrategyId: id,
+            strategyParams: paramsFromStrategy(strategy, current.settings.symbol)
+          };
+        });
       },
       setStrategyParams: (strategyParams) => setState((current) => ({ ...current, strategyParams })),
       setPortfolio: (portfolio) => setState((current) => ({ ...current, portfolio })),
-      refreshStrategies: () => runTask(setState, "刷新策略", async () => ({ strategies: await api.strategies() })),
-      loadData: () => runTask(setState, "加载CSV", async (current) => ({ bars: (await api.loadData(current.settings)).bars })),
-      demoData: () => runTask(setState, "生成演示数据", async (current) => ({ bars: (await api.demoData(current.settings, 260)).bars })),
-      downloadData: () => runTask(setState, "下载日线数据", async (current) => ({ bars: (await api.downloadData(current.settings)).bars })),
+      refreshStrategies: (selectedId) =>
+        runTask(setState, "刷新策略", async (current) => {
+          const strategies = await api.strategies();
+          if (!selectedId) return { strategies };
+          const selected = strategies.find((item) => item.id === selectedId);
+          if (!selected) return { strategies };
+          return {
+            strategies,
+            selectedStrategyId: selected.id,
+            strategyParams: paramsFromStrategy(selected, current.settings.symbol)
+          };
+        }),
+      loadData: () =>
+        runTask(setState, "加载CSV", async (current) => {
+          const data = await api.loadData(current.settings);
+          return { bars: data.bars, dataSummary: data.summary };
+        }),
+      demoData: () =>
+        runTask(setState, "生成演示数据", async (current) => {
+          const data = await api.demoData(current.settings, 260);
+          return { bars: data.bars, dataSummary: data.summary };
+        }),
+      downloadData: () =>
+        runTask(setState, "下载日线数据", async (current) => {
+          const data = await api.downloadData(current.settings);
+          return { bars: data.bars, dataSummary: data.summary };
+        }),
       previewSignals: () =>
         runTask(setState, "预览信号", async (current) => ({ signals: await api.previewSignals(current.settings, currentSelection(current)) })),
       previewPortfolio: () =>
         runTask(setState, "预览组合", async (current) => ({ signals: await api.previewPortfolio(current.settings, current.portfolio) })),
       runBacktest: (mode = "single") =>
-        runTask(setState, "运行回测", async (current) => {
+        runTask(setState, `运行${backtestModeLabel(mode)}回测`, async (current) => {
           const backtest = await api.runBacktest(current.settings, currentSelection(current), current.portfolio, mode);
           return { backtest, riskStatus: backtest.risk_status };
-        }),
+        }, { startPatch: { activeBacktestMode: mode }, finishPatch: { activeBacktestMode: null } }),
       researchAI: (notes, promptMode, horizon) =>
-        runTask(setState, "生成AI观点", async (current) => ({ insight: (await api.research(current.settings, notes, promptMode, horizon)).insight })),
+        runTask(setState, "生成AI观点", async (current) => {
+          const research = await api.research(current.settings, notes, promptMode, horizon);
+          const patch: Partial<PlatformState> = { insight: research.insight };
+          if (current.portfolio.ai_adjust) {
+            patch.portfolio = { ...current.portfolio, ai_direction: research.insight.direction };
+          }
+          return patch;
+        }),
       runPaper: (mode = "single") =>
         runTask(setState, "运行纸面交易", async (current) => ({
           paper: await api.runPaper(current.settings, currentSelection(current), current.portfolio, mode)
@@ -186,7 +242,14 @@ export function AppShell() {
         <TopCommandBar state={state} actions={actions} />
         <div className="content-shell">
           <div className="content-area">{page}</div>
-          <InspectorPanel insight={state.insight} riskStatus={state.riskStatus} />
+          <InspectorPanel
+            insight={state.insight}
+            riskStatus={state.riskStatus}
+            settings={state.settings}
+            portfolio={state.portfolio}
+            onSettingsChange={actions.setSettings}
+            onPortfolioChange={actions.setPortfolio}
+          />
         </div>
         <StatusBar state={state} />
       </div>
@@ -229,13 +292,17 @@ function TopCommandBar({ state, actions }: { state: PlatformState; actions: Plat
         <span>数据日期：{state.bars.at(-1)?.trading_day ?? state.settings.end_date}</span>
       </div>
       <div className="toolbar">
-        <ToolbarButton variant="primary">新建策略</ToolbarButton>
-        <ToolbarButton icon={<Play size={15} />} variant="success" onClick={() => actions.runBacktest("single")}>
-          运行回测
+        <ToolbarButton icon={<Plus size={15} />} variant="primary">
+          新建策略
         </ToolbarButton>
-        <ToolbarButton>停止</ToolbarButton>
+        <ToolbarButton icon={<Save size={15} />}>保存</ToolbarButton>
+        <ToolbarButton icon={<Copy size={15} />}>另存为</ToolbarButton>
+        <ToolbarButton disabled={state.busy} icon={<Play size={15} />} variant="success" onClick={() => actions.runBacktest("single")}>
+          {state.activeBacktestMode ? "运行中..." : "运行回测"}
+        </ToolbarButton>
+        <ToolbarButton icon={<Square size={15} />}>停止</ToolbarButton>
         <ToolbarButton icon={<SlidersHorizontal size={15} />}>回测设置</ToolbarButton>
-        <ToolbarButton>导出报告</ToolbarButton>
+        <ToolbarButton icon={<FileDown size={15} />}>导出报告</ToolbarButton>
       </div>
       <div className="top-actions">
         <Bell size={17} />
@@ -249,15 +316,20 @@ function TopCommandBar({ state, actions }: { state: PlatformState; actions: Plat
 }
 
 function StatusBar({ state }: { state: PlatformState }) {
+  const selectedStrategy = state.strategies.find((item) => item.id === state.selectedStrategyId)?.name ?? "-";
+  const health = state.riskStatus?.ok === false ? "告警" : "正常";
   return (
     <footer className="statusbar">
-      <span>数据源：本地数据库</span>
+      <span>数据：本地CSV</span>
+      <span>路径：{state.settings.csv_path}</span>
+      <span>健康：{health}</span>
       <span>{state.message}</span>
-      <span>策略：{state.strategies.find((item) => item.id === state.selectedStrategyId)?.name ?? "-"}</span>
+      <span>策略：{selectedStrategy}</span>
       <span>回测区间：{state.settings.start_date} - {state.settings.end_date}</span>
       <span>初始资金：{state.settings.initial_cash.toLocaleString()}</span>
       <span>手续费：{(state.settings.commission_rate * 100).toFixed(2)}%</span>
-      <span>日志</span>
+      <span>滑点：{state.settings.slippage}</span>
+      <span>日志：{state.settings.log_path}</span>
     </footer>
   );
 }
@@ -288,31 +360,49 @@ function defaultPortfolio(strategyId: string): PortfolioRequest {
   return {
     mode: "weighted_vote",
     ai_adjust: false,
+    ai_direction: null,
     allocations: [{ strategy: { id: strategyId, params: { symbol: "000001", fast: 5, slow: 20, size: 100 } }, weight: 1, enabled: true }]
   };
+}
+
+function dataRequestChanged(previous: PlatformSettings, next: PlatformSettings): boolean {
+  return (
+    previous.symbol !== next.symbol ||
+    previous.exchange !== next.exchange ||
+    previous.start_date !== next.start_date ||
+    previous.end_date !== next.end_date ||
+    previous.adjust !== next.adjust ||
+    previous.csv_path !== next.csv_path
+  );
 }
 
 async function runTask(
   setState: React.Dispatch<React.SetStateAction<PlatformState>>,
   label: string,
-  task: (state: PlatformState) => Promise<Partial<PlatformState>>
+  task: (state: PlatformState) => Promise<Partial<PlatformState>>,
+  options: { startPatch?: Partial<PlatformState>; finishPatch?: Partial<PlatformState> } = {}
 ) {
-  setState((current) => ({ ...current, busy: true, message: `${label}中...` }));
-  try {
-    let patch: Partial<PlatformState> = {};
-    await new Promise<void>((resolve) => {
-      setState((current) => {
-        void task(current).then((result) => {
-          patch = result;
-          resolve();
-        });
+  const taskState = await new Promise<PlatformState | null>((resolve) => {
+    setState((current) => {
+      if (current.busy) {
+        resolve(null);
         return current;
-      });
+      }
+      resolve(current);
+      return { ...current, ...options.startPatch, busy: true, message: `${label}中...` };
     });
-    setState((current) => ({ ...current, ...patch, busy: false, message: `${label}完成` }));
+  });
+  if (!taskState) return;
+  try {
+    const patch = await task(taskState);
+    setState((current) => ({ ...current, ...patch, ...options.finishPatch, busy: false, message: `${label}完成` }));
   } catch (error) {
-    setState((current) => ({ ...current, busy: false, message: formatError(error) }));
+    setState((current) => ({ ...current, ...options.finishPatch, busy: false, message: formatError(error) }));
   }
+}
+
+function backtestModeLabel(mode: "single" | "portfolio") {
+  return mode === "portfolio" ? "组合策略" : "单策略";
 }
 
 function formatError(error: unknown): string {

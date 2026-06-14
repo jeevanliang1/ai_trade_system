@@ -71,6 +71,10 @@ def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
     assert backtest_response.status_code == 200
     backtest_payload = backtest_response.json()
     assert backtest_payload["metrics"]["final_equity"] > 0
+    assert "benchmark_return_pct" in backtest_payload["metrics"]
+    assert "excess_return_pct" in backtest_payload["metrics"]
+    assert "annual_volatility_pct" in backtest_payload["metrics"]
+    assert "sharpe_ratio" in backtest_payload["metrics"]
     assert backtest_payload["bars"][0]["trading_day"] == "2024-01-02"
     assert "risk_status" in backtest_payload
 
@@ -104,6 +108,98 @@ def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
     )
     assert risk_response.status_code == 200
     assert risk_response.json()["ok"] is False
+
+
+def test_portfolio_preview_returns_breakdown_contract(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    settings = _settings_payload()
+    demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
+    assert demo_response.status_code == 200
+    strategies = client.get("/api/bootstrap").json()["strategies"]
+    dual = next(strategy for strategy in strategies if strategy["name"] == "DualMovingAverageStrategy")
+    rsi = next(strategy for strategy in strategies if strategy["name"] == "RsiMeanReversionStrategy")
+
+    response = client.post(
+        "/api/portfolio/preview",
+        json={
+            "settings": settings,
+            "portfolio": {
+                "mode": "weighted_vote",
+                "ai_adjust": False,
+                "ai_direction": None,
+                "allocations": [
+                    {
+                        "strategy": {"id": dual["id"], "params": {"symbol": "000001", "fast": 5, "slow": 20, "size": 100}},
+                        "weight": 2,
+                        "enabled": True,
+                    },
+                    {
+                        "strategy": {"id": rsi["id"], "params": {"symbol": "000001", "rsi_period": 14, "trade_size": 100}},
+                        "weight": 1,
+                        "enabled": True,
+                    },
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["breakdown"]["mode"] == "weighted_vote"
+    assert "contributions" in payload["breakdown"]
+    assert payload["allocations"][0]["index"] == 0
+    assert payload["allocations"][0]["name"] == "DualMovingAverageStrategy"
+    assert payload["allocations"][1]["index"] == 1
+
+
+def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    settings = _settings_payload()
+    demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
+    assert demo_response.status_code == 200
+    strategies = client.get("/api/bootstrap").json()["strategies"]
+    dual = next(strategy for strategy in strategies if strategy["name"] == "DualMovingAverageStrategy")
+    rsi = next(strategy for strategy in strategies if strategy["name"] == "RsiMeanReversionStrategy")
+
+    response = client.post(
+        "/api/portfolio/preview",
+        json={
+            "settings": settings,
+            "portfolio": {
+                "mode": "weighted_vote",
+                "ai_adjust": True,
+                "ai_direction": "bullish",
+                "allocations": [
+                    {
+                        "strategy": {"id": dual["id"], "params": {"symbol": "000001", "fast": 5, "slow": 20, "size": 100}},
+                        "weight": 2,
+                        "enabled": True,
+                    },
+                    {
+                        "strategy": {"id": rsi["id"], "params": {"symbol": "000001", "rsi_period": 14, "trade_size": 100}},
+                        "weight": 1,
+                        "enabled": True,
+                    },
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ai_adjustment"] == {
+        "enabled": True,
+        "direction": "bullish",
+        "applied": True,
+        "delta": 0.05,
+    }
+    assert payload["allocations"][0]["base_weight"] == 2
+    assert payload["allocations"][0]["adjusted_weight"] == 2.05
+    assert payload["allocations"][0]["ai_delta"] == 0.05
+    assert payload["allocations"][0]["ai_adjusted"] is True
+    assert payload["allocations"][0]["weight"] == 2.05
+    assert payload["allocations"][1]["base_weight"] == 1
+    assert payload["allocations"][1]["adjusted_weight"] == 1.05
 
 
 def test_demo_data_contains_mixed_rising_and_falling_candles(tmp_path, monkeypatch):

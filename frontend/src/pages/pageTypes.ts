@@ -2,6 +2,7 @@ import type {
   AIInsight,
   BacktestResponse,
   Bar,
+  DataSummary,
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
@@ -17,6 +18,7 @@ export type PlatformState = {
   selectedStrategyId: string;
   strategyParams: Record<string, unknown>;
   bars: Bar[];
+  dataSummary: DataSummary | null;
   signals: SignalsResponse | null;
   portfolio: PortfolioRequest;
   backtest: BacktestResponse | null;
@@ -25,6 +27,7 @@ export type PlatformState = {
   paper: PaperResponse | null;
   message: string;
   busy: boolean;
+  activeBacktestMode: "single" | "portfolio" | null;
 };
 
 export type PlatformActions = {
@@ -32,7 +35,7 @@ export type PlatformActions = {
   setSelectedStrategyId: (id: string) => void;
   setStrategyParams: (params: Record<string, unknown>) => void;
   setPortfolio: (portfolio: PortfolioRequest) => void;
-  refreshStrategies: () => Promise<void>;
+  refreshStrategies: (selectedId?: string) => Promise<void>;
   loadData: () => Promise<void>;
   demoData: () => Promise<void>;
   downloadData: () => Promise<void>;

@@ -10,6 +10,10 @@ test("renders screenshot-inspired navigation and switches pages", async () => {
   expect(screen.getByText("AI量化平台")).toBeInTheDocument();
   expect(screen.getByText("策略工坊")).toHaveClass("active");
   expect(screen.getByText("运行回测")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "另存为" })).toBeInTheDocument();
+  expect(screen.getByText("路径：data/000001_daily.csv")).toBeInTheDocument();
+  expect(screen.getByText("滑点：0.01")).toBeInTheDocument();
   expect(NAV_ITEMS).toHaveLength(8);
 
   await user.click(screen.getByRole("button", { name: "数据中心" }));

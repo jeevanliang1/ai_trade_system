@@ -52,6 +52,7 @@ class ApiInputError(ValueError):
 
 
 DEFAULT_SETTINGS = PlatformSettings()
+AI_WEIGHT_DELTA = 0.05
 
 
 def bootstrap() -> dict[str, Any]:
@@ -126,17 +127,16 @@ def preview_signals(request) -> dict[str, Any]:
 
 def preview_portfolio(request) -> dict[str, Any]:
     bars = _load_bars(request.settings)
-    portfolio = _build_portfolio(request.portfolio)
+    allocations, allocation_views = _portfolio_allocations(request.portfolio)
+    portfolio = PortfolioStrategy(allocations, mode=request.portfolio.mode)
     frame = strategy_signals_to_frame(bars, portfolio)
     return {
         "bars": _serialize_many(bars),
         "signals": _frame_records(frame),
         "summary": _signal_summary(frame),
         "breakdown": _serialize(portfolio.last_breakdown),
-        "allocations": [
-            {"name": allocation.name, "weight": allocation.weight, "enabled": allocation.enabled}
-            for allocation in portfolio.allocations
-        ],
+        "allocations": allocation_views,
+        "ai_adjustment": _ai_adjustment_summary(request.portfolio),
     }
 
 
@@ -159,6 +159,7 @@ def run_backtest_request(request: BacktestRequest) -> dict[str, Any]:
     risk_status = evaluate_risk_guardrails(
         {"max_drawdown_pct": metrics.max_drawdown_pct},
         _risk_config(settings),
+        enabled=settings.risk_enabled,
     )
     return {
         "bars": _serialize_many(bars),
@@ -181,6 +182,7 @@ def research_ai(request) -> dict[str, Any]:
         risk_context={
             "max_drawdown_pct": request.settings.max_drawdown_pct,
             "max_order_cash": request.settings.max_order_cash,
+            "stop_loss_mode": request.settings.stop_loss_mode,
         },
         prompt_mode=request.prompt_mode,
     )
@@ -243,17 +245,49 @@ def _build_strategy(selection: StrategySelection) -> Strategy:
 
 
 def _build_portfolio(request: PortfolioRequest) -> PortfolioStrategy:
+    allocations, _ = _portfolio_allocations(request)
+    return PortfolioStrategy(allocations, mode=request.mode)
+
+
+def _portfolio_allocations(request: PortfolioRequest) -> tuple[list[StrategyAllocation], list[dict[str, Any]]]:
     allocations: list[StrategyAllocation] = []
-    for item in request.allocations:
+    allocation_views: list[dict[str, Any]] = []
+    applied = _ai_adjustment_applied(request)
+    for index, item in enumerate(request.allocations):
         strategy = _build_strategy(item.strategy)
         spec = _find_strategy(item.strategy.id)
-        weight = item.weight
-        if request.ai_adjust and request.ai_direction == "bullish":
-            weight = min(1.0, weight + 0.05)
-        allocations.append(StrategyAllocation(spec.name, strategy, weight, item.enabled))
+        base_weight = item.weight
+        adjusted_weight = round(base_weight + AI_WEIGHT_DELTA, 10) if applied else base_weight
+        ai_delta = round(adjusted_weight - base_weight, 10)
+        allocations.append(StrategyAllocation(spec.name, strategy, adjusted_weight, item.enabled))
+        allocation_views.append(
+            {
+                "index": index,
+                "name": spec.name,
+                "weight": adjusted_weight,
+                "base_weight": base_weight,
+                "adjusted_weight": adjusted_weight,
+                "ai_delta": ai_delta,
+                "ai_adjusted": bool(applied and item.enabled),
+                "enabled": item.enabled,
+            }
+        )
     if not allocations:
         raise ApiInputError("portfolio requires at least one strategy allocation")
-    return PortfolioStrategy(allocations, mode=request.mode)
+    return allocations, allocation_views
+
+
+def _ai_adjustment_summary(request: PortfolioRequest) -> dict[str, Any]:
+    return {
+        "enabled": request.ai_adjust,
+        "direction": request.ai_direction,
+        "applied": _ai_adjustment_applied(request),
+        "delta": AI_WEIGHT_DELTA,
+    }
+
+
+def _ai_adjustment_applied(request: PortfolioRequest) -> bool:
+    return bool(request.ai_adjust and request.ai_direction == "bullish")
 
 
 def _strategy_for_mode(

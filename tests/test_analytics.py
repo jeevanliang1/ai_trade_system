@@ -27,3 +27,20 @@ def test_calculate_backtest_metrics_counts_trades_and_return():
     assert metrics.total_return_pct == 10.0
     assert metrics.trade_count == 1
     assert metrics.final_equity == 110.0
+
+
+def test_calculate_backtest_metrics_adds_benchmark_and_volatility_context():
+    points = [
+        EquityPoint(date(2024, 1, 1), 100.0, 100.0, 10.0),
+        EquityPoint(date(2024, 1, 2), 104.0, 92.0, 11.0),
+        EquityPoint(date(2024, 1, 3), 102.0, 90.0, 11.5),
+        EquityPoint(date(2024, 1, 4), 108.0, 88.0, 12.0),
+    ]
+
+    metrics = calculate_backtest_metrics(points, [], initial_cash=100.0)
+
+    assert metrics.total_return_pct == 8.0
+    assert metrics.benchmark_return_pct == 20.0
+    assert metrics.excess_return_pct == -12.0
+    assert metrics.annual_volatility_pct > 0
+    assert metrics.sharpe_ratio == round(metrics.annualized_return_pct / metrics.annual_volatility_pct, 4)

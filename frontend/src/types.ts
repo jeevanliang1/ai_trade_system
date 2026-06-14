@@ -13,6 +13,8 @@ export type PlatformSettings = {
   max_drawdown_pct: number;
   min_cash_balance: number;
   max_position_shares: number;
+  risk_enabled: boolean;
+  stop_loss_mode: "fixed_pct" | "trailing" | "manual";
 };
 
 export type StrategyParameter = {
@@ -84,6 +86,10 @@ export type BacktestMetrics = {
   final_equity: number;
   total_return_pct: number;
   annualized_return_pct: number;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  annual_volatility_pct: number;
+  sharpe_ratio: number | null;
   max_drawdown_pct: number;
   trade_count: number;
   win_rate_pct: number | null;
@@ -147,15 +153,68 @@ export type PortfolioRequest = {
   ai_direction?: string | null;
 };
 
+export type DataSummary = {
+  rows: number;
+  csv_path: string;
+  symbol: string;
+  exchange: string;
+  start: string | null;
+  end: string | null;
+  latest_close: number | null;
+  latest_volume: number | null;
+  latest_turnover: number | null;
+};
+
 export type DataResponse = {
   bars: Bar[];
-  summary: Record<string, unknown>;
+  summary: DataSummary;
+};
+
+export type PortfolioSignalContribution = {
+  allocation_index: number;
+  name: string;
+  action: "buy" | "sell" | string;
+  score: number;
+  weight: number;
+  volume: number;
+  reason: string;
+  selected: boolean;
+};
+
+export type PortfolioSignalBreakdown = {
+  buy_score: number;
+  sell_score: number;
+  active_signals: number;
+  mode: PortfolioRequest["mode"] | string;
+  reasons: string[];
+  contributions: PortfolioSignalContribution[];
+};
+
+export type PortfolioPreviewAllocation = {
+  index: number;
+  name: string;
+  weight: number;
+  base_weight?: number;
+  adjusted_weight?: number;
+  ai_delta?: number;
+  ai_adjusted?: boolean;
+  enabled: boolean;
+};
+
+export type PortfolioAiAdjustment = {
+  enabled: boolean;
+  direction: string | null;
+  applied: boolean;
+  delta: number;
 };
 
 export type SignalsResponse = {
   bars: Bar[];
   signals: SignalRow[];
   summary: { signals: number; buys: number; sells: number };
+  breakdown?: PortfolioSignalBreakdown;
+  allocations?: PortfolioPreviewAllocation[];
+  ai_adjustment?: PortfolioAiAdjustment;
 };
 
 export type AIResearchResponse = {
