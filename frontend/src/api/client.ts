@@ -78,6 +78,7 @@ export const api = {
     }),
   runPaper: (settings: PlatformSettings, strategy: StrategySelection | null, portfolio: PortfolioRequest | null, mode: "single" | "portfolio") =>
     apiRequest<PaperResponse>("/api/paper/run", { method: "POST", body: JSON.stringify({ settings, strategy, portfolio, mode }) }),
+  paperEvents: (path: string) => apiRequest<PaperResponse>(`/api/paper/events?path=${encodeURIComponent(path)}`),
   evaluateRisk: (metrics: Record<string, number | null>, settings: PlatformSettings) =>
     apiRequest<RiskStatus>("/api/risk/evaluate", {
       method: "POST",

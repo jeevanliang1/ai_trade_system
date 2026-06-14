@@ -46,6 +46,7 @@ export type PlatformActions = {
   runBacktest: (mode?: "single" | "portfolio") => Promise<void>;
   researchAI: (notes: string[], mode: string, horizon: string) => Promise<void>;
   runPaper: (mode?: "single" | "portfolio") => Promise<void>;
+  loadPaperEvents: () => Promise<void>;
   evaluateRisk: () => Promise<void>;
 };
 

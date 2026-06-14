@@ -66,6 +66,7 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
     runBacktest: vi.fn(),
     researchAI: vi.fn(),
     runPaper: vi.fn(),
+    loadPaperEvents: vi.fn(),
     evaluateRisk: vi.fn()
   };
   return { state, actions };
@@ -151,6 +152,21 @@ test("PaperPage shows an empty event timeline before paper events exist", () => 
 
   expect(screen.getByText("事件时间线")).toBeVisible();
   expect(screen.getByText("运行纸面交易后显示服务、订单和权益事件。")).toBeVisible();
+});
+
+test("PaperPage shows paper log health and can load latest events", async () => {
+  const user = userEvent.setup();
+  const props = makeProps(paperWithEvents());
+
+  render(<PaperPage {...props} />);
+
+  expect(screen.getByText("日志状态")).toBeVisible();
+  expect(screen.getByText("已加载 6 条事件")).toBeVisible();
+  expect(screen.getByText(/最后事件 service_stopped/)).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "加载最新事件" }));
+
+  expect(props.actions.loadPaperEvents).toHaveBeenCalledTimes(1);
 });
 
 test("PaperPage filters timeline and order table by event type", async () => {

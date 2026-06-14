@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Play } from "lucide-react";
+import { Play, RefreshCw } from "lucide-react";
 
 import { ChartPanel } from "../components/ChartPanel";
 import { DataTable } from "../components/DataTable";
@@ -34,9 +34,15 @@ export function PaperPage({ state, actions }: PageProps) {
           <span>事件日志</span>
           <input value={state.settings.log_path} onChange={(event) => actions.setSettings({ ...state.settings, log_path: event.currentTarget.value })} />
         </label>
-        <ToolbarButton disabled={state.busy || running} icon={<Play size={16} />} variant="success" onClick={() => actions.runPaper("single")}>
-          {running ? "运行中..." : "运行纸面交易"}
-        </ToolbarButton>
+        <PaperLogHealth paper={state.paper} path={state.settings.log_path} />
+        <div className="paper-actions">
+          <ToolbarButton disabled={state.busy || running} icon={<Play size={16} />} variant="success" onClick={() => actions.runPaper("single")}>
+            {running ? "运行中..." : "运行纸面交易"}
+          </ToolbarButton>
+          <ToolbarButton disabled={state.busy || running} icon={<RefreshCw size={16} />} onClick={() => actions.loadPaperEvents()}>
+            加载最新事件
+          </ToolbarButton>
+        </div>
       </section>
       <section className="main-column">
         <PaperRunConfigPanel config={config} />
@@ -73,6 +79,19 @@ export function PaperPage({ state, actions }: PageProps) {
           <DataTable rows={filteredOrders} />
         </section>
       </section>
+    </div>
+  );
+}
+
+function PaperLogHealth({ paper, path }: { paper: PlatformState["paper"]; path: string }) {
+  const eventCount = paper?.events.length ?? 0;
+  const lastEvent = paper?.events.at(-1);
+  const lastEventName = lastEvent ? String(lastEvent.event ?? "unknown") : null;
+  return (
+    <div className="paper-log-health" aria-label="纸面日志状态">
+      <span>日志状态</span>
+      <strong>{paper ? `已加载 ${eventCount} 条事件` : path.trim() ? "未加载" : "未设置日志路径"}</strong>
+      <small>{lastEventName ? `最后事件 ${lastEventName}` : path.trim() ? `等待从 ${path} 加载事件` : "请先填写事件日志路径"}</small>
     </div>
   );
 }

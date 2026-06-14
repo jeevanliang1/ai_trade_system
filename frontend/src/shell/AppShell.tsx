@@ -217,6 +217,10 @@ export function AppShell() {
         runTask(setState, "运行纸面交易", async (current) => ({
           paper: await api.runPaper(current.settings, currentSelection(current), current.portfolio, mode)
         }), { startPatch: { activePaperMode: mode }, finishPatch: { activePaperMode: null } }),
+      loadPaperEvents: () =>
+        runTask(setState, "加载纸面事件", async (current) => ({
+          paper: await api.paperEvents(current.settings.log_path)
+        })),
       evaluateRisk: () =>
         runTask(setState, "检查风控", async (current) => ({
           riskStatus: await api.evaluateRisk({ max_drawdown_pct: current.backtest?.metrics.max_drawdown_pct ?? 0 }, current.settings)

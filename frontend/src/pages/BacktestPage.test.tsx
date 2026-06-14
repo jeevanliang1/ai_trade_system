@@ -81,6 +81,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     runBacktest: vi.fn(),
     researchAI: vi.fn(),
     runPaper: vi.fn(),
+    loadPaperEvents: vi.fn(),
     evaluateRisk: vi.fn(),
     ...actionOverrides
   };

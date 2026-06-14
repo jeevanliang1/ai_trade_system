@@ -769,6 +769,37 @@ button {
   gap: 10px;
 }
 
+.paper-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.paper-log-health {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fbff;
+  padding: 9px 10px;
+}
+
+.paper-log-health span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.paper-log-health strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.paper-log-health small {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .paper-filter-panel {
   display: grid;
   gap: 10px;

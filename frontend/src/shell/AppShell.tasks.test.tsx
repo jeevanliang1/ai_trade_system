@@ -28,6 +28,7 @@ const apiMock = vi.hoisted(() => {
       runBacktest: vi.fn(),
       research: vi.fn(),
       runPaper: vi.fn(),
+      paperEvents: vi.fn(),
       evaluateRisk: vi.fn()
     }
   };
@@ -118,6 +119,19 @@ function backtestResponse() {
     drawdowns: [],
     trades: [],
     risk_status: { ok: true, warnings: [], enabled: true }
+  };
+}
+
+function paperResponse() {
+  return {
+    events: [
+      { event: "service_started" },
+      { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100 },
+      { event: "service_stopped", final_equity: 100800 }
+    ],
+    orders: [{ event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100 }],
+    equity: [{ trading_day: "2024-01-05", equity: 100800, cash: 99750 }],
+    summary: { event: "service_stopped", final_equity: 100800 }
   };
 }
 
@@ -236,4 +250,28 @@ test("AppShell disables duplicate backtest runs and shows the active mode while 
 
   await waitFor(() => expect(within(backtestSettings).getByRole("button", { name: "运行回测" })).toBeEnabled());
   expect(screen.getByLabelText("回测运行状态")).toHaveTextContent("等待运行");
+});
+
+test("AppShell loads paper events from the configured log path", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.paperEvents.mockResolvedValueOnce(paperResponse());
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "纸面交易" }));
+  await user.click(screen.getByRole("button", { name: "加载最新事件" }));
+
+  await waitFor(() => expect(apiMock.api.paperEvents).toHaveBeenCalledWith(settings.log_path));
+  expect(screen.getByText("已加载 3 条事件")).toBeVisible();
+  expect(screen.getByText(/最后事件 service_stopped/)).toBeVisible();
 });

@@ -56,6 +56,7 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
     runBacktest: vi.fn(),
     researchAI: vi.fn(),
     runPaper: vi.fn(),
+    loadPaperEvents: vi.fn(),
     evaluateRisk: vi.fn()
   };
   return { state, actions };

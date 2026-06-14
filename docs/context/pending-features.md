@@ -42,6 +42,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Paper Trading run configuration and status are complete for current scope: the page shows symbol, date range, selected strategy or portfolio mode, cash, commission, slippage, log path, idle/running/complete status, and disables duplicate run clicks while a paper run is active.
 - Paper Trading event timeline is complete for current scope: paper events render as a readable chronology with accepted, rejected, service, and equity event styling while retaining the dense order table.
 - Paper Trading event filters are complete for current scope: event type, side, and symbol filters apply consistently to the event timeline and order table, with a clear/reset control and visible filtered count.
+- Paper Trading log health and reload are complete for current scope: the page shows whether the configured log path is loaded, displays loaded event count and last-event summary, and can reload persisted events through `/api/paper/events`.
 
 ## Pending
 
@@ -51,7 +52,7 @@ No current pending items.
 
 ### Paper Trading
 
-- Add log file path health check and "load latest events" action.
+No current pending items.
 
 ### Risk Workspace
 
@@ -81,7 +82,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Paper Trading - Add log file path health check and load latest events action". This is the best next task because filtering is now available, so operators need a way to reload and inspect the persisted event log without rerunning paper trading.
+Start with "Risk Workspace - Add a full risk threshold editor page mirroring the right inspector fields". This is the best next task because Paper Trading log inspection is now complete, and risk controls should be editable from the dedicated Risk Workspace rather than only the right inspector.
 
 ## Update Rules
 
