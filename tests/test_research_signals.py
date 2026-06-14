@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from ai_trade_system.market import Bar
 from ai_trade_system.research.dataframe import bars_to_frame
+from ai_trade_system.research.enhanced_rsi import relative_strength_index, scan_enhanced_rsi
 from ai_trade_system.research.service import preview_research_signals
 
 
@@ -43,3 +44,32 @@ def test_preview_returns_no_bars_blocker_for_empty_input():
     assert preview.score.direction == "neutral"
     assert preview.blockers[0].code == "NO_BARS"
     assert preview.signals == []
+
+
+def test_relative_strength_index_handles_rising_and_falling_windows():
+    rising = relative_strength_index([10, 11, 12, 13, 14, 15, 16], period=3)
+    falling = relative_strength_index([16, 15, 14, 13, 12, 11, 10], period=3)
+
+    assert rising[-1] == 100.0
+    assert falling[-1] == 0.0
+
+
+def test_enhanced_rsi_marks_oversold_recovery_and_bearish_divergence():
+    closes = [12, 11.5, 11, 10.4, 9.8, 9.5, 9.7, 10.1, 10.8, 11.4, 11.9, 12.3, 12.6, 12.9, 13.1, 13.0, 13.2]
+    frame = bars_to_frame(_bars(closes))
+
+    result = scan_enhanced_rsi(frame, period=3, lookback=30)
+    kinds = {signal.kind for signal in result.signals}
+
+    assert "RSI_OVERSOLD" in kinds
+    assert "RSI_BULLISH_RECOVERY" in kinds
+    assert result.rsi_score > 0
+
+
+def test_enhanced_rsi_marks_bearish_divergence_when_price_highs_rise_and_rsi_fades():
+    closes = [10, 11, 12, 13, 12.2, 13.1, 13.6, 12.9, 13.4, 13.9, 13.1]
+    frame = bars_to_frame(_bars(closes))
+
+    result = scan_enhanced_rsi(frame, period=3, lookback=30)
+
+    assert any(signal.kind == "RSI_BEARISH_DIVERGENCE" for signal in result.signals)

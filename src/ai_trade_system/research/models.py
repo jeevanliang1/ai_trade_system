@@ -45,3 +45,10 @@ class ResearchSignalPreview:
     signals: list[ResearchSignal]
     score: ResearchSignalScore
     blockers: list[ResearchSignalBlocker] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class EnhancedRsiResult:
+    signals: list[ResearchSignal]
+    latest_rsi: float | None
+    rsi_score: float
