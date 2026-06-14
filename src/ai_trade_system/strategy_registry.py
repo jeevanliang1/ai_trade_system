@@ -71,6 +71,14 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
     ),
+    StrategySpec(
+        id="builtin:popular:ChanRsiResearchStrategy",
+        name="ChanRsiResearchStrategy",
+        class_name="ChanRsiResearchStrategy",
+        source="builtin",
+        path=None,
+        module_name="ai_trade_system.strategies.popular",
+    ),
 ]
 
 

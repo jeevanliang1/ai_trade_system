@@ -4,6 +4,7 @@ from collections import deque
 from statistics import mean, pstdev
 
 from ai_trade_system.market import Bar, Signal
+from ai_trade_system.research import preview_research_signals
 from ai_trade_system.strategy import Strategy
 
 
@@ -145,6 +146,61 @@ class PriceMomentumStrategy(Strategy):
         if momentum <= self.exit_threshold and self.in_position:
             self.in_position = False
             return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, "negative_momentum")]
+        return []
+
+
+class ChanRsiResearchStrategy(Strategy):
+    def __init__(
+        self,
+        symbol: str,
+        min_bars: int = 60,
+        lookback: int = 120,
+        trade_size: int = 100,
+        min_signal_score: float = 18.0,
+    ) -> None:
+        if min_bars < 3:
+            raise ValueError("min_bars must be at least 3")
+        if lookback < min_bars:
+            raise ValueError("lookback must be greater than or equal to min_bars")
+        if trade_size <= 0:
+            raise ValueError("trade_size must be positive")
+        if min_signal_score < 0:
+            raise ValueError("min_signal_score must be non-negative")
+        self.symbol = symbol
+        self.min_bars = min_bars
+        self.lookback = lookback
+        self.trade_size = trade_size
+        self.min_signal_score = min_signal_score
+        self.bars: deque[Bar] = deque(maxlen=lookback)
+        self.in_position = False
+        self.emitted: set[tuple[object, str, str]] = set()
+
+    def on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+        self.bars.append(bar)
+        if len(self.bars) < self.min_bars:
+            return []
+
+        preview = preview_research_signals(list(self.bars), min_bars=self.min_bars, lookback=self.lookback)
+        candidates = [
+            signal
+            for signal in preview.signals
+            if signal.trading_day == bar.trading_day and abs(signal.score) >= self.min_signal_score
+        ]
+        candidates.sort(key=lambda signal: abs(signal.score), reverse=True)
+        for signal in candidates:
+            key = (signal.trading_day, signal.kind, signal.action)
+            if key in self.emitted:
+                continue
+            if signal.action == "buy" and not self.in_position:
+                self.emitted.add(key)
+                self.in_position = True
+                return [Signal("buy", bar.symbol, signal.price, self.trade_size, f"research:{signal.kind}:{signal.reason}")]
+            if signal.action == "sell" and self.in_position:
+                self.emitted.add(key)
+                self.in_position = False
+                return [Signal("sell", bar.symbol, signal.price, self.trade_size, f"research:{signal.kind}:{signal.reason}")]
         return []
 
 

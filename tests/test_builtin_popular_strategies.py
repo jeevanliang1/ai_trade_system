@@ -1,8 +1,10 @@
 from datetime import date
 
 from ai_trade_system.market import Bar
+from ai_trade_system.backtest import run_backtest
 from ai_trade_system.strategies.popular import (
     BollingerMeanReversionStrategy,
+    ChanRsiResearchStrategy,
     DonchianBreakoutStrategy,
     PriceMomentumStrategy,
     RsiMeanReversionStrategy,
@@ -29,6 +31,7 @@ def test_registry_includes_popular_builtin_strategies():
 
     assert {
         "BollingerMeanReversionStrategy",
+        "ChanRsiResearchStrategy",
         "DonchianBreakoutStrategy",
         "PriceMomentumStrategy",
         "RsiMeanReversionStrategy",
@@ -73,3 +76,25 @@ def test_price_momentum_buys_strength_and_sells_weakness():
     assert [signal.action for signal in signals] == ["buy", "sell"]
     assert signals[0].reason == "positive_momentum"
     assert signals[1].reason == "negative_momentum"
+
+
+def test_chan_rsi_research_strategy_buys_from_research_preview_signal():
+    strategy = ChanRsiResearchStrategy("000001", min_bars=12, lookback=40, trade_size=100)
+    closes = [12.0, 11.4, 10.8, 10.1, 9.8, 10.4, 11.1, 11.6, 10.9, 10.4, 10.8, 11.5, 12.0, 12.4]
+
+    signals = [signal for index, close in enumerate(closes, start=1) for signal in strategy.on_bar(make_bar(index, close))]
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].volume == 100
+    assert signals[0].reason.startswith("research:")
+
+
+def test_chan_rsi_research_strategy_is_backtestable():
+    strategy = ChanRsiResearchStrategy("000001", min_bars=12, lookback=40, trade_size=100)
+    closes = [12.0, 11.4, 10.8, 10.1, 9.8, 10.4, 11.1, 11.6, 10.9, 10.4, 10.8, 11.5, 12.0, 12.4]
+    bars = [make_bar(index, close) for index, close in enumerate(closes, start=1)]
+
+    result = run_backtest(bars, strategy)
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == "buy"
