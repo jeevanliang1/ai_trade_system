@@ -71,6 +71,28 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
   return { state, actions };
 }
 
+function paperWithEvents(): Pick<PlatformState, "paper"> {
+  return {
+    paper: {
+      events: [
+        { event: "service_started" },
+        { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "" },
+        { event: "order_rejected", trading_day: "2024-01-06", side: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "cash limit" },
+        { event: "order_accepted", trading_day: "2024-01-07", side: "buy", symbol: "600000", price: 9.8, volume: 200, reason: "" },
+        { event: "equity", trading_day: "2024-01-07", equity: 100800, cash: 90800 },
+        { event: "service_stopped", final_equity: 100800 }
+      ],
+      orders: [
+        { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "" },
+        { event: "order_rejected", trading_day: "2024-01-06", side: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "cash limit" },
+        { event: "order_accepted", trading_day: "2024-01-07", side: "buy", symbol: "600000", price: 9.8, volume: 200, reason: "" }
+      ],
+      equity: [{ trading_day: "2024-01-07", equity: 100800, cash: 90800 }],
+      summary: { event: "service_stopped", final_equity: 100800 }
+    }
+  };
+}
+
 test("PaperPage shows run configuration and idle status before starting", async () => {
   const user = userEvent.setup();
   const props = makeProps();
@@ -109,29 +131,13 @@ test("PaperPage disables duplicate run clicks while a paper run is active", asyn
 });
 
 test("PaperPage renders a styled event timeline for accepted and rejected orders", () => {
-  const props = makeProps({
-    paper: {
-      events: [
-        { event: "service_started" },
-        { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "" },
-        { event: "order_rejected", trading_day: "2024-01-06", side: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "cash limit" },
-        { event: "equity", trading_day: "2024-01-06", equity: 100800, cash: 90800 },
-        { event: "service_stopped", final_equity: 100800 }
-      ],
-      orders: [
-        { event: "order_accepted", trading_day: "2024-01-05", side: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "" },
-        { event: "order_rejected", trading_day: "2024-01-06", side: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "cash limit" }
-      ],
-      equity: [{ trading_day: "2024-01-06", equity: 100800, cash: 90800 }],
-      summary: { event: "service_stopped", final_equity: 100800 }
-    }
-  });
+  const props = makeProps(paperWithEvents());
 
   render(<PaperPage {...props} />);
 
   const timeline = screen.getByLabelText("纸面事件时间线");
   expect(within(timeline).getByText("事件时间线")).toBeVisible();
-  expect(within(timeline).getByText("已接受")).toBeVisible();
+  expect(within(timeline).getAllByText("已接受")).toHaveLength(2);
   expect(within(timeline).getByText("已拒绝")).toBeVisible();
   expect(within(timeline).getByText("服务事件")).toBeVisible();
   expect(within(timeline).getByText("权益快照")).toBeVisible();
@@ -145,4 +151,44 @@ test("PaperPage shows an empty event timeline before paper events exist", () => 
 
   expect(screen.getByText("事件时间线")).toBeVisible();
   expect(screen.getByText("运行纸面交易后显示服务、订单和权益事件。")).toBeVisible();
+});
+
+test("PaperPage filters timeline and order table by event type", async () => {
+  const user = userEvent.setup();
+  render(<PaperPage {...makeProps(paperWithEvents())} />);
+
+  await user.selectOptions(screen.getByLabelText("事件类型"), "order_rejected");
+
+  const timeline = screen.getByLabelText("纸面事件时间线");
+  expect(within(timeline).getByText(/2024-01-06 sell 000001/)).toBeVisible();
+  expect(within(timeline).queryByText(/2024-01-05 buy 000001/)).not.toBeInTheDocument();
+  expect(screen.getByRole("table")).toHaveTextContent("order_rejected");
+  expect(screen.getByRole("table")).not.toHaveTextContent("order_accepted");
+});
+
+test("PaperPage combines side and symbol filters", async () => {
+  const user = userEvent.setup();
+  render(<PaperPage {...makeProps(paperWithEvents())} />);
+
+  await user.selectOptions(screen.getByLabelText("方向"), "buy");
+  await user.type(screen.getByLabelText("标的过滤"), "600000");
+
+  const timeline = screen.getByLabelText("纸面事件时间线");
+  expect(within(timeline).getByText(/2024-01-07 buy 600000/)).toBeVisible();
+  expect(within(timeline).queryByText(/2024-01-05 buy 000001/)).not.toBeInTheDocument();
+  expect(within(timeline).queryByText(/2024-01-06 sell 000001/)).not.toBeInTheDocument();
+  expect(screen.getByRole("table")).toHaveTextContent("600000");
+  expect(screen.getByRole("table")).not.toHaveTextContent("000001");
+});
+
+test("PaperPage clears paper event filters", async () => {
+  const user = userEvent.setup();
+  render(<PaperPage {...makeProps(paperWithEvents())} />);
+
+  await user.selectOptions(screen.getByLabelText("事件类型"), "order_rejected");
+  await user.click(screen.getByRole("button", { name: "清除过滤" }));
+
+  const timeline = screen.getByLabelText("纸面事件时间线");
+  expect(within(timeline).getByText(/2024-01-05 buy 000001/)).toBeVisible();
+  expect(within(timeline).getByText(/2024-01-06 sell 000001/)).toBeVisible();
 });

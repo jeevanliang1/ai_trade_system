@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Play } from "lucide-react";
 
 import { ChartPanel } from "../components/ChartPanel";
@@ -8,10 +9,22 @@ import { currentStrategy } from "./pageTypes";
 import type { PageProps, PlatformState } from "./pageTypes";
 
 type PaperMode = "single" | "portfolio";
+type PaperEventFilters = {
+  event: string;
+  side: string;
+  symbol: string;
+};
+
+const defaultPaperEventFilters: PaperEventFilters = { event: "all", side: "all", symbol: "" };
 
 export function PaperPage({ state, actions }: PageProps) {
+  const [filters, setFilters] = useState<PaperEventFilters>(defaultPaperEventFilters);
   const running = state.activePaperMode !== null;
   const config = paperRunConfig(state, "single");
+  const paperEvents = state.paper?.events ?? [];
+  const paperOrders = (state.paper?.orders ?? []) as Record<string, unknown>[];
+  const filteredEvents = useMemo(() => filterPaperRows(paperEvents, filters), [paperEvents, filters]);
+  const filteredOrders = useMemo(() => filterPaperRows(paperOrders, filters), [paperOrders, filters]);
   return (
     <div className="page-grid">
       <section className="panel side-panel">
@@ -47,13 +60,71 @@ export function PaperPage({ state, actions }: PageProps) {
           )}
           height={320}
         />
-        <PaperEventTimeline events={state.paper?.events ?? []} />
+        <PaperEventFiltersPanel
+          filters={filters}
+          totalEvents={paperEvents.length}
+          visibleEvents={filteredEvents.length}
+          onChange={setFilters}
+          onClear={() => setFilters(defaultPaperEventFilters)}
+        />
+        <PaperEventTimeline events={filteredEvents} />
         <section className="panel">
           <div className="panel-title">订单事件</div>
-          <DataTable rows={(state.paper?.orders ?? []) as Record<string, unknown>[]} />
+          <DataTable rows={filteredOrders} />
         </section>
       </section>
     </div>
+  );
+}
+
+function PaperEventFiltersPanel({
+  filters,
+  totalEvents,
+  visibleEvents,
+  onChange,
+  onClear
+}: {
+  filters: PaperEventFilters;
+  totalEvents: number;
+  visibleEvents: number;
+  onChange: (filters: PaperEventFilters) => void;
+  onClear: () => void;
+}) {
+  return (
+    <section className="panel paper-filter-panel" aria-label="纸面事件过滤">
+      <div className="panel-title between">
+        <span>事件过滤</span>
+        <button className="ghost-button" type="button" onClick={onClear}>
+          清除过滤
+        </button>
+      </div>
+      <div className="paper-filter-grid">
+        <label className="field">
+          <span>事件类型</span>
+          <select value={filters.event} onChange={(event) => onChange({ ...filters, event: event.currentTarget.value })}>
+            <option value="all">全部事件</option>
+            <option value="service_started">service_started</option>
+            <option value="service_stopped">service_stopped</option>
+            <option value="order_accepted">order_accepted</option>
+            <option value="order_rejected">order_rejected</option>
+            <option value="equity">equity</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>方向</span>
+          <select value={filters.side} onChange={(event) => onChange({ ...filters, side: event.currentTarget.value })}>
+            <option value="all">全部方向</option>
+            <option value="buy">buy</option>
+            <option value="sell">sell</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>标的过滤</span>
+          <input value={filters.symbol} onChange={(event) => onChange({ ...filters, symbol: event.currentTarget.value })} placeholder="代码或名称" />
+        </label>
+      </div>
+      <p className="paper-filter-summary">{`显示 ${visibleEvents} / ${totalEvents} 条事件`}</p>
+    </section>
   );
 }
 
@@ -79,6 +150,19 @@ function PaperEventTimeline({ events }: { events: Record<string, unknown>[] }) {
       )}
     </section>
   );
+}
+
+function filterPaperRows(rows: Record<string, unknown>[], filters: PaperEventFilters) {
+  const symbolQuery = filters.symbol.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (filters.event !== "all" && String(row.event ?? "") !== filters.event) return false;
+    if (filters.side !== "all" && String(row.side ?? "") !== filters.side) return false;
+    if (symbolQuery) {
+      const symbol = String(row.symbol ?? "").toLowerCase();
+      return symbol.includes(symbolQuery);
+    }
+    return true;
+  });
 }
 
 function paperEventView(event: Record<string, unknown>) {
