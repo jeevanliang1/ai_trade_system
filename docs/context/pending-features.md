@@ -46,6 +46,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Risk Workspace threshold editor is complete for current scope: the dedicated page mirrors the right inspector fields for risk enablement, drawdown, order cash, cash balance, position shares, and stop-loss mode while preserving `actions.setSettings` as the single update path.
 - Risk Workspace deterministic examples are complete for current scope: the page shows an empty example state before backtests and, once metrics exist, renders stable API input rows for max drawdown, trade count, win rate, and risk enablement with the active drawdown threshold.
 - Risk Workspace warning guidance is complete for current scope: frontend-only warning mapping adds high/medium/info severity labels plus remediation hints for drawdown, order cash, cash balance, position concentration, disabled, and no-warning states.
+- Risk Workspace UI/API hardening is complete for current scope: focused tests cover RiskPage rendering, AppShell risk evaluation failure recovery, and `/api/risk/evaluate` valid plus invalid payload route behavior.
 
 ## Pending
 
@@ -59,7 +60,7 @@ No current pending items.
 
 ### Risk Workspace
 
-- Add tests for risk UI rendering and API error handling.
+No current pending items.
 
 ### Responsive And Visual QA
 
@@ -82,7 +83,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Risk Workspace - Add tests for risk UI rendering and API error handling". This is the best next task because Risk Workspace rendering is now feature-complete enough to harden failure surfaces and backend route validation.
+Start with "Responsive QA - Fix narrow viewport behavior for the three-column platform". This is the best next task because the Paper and Risk workflows are now feature-complete enough to verify and harden across desktop and narrow widths.
 
 ## Update Rules
 

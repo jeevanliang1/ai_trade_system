@@ -110,6 +110,39 @@ def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
     assert risk_response.json()["ok"] is False
 
 
+def test_risk_evaluate_route_accepts_valid_payload(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/risk/evaluate",
+        json={
+            "metrics": {"max_drawdown_pct": -25.0},
+            "config": {
+                "max_drawdown_pct": 20.0,
+                "max_order_cash": 50000.0,
+                "min_cash_balance": 0.0,
+                "max_position_shares": 50000,
+                "cooldown_days": 0,
+                "enabled": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["enabled"] is True
+    assert payload["warnings"]
+
+
+def test_risk_evaluate_route_rejects_invalid_payload(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.post("/api/risk/evaluate", json={"metrics": {"max_drawdown_pct": -5.0}})
+
+    assert response.status_code == 422
+
+
 def test_portfolio_preview_returns_breakdown_contract(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     settings = _settings_payload()

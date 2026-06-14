@@ -275,3 +275,26 @@ test("AppShell loads paper events from the configured log path", async () => {
   expect(screen.getByText("已加载 3 条事件")).toBeVisible();
   expect(screen.getByText(/最后事件 service_stopped/)).toBeVisible();
 });
+
+test("AppShell shows risk evaluation API errors and clears busy state", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.evaluateRisk.mockRejectedValueOnce(new apiMock.ApiError(400, "risk metrics invalid"));
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "风控" }));
+  await user.click(screen.getByRole("button", { name: "检查风控" }));
+
+  await waitFor(() => expect(screen.getAllByText("请求失败：risk metrics invalid").length).toBeGreaterThan(0));
+  expect(screen.getByRole("button", { name: "检查风控" })).toBeEnabled();
+});
