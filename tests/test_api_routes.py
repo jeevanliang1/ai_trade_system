@@ -248,6 +248,36 @@ def test_demo_data_contains_mixed_rising_and_falling_candles(tmp_path, monkeypat
     assert len(falling) >= 20
 
 
+def test_research_signals_preview_route_returns_blocker_for_short_demo_data(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    settings = _settings_payload()
+    demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 20})
+    assert demo_response.status_code == 200
+
+    response = client.post("/api/research/signals/preview", json={"settings": settings, "min_bars": 60, "lookback": 120})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "000001"
+    assert payload["blockers"][0]["code"] == "INSUFFICIENT_BARS"
+    assert payload["score"]["direction"] == "neutral"
+
+
+def test_research_signals_preview_route_returns_signals_for_demo_data(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    settings = _settings_payload()
+    demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 120})
+    assert demo_response.status_code == 200
+
+    response = client.post("/api/research/signals/preview", json={"settings": settings, "min_bars": 40, "lookback": 120})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bars"] == 120
+    assert "total_score" in payload["score"]
+    assert isinstance(payload["signals"], list)
+
+
 def test_strategy_source_and_data_paths_reject_traversal(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
 

@@ -14,6 +14,7 @@ from .schemas import (
     DemoDataRequest,
     PaperRunRequest,
     PortfolioPreviewRequest,
+    ResearchSignalsRequest,
     RiskEvaluateRequest,
     SignalsRequest,
     StrategySourceRequest,
@@ -83,6 +84,10 @@ def create_app() -> FastAPI:
     def ai_research(request: AIResearchRequest) -> dict[str, Any]:
         return _handle(lambda: service.research_ai(request))
 
+    @app.post("/api/research/signals/preview")
+    def research_signals_preview(request: ResearchSignalsRequest) -> dict[str, Any]:
+        return _handle(lambda: service.preview_research_signals(request))
+
     @app.post("/api/paper/run")
     def paper_run(request: PaperRunRequest) -> dict[str, Any]:
         return _handle(lambda: service.run_paper_request(request))
@@ -110,4 +115,3 @@ def _handle(fn: Callable[[], Any]) -> Any:
 
 
 app = create_app()
-

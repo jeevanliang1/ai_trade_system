@@ -17,6 +17,7 @@ from ai_trade_system.llm import MockLLMProvider, build_research_prompt
 from ai_trade_system.market import Bar
 from ai_trade_system.paper_service import PaperTradingService
 from ai_trade_system.portfolio import PortfolioStrategy, StrategyAllocation
+from ai_trade_system.research import preview_research_signals as build_research_signal_preview
 from ai_trade_system.risk import RiskGuardrailConfig, evaluate_risk_guardrails
 from ai_trade_system.stock_catalog import StockInfo, load_stock_catalog, search_stock_catalog
 from ai_trade_system.strategy import Strategy
@@ -42,6 +43,7 @@ from .schemas import (
     PaperRunRequest,
     PlatformSettings,
     PortfolioRequest,
+    ResearchSignalsRequest,
     RiskConfigView,
     StrategySelection,
 )
@@ -192,6 +194,12 @@ def research_ai(request) -> dict[str, Any]:
         "prompt": build_research_prompt(core_request),
         "insight": _serialize(insight),
     }
+
+
+def preview_research_signals(request: ResearchSignalsRequest) -> dict[str, Any]:
+    bars = _load_bars(request.settings)
+    preview = build_research_signal_preview(bars, min_bars=request.min_bars, lookback=request.lookback)
+    return _serialize(preview)
 
 
 def run_paper_request(request: PaperRunRequest) -> dict[str, Any]:

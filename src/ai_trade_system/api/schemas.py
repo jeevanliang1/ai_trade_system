@@ -111,6 +111,11 @@ class AIResearchRequest(DataRequest):
     horizon: str = "5个交易日"
 
 
+class ResearchSignalsRequest(DataRequest):
+    min_bars: int = Field(default=60, ge=20, le=500)
+    lookback: int = Field(default=120, ge=20, le=500)
+
+
 class PaperRunRequest(DataRequest):
     strategy: StrategySelection | None = None
     portfolio: PortfolioRequest | None = None
