@@ -6,6 +6,8 @@ Sedimentation audit is part of task close-out, equivalent in importance to testi
 
 Rules that affect future AI default behavior must be synchronized to the root `AGENTS.md` in concise form.
 
+Every task close-out should include a headless Chrome screenshot for user acceptance when a browser-renderable project surface is available. If no screenshot can be captured, the final response must say why, using an explicit not-applicable or blocker note.
+
 The final response must report the sedimentation result using one of these forms:
 
 - `沉淀：已更新 ...`

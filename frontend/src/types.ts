@@ -1,0 +1,172 @@
+export type PlatformSettings = {
+  symbol: string;
+  exchange: string;
+  start_date: string;
+  end_date: string;
+  adjust: string;
+  csv_path: string;
+  log_path: string;
+  initial_cash: number;
+  commission_rate: number;
+  slippage: number;
+  max_order_cash: number;
+  max_drawdown_pct: number;
+  min_cash_balance: number;
+  max_position_shares: number;
+};
+
+export type StrategyParameter = {
+  name: string;
+  default: unknown;
+  annotation: string;
+};
+
+export type StrategySpec = {
+  id: string;
+  name: string;
+  class_name: string;
+  source: "builtin" | "user" | string;
+  path: string | null;
+  editable: boolean;
+  parameters: StrategyParameter[];
+};
+
+export type Stock = {
+  code: string;
+  name: string;
+  exchange: string;
+};
+
+export type Bar = {
+  symbol: string;
+  exchange: string;
+  trading_day: string;
+  open_price: number;
+  high_price: number;
+  low_price: number;
+  close_price: number;
+  volume: number;
+  turnover: number;
+};
+
+export type SignalRow = {
+  trading_day: string;
+  action: "buy" | "sell";
+  symbol: string;
+  price: number;
+  volume: number;
+  reason: string;
+};
+
+export type TradeRow = {
+  trading_day: string;
+  side: string;
+  symbol: string;
+  price: number;
+  volume: number;
+  commission: number;
+};
+
+export type EquityPoint = {
+  trading_day: string;
+  equity: number;
+  cash: number;
+  close_price?: number;
+};
+
+export type DrawdownPoint = {
+  trading_day: string;
+  equity: number;
+  drawdown_pct: number;
+};
+
+export type BacktestMetrics = {
+  final_equity: number;
+  total_return_pct: number;
+  annualized_return_pct: number;
+  max_drawdown_pct: number;
+  trade_count: number;
+  win_rate_pct: number | null;
+  profit_factor: number | null;
+  exposure_pct: number;
+};
+
+export type RiskStatus = {
+  ok: boolean;
+  warnings: string[];
+  enabled: boolean;
+};
+
+export type AIInsight = {
+  symbol: string;
+  horizon: string;
+  direction: "bullish" | "bearish" | "neutral" | string;
+  confidence: number;
+  suggested_action: string;
+  technical_evidence: string[];
+  information_evidence: string[];
+  risk_warnings: string[];
+  prompt_version: string;
+  provider: string;
+  created_at: string;
+};
+
+export type BacktestResponse = {
+  bars: Bar[];
+  metrics: BacktestMetrics;
+  equity_curve: EquityPoint[];
+  drawdowns: DrawdownPoint[];
+  trades: TradeRow[];
+  risk_status: RiskStatus;
+};
+
+export type BootstrapResponse = {
+  settings: PlatformSettings;
+  catalog_available: boolean;
+  catalog_size: number;
+  stocks: Stock[];
+  strategies: StrategySpec[];
+  limits: Record<string, unknown>;
+};
+
+export type StrategySelection = {
+  id: string;
+  params: Record<string, unknown>;
+};
+
+export type PortfolioAllocation = {
+  strategy: StrategySelection;
+  weight: number;
+  enabled: boolean;
+};
+
+export type PortfolioRequest = {
+  allocations: PortfolioAllocation[];
+  mode: "weighted_vote" | "equal_vote" | "first_active";
+  ai_adjust: boolean;
+  ai_direction?: string | null;
+};
+
+export type DataResponse = {
+  bars: Bar[];
+  summary: Record<string, unknown>;
+};
+
+export type SignalsResponse = {
+  bars: Bar[];
+  signals: SignalRow[];
+  summary: { signals: number; buys: number; sells: number };
+};
+
+export type AIResearchResponse = {
+  snapshot: Record<string, unknown>;
+  prompt: string;
+  insight: AIInsight;
+};
+
+export type PaperResponse = {
+  events: Record<string, unknown>[];
+  orders: Record<string, unknown>[];
+  equity: Record<string, unknown>[];
+  summary: Record<string, unknown>;
+};

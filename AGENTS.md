@@ -14,6 +14,7 @@
 - `docs/README.md`: AI documentation index.
 - `docs/auto-sedimentation-skill.md`: required task close-out documentation workflow.
 - `docs/rules/auto-sedimentation-closeout.md`: mandatory sedimentation close-out rule.
+- `docs/qa/headless-chrome-screenshots.md`: required headless Chrome screenshot acceptance workflow.
 
 ## Product And Engineering Rules
 
@@ -21,6 +22,7 @@
 - Preserve the direction: validate strategies with public data, backtests, and paper trading before any live broker integration.
 - Treat risk controls, paper execution behavior, and event logs as user-facing trading-system behavior; update tests when changing them.
 - Prefer extending `src/ai_trade_system` modules and existing CLI patterns over adding new top-level systems.
+- Treat the React + FastAPI platform (`./scripts/run_app.sh`, `http://localhost:5173`) as the default browser surface. Streamlit (`./scripts/run_web.sh`, `http://localhost:8501`) is legacy unless a task explicitly targets it.
 
 ## Required Context Before Development
 
@@ -35,10 +37,12 @@
 - Run `python -m pytest` after code changes unless the task is docs-only or the user gives a narrower verification command.
 - For docs-only changes, run lightweight file existence/non-empty checks relevant to the changed docs.
 - Report any verification command that was not run and why.
+- At task close-out, provide a headless Chrome screenshot for user acceptance whenever a browser-renderable project surface is available; if no such surface can be captured, report the exact reason.
 
 ## AI Auto Sedimentation Rules
 
 - At every accepted task wrap-up, run the auto-sedimentation audit in `docs/auto-sedimentation-skill.md`.
 - Capture durable project knowledge under the smallest appropriate `docs/` file; avoid duplicating facts already obvious from code.
 - Any rule that changes future AI default behavior must be mirrored here in concise form.
+- Close-out evidence should include a headless Chrome screenshot path or an explicit not-applicable/blocker note.
 - Final responses must include either `沉淀：已更新 ...` or `沉淀：无需新增文档，原因是 ...`.

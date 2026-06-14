@@ -1,0 +1,423 @@
+from __future__ import annotations
+
+from dataclasses import asdict, is_dataclass
+from datetime import date, timedelta
+import math
+from pathlib import Path
+from typing import Any, Iterable
+
+import pandas as pd
+
+from ai_trade_system.analytics import calculate_backtest_metrics, drawdown_series
+from ai_trade_system.backtest import BacktestConfig, run_backtest
+from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
+from ai_trade_system.indicators import latest_indicator_snapshot
+from ai_trade_system.llm import LLMResearchRequest as CoreAIResearchRequest
+from ai_trade_system.llm import MockLLMProvider, build_research_prompt
+from ai_trade_system.market import Bar
+from ai_trade_system.paper_service import PaperTradingService
+from ai_trade_system.portfolio import PortfolioStrategy, StrategyAllocation
+from ai_trade_system.risk import RiskGuardrailConfig, evaluate_risk_guardrails
+from ai_trade_system.stock_catalog import StockInfo, load_stock_catalog, search_stock_catalog
+from ai_trade_system.strategy import Strategy
+from ai_trade_system.strategy_registry import (
+    StrategySpec,
+    create_strategy_template,
+    discover_strategies,
+    inspect_strategy_parameters,
+    instantiate_strategy,
+    read_strategy_source,
+    save_strategy_source,
+)
+from ai_trade_system.web.view_models import (
+    load_paper_events,
+    paper_events_to_frames,
+    strategy_signals_to_frame,
+)
+
+from .schemas import (
+    BacktestRequest,
+    DataRequest,
+    DemoDataRequest,
+    PaperRunRequest,
+    PlatformSettings,
+    PortfolioRequest,
+    RiskConfigView,
+    StrategySelection,
+)
+
+
+class ApiInputError(ValueError):
+    """Raised for invalid API input that should be reported as HTTP 400."""
+
+
+DEFAULT_SETTINGS = PlatformSettings()
+
+
+def bootstrap() -> dict[str, Any]:
+    catalog = load_stock_catalog()
+    return {
+        "settings": DEFAULT_SETTINGS.model_dump(),
+        "catalog_available": bool(catalog),
+        "catalog_size": len(catalog),
+        "stocks": [_stock_view(stock) for stock in catalog[:20]],
+        "strategies": list_strategies(),
+        "limits": {
+            "live_trading": False,
+            "broker_gateway": "not_configured",
+            "provider": "MockLLMProvider",
+        },
+    }
+
+
+def list_stocks(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
+    return [_stock_view(stock) for stock in search_stock_catalog(load_stock_catalog(), query, limit)]
+
+
+def list_strategies() -> list[dict[str, Any]]:
+    return [_strategy_view(spec) for spec in discover_strategies()]
+
+
+def get_strategy_source(path: str) -> dict[str, str]:
+    source_path = _safe_strategy_path(path)
+    return {"path": str(source_path), "source": read_strategy_source(source_path)}
+
+
+def put_strategy_source(filename: str, source: str) -> dict[str, Any]:
+    path = save_strategy_source("strategies", filename, source)
+    return {"path": str(path), "strategies": list_strategies()}
+
+
+def create_strategy_file(filename: str, class_name: str) -> dict[str, Any]:
+    path = save_strategy_source("strategies", filename, create_strategy_template(class_name))
+    return {"path": str(path), "strategies": list_strategies()}
+
+
+def load_data(request: DataRequest) -> dict[str, Any]:
+    bars = _load_bars(request.settings)
+    return _data_payload(bars, request.settings)
+
+
+def download_data(request: DataRequest) -> dict[str, Any]:
+    settings = request.settings
+    bars = fetch_akshare_daily_bars(
+        symbol=settings.symbol,
+        start_date=settings.start_date,
+        end_date=settings.end_date,
+        exchange=settings.exchange,
+        adjust=settings.adjust,
+    )
+    write_bars_csv(bars, _safe_data_path(settings.csv_path))
+    return _data_payload(bars, settings)
+
+
+def demo_data(request: DemoDataRequest) -> dict[str, Any]:
+    bars = _demo_bars(request.settings.symbol, request.settings.exchange, request.count)
+    write_bars_csv(bars, _safe_data_path(request.settings.csv_path))
+    return _data_payload(bars, request.settings)
+
+
+def preview_signals(request) -> dict[str, Any]:
+    bars = _load_bars(request.settings)
+    strategy = _build_strategy(request.strategy)
+    frame = strategy_signals_to_frame(bars, strategy)
+    return {"bars": _serialize_many(bars), "signals": _frame_records(frame), "summary": _signal_summary(frame)}
+
+
+def preview_portfolio(request) -> dict[str, Any]:
+    bars = _load_bars(request.settings)
+    portfolio = _build_portfolio(request.portfolio)
+    frame = strategy_signals_to_frame(bars, portfolio)
+    return {
+        "bars": _serialize_many(bars),
+        "signals": _frame_records(frame),
+        "summary": _signal_summary(frame),
+        "breakdown": _serialize(portfolio.last_breakdown),
+        "allocations": [
+            {"name": allocation.name, "weight": allocation.weight, "enabled": allocation.enabled}
+            for allocation in portfolio.allocations
+        ],
+    }
+
+
+def run_backtest_request(request: BacktestRequest) -> dict[str, Any]:
+    settings = request.settings
+    bars = _load_bars(settings)
+    strategy = _strategy_for_mode(request.mode, request.strategy, request.portfolio)
+    result = run_backtest(
+        bars,
+        strategy,
+        BacktestConfig(
+            initial_cash=settings.initial_cash,
+            commission_rate=settings.commission_rate,
+            slippage=settings.slippage,
+            max_order_cash=settings.max_order_cash,
+        ),
+    )
+    metrics = calculate_backtest_metrics(result.equity_curve, result.trades, settings.initial_cash)
+    drawdowns = drawdown_series(result.equity_curve)
+    risk_status = evaluate_risk_guardrails(
+        {"max_drawdown_pct": metrics.max_drawdown_pct},
+        _risk_config(settings),
+    )
+    return {
+        "bars": _serialize_many(bars),
+        "metrics": _serialize(metrics),
+        "equity_curve": _serialize_many(result.equity_curve),
+        "drawdowns": _serialize_many(drawdowns),
+        "trades": _serialize_many(result.trades),
+        "risk_status": _serialize(risk_status),
+    }
+
+
+def research_ai(request) -> dict[str, Any]:
+    bars = _load_bars(request.settings)
+    snapshot = latest_indicator_snapshot(bars)
+    core_request = CoreAIResearchRequest(
+        symbol=request.settings.symbol,
+        horizon=request.horizon,
+        indicator_snapshot=snapshot,
+        information_notes=request.information_notes,
+        risk_context={
+            "max_drawdown_pct": request.settings.max_drawdown_pct,
+            "max_order_cash": request.settings.max_order_cash,
+        },
+        prompt_mode=request.prompt_mode,
+    )
+    insight = MockLLMProvider().generate_insight(core_request)
+    return {
+        "snapshot": _serialize(snapshot),
+        "prompt": build_research_prompt(core_request),
+        "insight": _serialize(insight),
+    }
+
+
+def run_paper_request(request: PaperRunRequest) -> dict[str, Any]:
+    settings = request.settings
+    bars = _load_bars(settings)
+    strategy = _strategy_for_mode(request.mode, request.strategy, request.portfolio)
+    service = PaperTradingService(
+        strategy=strategy,
+        initial_cash=settings.initial_cash,
+        commission_rate=settings.commission_rate,
+        slippage=settings.slippage,
+        max_order_cash=settings.max_order_cash,
+    )
+    events = service.run(bars, log_path=_safe_log_path(settings.log_path))
+    return _paper_payload(events)
+
+
+def paper_events(path: str) -> dict[str, Any]:
+    return _paper_payload(load_paper_events(_safe_log_path(path)))
+
+
+def evaluate_risk(metrics: dict[str, float | int | None], config: RiskConfigView) -> dict[str, Any]:
+    status = evaluate_risk_guardrails(
+        metrics,
+        RiskGuardrailConfig(
+            max_drawdown_pct=config.max_drawdown_pct,
+            max_order_cash=config.max_order_cash,
+            min_cash_balance=config.min_cash_balance,
+            max_position_shares=config.max_position_shares,
+            cooldown_days=config.cooldown_days,
+        ),
+        enabled=config.enabled,
+    )
+    return _serialize(status)
+
+
+def _load_bars(settings: PlatformSettings) -> list[Bar]:
+    path = _safe_data_path(settings.csv_path)
+    if not path.exists():
+        raise ApiInputError(f"CSV data not found: {settings.csv_path}")
+    try:
+        return read_bars_csv(path)
+    except Exception as exc:
+        raise ApiInputError(f"failed to read CSV data: {exc}") from exc
+
+
+def _build_strategy(selection: StrategySelection) -> Strategy:
+    spec = _find_strategy(selection.id)
+    params = _params_with_symbol_defaults(spec, selection.params)
+    return instantiate_strategy(spec, params)
+
+
+def _build_portfolio(request: PortfolioRequest) -> PortfolioStrategy:
+    allocations: list[StrategyAllocation] = []
+    for item in request.allocations:
+        strategy = _build_strategy(item.strategy)
+        spec = _find_strategy(item.strategy.id)
+        weight = item.weight
+        if request.ai_adjust and request.ai_direction == "bullish":
+            weight = min(1.0, weight + 0.05)
+        allocations.append(StrategyAllocation(spec.name, strategy, weight, item.enabled))
+    if not allocations:
+        raise ApiInputError("portfolio requires at least one strategy allocation")
+    return PortfolioStrategy(allocations, mode=request.mode)
+
+
+def _strategy_for_mode(
+    mode: str,
+    strategy: StrategySelection | None,
+    portfolio: PortfolioRequest | None,
+) -> Strategy:
+    if mode == "portfolio":
+        if portfolio is None:
+            raise ApiInputError("portfolio mode requires portfolio")
+        return _build_portfolio(portfolio)
+    if strategy is None:
+        raise ApiInputError("single mode requires strategy")
+    return _build_strategy(strategy)
+
+
+def _find_strategy(strategy_id: str) -> StrategySpec:
+    for spec in discover_strategies():
+        if spec.id == strategy_id:
+            return spec
+    raise ApiInputError(f"strategy not found: {strategy_id}")
+
+
+def _params_with_symbol_defaults(spec: StrategySpec, params: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(params)
+    for param in inspect_strategy_parameters(spec):
+        if param.name == "symbol" and not merged.get("symbol"):
+            merged["symbol"] = DEFAULT_SETTINGS.symbol
+    return merged
+
+
+def _strategy_view(spec: StrategySpec) -> dict[str, Any]:
+    return {
+        "id": spec.id,
+        "name": spec.name,
+        "class_name": spec.class_name,
+        "source": spec.source,
+        "path": str(spec.path) if spec.path else None,
+        "editable": spec.source == "user" and spec.path is not None,
+        "parameters": [_serialize(param) for param in inspect_strategy_parameters(spec)],
+    }
+
+
+def _stock_view(stock: StockInfo) -> dict[str, str]:
+    return {"code": stock.code, "name": stock.name, "exchange": stock.exchange}
+
+
+def _data_payload(bars: list[Bar], settings: PlatformSettings) -> dict[str, Any]:
+    frame = pd.DataFrame([_serialize(bar) for bar in bars])
+    summary = {
+        "rows": len(bars),
+        "csv_path": settings.csv_path,
+        "symbol": bars[-1].symbol if bars else settings.symbol,
+        "exchange": bars[-1].exchange if bars else settings.exchange,
+        "start": bars[0].trading_day.isoformat() if bars else None,
+        "end": bars[-1].trading_day.isoformat() if bars else None,
+        "latest_close": bars[-1].close_price if bars else None,
+        "latest_volume": bars[-1].volume if bars else None,
+        "latest_turnover": bars[-1].turnover if bars else None,
+    }
+    return {"bars": _frame_records(frame), "summary": summary}
+
+
+def _paper_payload(events: list[dict[str, Any]]) -> dict[str, Any]:
+    orders, equity, summary = paper_events_to_frames(events)
+    return {
+        "events": _serialize_many(events),
+        "orders": _frame_records(orders),
+        "equity": _frame_records(equity),
+        "summary": _serialize(summary),
+    }
+
+
+def _signal_summary(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty:
+        return {"signals": 0, "buys": 0, "sells": 0}
+    return {
+        "signals": len(frame),
+        "buys": int((frame["action"] == "buy").sum()),
+        "sells": int((frame["action"] == "sell").sum()),
+    }
+
+
+def _risk_config(settings: PlatformSettings) -> RiskGuardrailConfig:
+    return RiskGuardrailConfig(
+        max_drawdown_pct=settings.max_drawdown_pct,
+        max_order_cash=settings.max_order_cash,
+        min_cash_balance=settings.min_cash_balance,
+        max_position_shares=settings.max_position_shares,
+    )
+
+
+def _safe_strategy_path(value: str | Path) -> Path:
+    return _safe_path(value, Path("strategies"), suffix=".py")
+
+
+def _safe_data_path(value: str | Path) -> Path:
+    return _safe_path(value, Path("data"), suffix=".csv")
+
+
+def _safe_log_path(value: str | Path) -> Path:
+    return _safe_path(value, Path("logs"), suffix=".jsonl")
+
+
+def _safe_path(value: str | Path, root: Path, suffix: str | None = None) -> Path:
+    raw = Path(value)
+    candidate = raw if raw.is_absolute() else Path.cwd() / raw
+    resolved = candidate.resolve()
+    root_resolved = (Path.cwd() / root).resolve()
+    if resolved != root_resolved and root_resolved not in resolved.parents:
+        raise ApiInputError(f"path must stay under {root.as_posix()}: {value}")
+    if suffix and resolved.suffix != suffix:
+        raise ApiInputError(f"path must end with {suffix}: {value}")
+    return resolved
+
+
+def _demo_bars(symbol: str, exchange: str, count: int = 260) -> list[Bar]:
+    start = date(2024, 1, 2)
+    bars: list[Bar] = []
+    close = 10.0
+    for index in range(max(1, count)):
+        trend = 0.018 if index < count * 0.62 else -0.006
+        cycle = math.sin(index / 8) * 0.035
+        direction = 1 if index % 5 in (0, 1, 2) else -1
+        body = direction * (0.13 + abs(math.sin(index / 5)) * 0.12)
+        open_price = max(2.0, close + math.sin(index / 6) * 0.04)
+        close = max(2.0, open_price + trend + cycle + body)
+        wick = 0.12 + abs(math.cos(index / 7)) * 0.08
+        high_price = max(open_price, close) + wick
+        low_price = min(open_price, close) - wick
+        volume = 1_000_000 + index * 2500 + abs(math.sin(index / 6)) * 120_000 + (40_000 if direction < 0 else 0)
+        bars.append(
+            Bar(
+                symbol=symbol,
+                exchange=exchange,
+                trading_day=start + timedelta(days=index),
+                open_price=round(open_price, 2),
+                high_price=round(high_price, 2),
+                low_price=round(low_price, 2),
+                close_price=round(close, 2),
+                volume=round(volume, 2),
+                turnover=round(volume * close, 2),
+            )
+        )
+    return bars
+
+
+def _frame_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    return [_serialize(row) for row in frame.to_dict("records")]
+
+
+def _serialize_many(values: Iterable[Any]) -> list[Any]:
+    return [_serialize(value) for value in values]
+
+
+def _serialize(value: Any) -> Any:
+    if isinstance(value, date):
+        return value.isoformat()
+    if is_dataclass(value):
+        return {key: _serialize(item) for key, item in asdict(value).items()}
+    if isinstance(value, dict):
+        return {str(key): _serialize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_serialize(item) for item in value]
+    if pd.isna(value):
+        return None
+    return value

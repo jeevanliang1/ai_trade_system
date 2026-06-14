@@ -40,6 +40,30 @@ python -m ai_trade_system.cli download \
   --output data/000001_daily.csv
 ```
 
+## 股票目录与搜索
+
+项目内置本地 A股股票目录：
+
+```text
+data/a_share_stocks.csv
+```
+
+Web 操作台启动后会加载该文件，并支持按股票名称或代码搜索选择标的。选中后会自动带出股票代码和交易所；目录不可用时仍可手动输入代码。
+
+刷新股票目录：
+
+```bash
+PYTHONPATH=src python -m ai_trade_system.cli stocks refresh \
+  --output data/a_share_stocks.csv
+```
+
+搜索股票：
+
+```bash
+PYTHONPATH=src python -m ai_trade_system.cli stocks search 平安
+PYTHONPATH=src python -m ai_trade_system.cli stocks search 000001
+```
+
 ## 运行回测
 
 ```bash
@@ -67,29 +91,43 @@ python -m ai_trade_system.cli paper \
   --log logs/paper_events.jsonl
 ```
 
-## 打开 Web 操作台
+## 打开 React Web 平台
 
-Web 页面使用 Streamlit，包含数据下载、CSV 查看、策略管理、策略编辑、策略选择回测、信号预览、资金曲线、买卖点、交易记录和纸面交易日志。
+默认 Web 平台使用 React + FastAPI，包含数据下载、CSV 查看、策略管理、策略编辑、策略选择回测、组合实验室、信号预览、资金曲线、买卖点、交易记录、纸面交易日志、风控和 Mock AI 研究员。
 
-安装 Web 依赖：
+安装 API 依赖并安装前端依赖：
 
 ```bash
-python -m pip install -e ".[web,data]"
+python -m pip install -e ".[api,data]"
+cd frontend && npm install && cd ..
 ```
 
-启动页面：
+启动 React 平台：
 
 ```bash
-./scripts/run_web.sh
+./scripts/run_app.sh
 ```
 
 默认访问地址：
 
 ```text
-http://localhost:8501
+http://localhost:5173
 ```
 
+后端 API 默认地址是 `http://127.0.0.1:8000`。
+
 如果部署在服务器，请在安全网络或反向代理后访问，不要直接暴露到公网。
+
+## Legacy Streamlit 操作台
+
+Streamlit 页面仍保留为 legacy 控制台，便于迁移期间对照和回退：
+
+```bash
+python -m pip install -e ".[web,data]"
+./scripts/run_web.sh
+```
+
+默认 legacy 地址是 `http://localhost:8501`。
 
 ## 自定义策略
 

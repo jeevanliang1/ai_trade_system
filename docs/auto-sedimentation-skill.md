@@ -49,5 +49,6 @@ Do not capture:
 4. If it changes future AI behavior, update `AGENTS.md`.
 5. If it changes product behavior, update the active PRD/status file.
 6. Run lightweight verification, such as checking files exist and markdown is non-empty.
-7. Commit the sedimentation change separately if this repo requires commit discipline.
-8. In the final response, include: `沉淀：已更新 ...` or `沉淀：无需新增文档，原因是 ...`。
+7. Capture a headless Chrome screenshot for user acceptance when a browser-renderable project surface is available. Include the screenshot path in the final response. If screenshot capture is not applicable or blocked, state the exact reason.
+8. Commit the sedimentation change separately if this repo requires commit discipline.
+9. In the final response, include: `沉淀：已更新 ...` or `沉淀：无需新增文档，原因是 ...`。

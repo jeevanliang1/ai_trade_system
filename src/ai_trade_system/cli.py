@@ -6,6 +6,12 @@ from pathlib import Path
 from ai_trade_system.backtest import BacktestConfig, run_backtest
 from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
 from ai_trade_system.paper_service import PaperTradingService
+from ai_trade_system.stock_catalog import (
+    DEFAULT_STOCK_CATALOG_PATH,
+    load_stock_catalog,
+    refresh_stock_catalog,
+    search_stock_catalog,
+)
 from ai_trade_system.strategies.dual_moving_average import DualMovingAverageStrategy
 
 
@@ -38,6 +44,15 @@ def main() -> None:
     paper.add_argument("--cash", type=float, default=100_000)
     paper.add_argument("--log", default="logs/paper_events.jsonl")
 
+    stocks = subparsers.add_parser("stocks", help="Manage local A-share stock catalog")
+    stock_subparsers = stocks.add_subparsers(dest="stocks_command", required=True)
+    stocks_refresh = stock_subparsers.add_parser("refresh", help="Refresh A-share stock catalog through AKShare")
+    stocks_refresh.add_argument("--output", default=str(DEFAULT_STOCK_CATALOG_PATH))
+    stocks_search = stock_subparsers.add_parser("search", help="Search local A-share stock catalog by code or name")
+    stocks_search.add_argument("keyword")
+    stocks_search.add_argument("--catalog", default=str(DEFAULT_STOCK_CATALOG_PATH))
+    stocks_search.add_argument("--limit", type=int, default=20)
+
     args = parser.parse_args()
     if args.command == "download":
         bars = fetch_akshare_daily_bars(args.symbol, args.start, args.end, args.exchange, args.adjust)
@@ -56,6 +71,17 @@ def main() -> None:
         events = service.run(bars, log_path=args.log)
         print(f"events={len(events)}")
         print(f"log={args.log}")
+    elif args.command == "stocks":
+        if args.stocks_command == "refresh":
+            catalog = refresh_stock_catalog(args.output)
+            print(f"wrote {len(catalog)} stocks to {args.output}")
+        elif args.stocks_command == "search":
+            catalog = load_stock_catalog(args.catalog)
+            results = search_stock_catalog(catalog, args.keyword, limit=args.limit)
+            for stock in results:
+                print(f"{stock.code}\t{stock.name}\t{stock.exchange}")
+            if not results:
+                print("no matching stocks")
 
 
 if __name__ == "__main__":

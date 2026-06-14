@@ -2,8 +2,16 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
-data/
+data/*
+!data/a_share_stocks.csv
 logs/
 *.egg-info/
 dist/
 build/
+.DS_Store
+.codegraph/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
