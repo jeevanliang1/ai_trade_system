@@ -122,9 +122,6 @@ test("priceOption renders Chan structure overlay series", () => {
         direction: "up",
         start_index: 0,
         end_index: 1,
-        start_stroke_index: 0,
-        end_stroke_index: 2,
-        break_stroke_index: null,
         start_day: "2024-01-02",
         end_day: "2024-01-03",
         start_price: 9.8,
@@ -138,6 +135,9 @@ test("priceOption renders Chan structure overlay series", () => {
         direction: "up",
         start_index: 0,
         end_index: 1,
+        start_stroke_index: 0,
+        end_stroke_index: 2,
+        break_stroke_index: null,
         start_day: "2024-01-02",
         end_day: "2024-01-03",
         start_price: 9.8,
@@ -173,7 +173,15 @@ test("priceOption renders Chan structure overlay series", () => {
         reference_end_index: 1,
         reference_energy: 0.8,
         current_energy: 0.65,
-        price_extreme: 11.1
+        price_extreme: 11.1,
+        base_score: 48,
+        macd_strength: 8,
+        volume_strength: 5,
+        confirmation_score: 66,
+        macd_reference: 0.12,
+        macd_current: 0.08,
+        volume_reference: 2400,
+        volume_current: 1200
       }
     ],
     signals: [

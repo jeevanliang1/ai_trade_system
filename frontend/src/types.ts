@@ -117,9 +117,6 @@ export type ChanStrokeOverlay = {
   direction: "up" | "down" | string;
   start_index: number;
   end_index: number;
-  start_stroke_index: number;
-  end_stroke_index: number;
-  break_stroke_index: number | null;
   start_day: string;
   end_day: string;
   start_price: number;
@@ -141,6 +138,9 @@ export type ChanSegmentOverlay = {
   direction: "up" | "down" | string;
   start_index: number;
   end_index: number;
+  start_stroke_index: number;
+  end_stroke_index: number;
+  break_stroke_index: number | null;
   start_day: string;
   end_day: string;
   start_price: number;
@@ -174,6 +174,14 @@ export type ChanDivergenceOverlay = {
   reference_energy: number;
   current_energy: number;
   price_extreme: number;
+  base_score: number;
+  macd_strength: number;
+  volume_strength: number;
+  confirmation_score: number;
+  macd_reference: number;
+  macd_current: number;
+  volume_reference: number;
+  volume_current: number;
 };
 
 export type ResearchSignalChanStructure = {

@@ -111,6 +111,14 @@ class ChanDivergenceOverlay:
     reference_energy: float
     current_energy: float
     price_extreme: float
+    base_score: float
+    macd_strength: float
+    volume_strength: float
+    confirmation_score: float
+    macd_reference: float
+    macd_current: float
+    volume_reference: float
+    volume_current: float
 
 
 @dataclass(frozen=True)

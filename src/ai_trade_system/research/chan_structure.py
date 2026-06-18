@@ -83,6 +83,20 @@ class ChanDivergence:
     reference_energy: float
     current_energy: float
     price_extreme: float
+    base_score: float
+    macd_strength: float
+    volume_strength: float
+    confirmation_score: float
+    macd_reference: float
+    macd_current: float
+    volume_reference: float
+    volume_current: float
+
+
+@dataclass(frozen=True)
+class ChanIndicatorContext:
+    macd_histogram: dict[int, float]
+    volume: dict[int, float]
 
 
 @dataclass(frozen=True)
@@ -106,13 +120,14 @@ def scan_chan_structure(
     lookback: int | None = None,
 ) -> ChanStructureResult:
     working = frame.tail(lookback).reset_index(drop=True) if lookback else frame.reset_index(drop=True)
+    indicator_context = _build_indicator_context(working)
     klines = normalize_containment(working)
     fractals = _clean_fractals(_detect_fractals(klines))
     strokes = _build_strokes(fractals, min_stroke_bars=max(1, int(min_stroke_bars)))
     pivots = _build_pivots(strokes)
     segments = _build_segments(strokes)
     recursive_pivots = _build_recursive_pivots(strokes, segments)
-    divergences = _detect_divergences(segments)
+    divergences = _detect_divergences(segments, indicator_context)
     signals = _structure_signals(
         klines,
         fractals,
@@ -132,6 +147,22 @@ def scan_chan_structure(
         divergences=divergences,
         signals=signals,
         chan_score=chan_score,
+    )
+
+
+def _build_indicator_context(frame: pd.DataFrame) -> ChanIndicatorContext:
+    if frame.empty:
+        return ChanIndicatorContext(macd_histogram={}, volume={})
+    closes = frame["close"].astype(float)
+    ema_fast = closes.ewm(span=12, adjust=False).mean()
+    ema_slow = closes.ewm(span=26, adjust=False).mean()
+    dif = ema_fast - ema_slow
+    dea = dif.ewm(span=9, adjust=False).mean()
+    histogram = (dif - dea) * 2
+    volumes = frame["volume"].astype(float)
+    return ChanIndicatorContext(
+        macd_histogram={int(index): round(float(value), 6) for index, value in histogram.items()},
+        volume={int(index): round(float(value), 4) for index, value in volumes.items()},
     )
 
 
@@ -356,13 +387,14 @@ def _recursive_pivot_from_components(level: str, first: ChanStroke | ChanSegment
     )
 
 
-def _detect_divergences(segments: list[ChanSegment]) -> list[ChanDivergence]:
+def _detect_divergences(segments: list[ChanSegment], indicators: ChanIndicatorContext | None = None) -> list[ChanDivergence]:
     divergences: list[ChanDivergence] = []
     latest_by_direction: dict[str, ChanSegment] = {}
     for segment in segments:
         reference = latest_by_direction.get(segment.direction)
         if reference is not None and segment.energy < reference.energy:
             if segment.direction == "down" and segment.low < reference.low:
+                evidence = _divergence_evidence(reference, segment, indicators)
                 divergences.append(
                     ChanDivergence(
                         kind="bottom",
@@ -372,9 +404,11 @@ def _detect_divergences(segments: list[ChanSegment]) -> list[ChanDivergence]:
                         reference_energy=reference.energy,
                         current_energy=segment.energy,
                         price_extreme=segment.low,
+                        **evidence,
                     )
                 )
             elif segment.direction == "up" and segment.high > reference.high:
+                evidence = _divergence_evidence(reference, segment, indicators)
                 divergences.append(
                     ChanDivergence(
                         kind="top",
@@ -384,10 +418,75 @@ def _detect_divergences(segments: list[ChanSegment]) -> list[ChanDivergence]:
                         reference_energy=reference.energy,
                         current_energy=segment.energy,
                         price_extreme=segment.high,
+                        **evidence,
                     )
                 )
         latest_by_direction[segment.direction] = segment
     return divergences
+
+
+def _divergence_evidence(
+    reference: ChanSegment,
+    current: ChanSegment,
+    indicators: ChanIndicatorContext | None,
+) -> dict[str, float]:
+    macd_reference = _segment_macd_pressure(reference, indicators)
+    macd_current = _segment_macd_pressure(current, indicators)
+    volume_reference = _segment_average_volume(reference, indicators)
+    volume_current = _segment_average_volume(current, indicators)
+    energy_strength = _fade_strength(reference.energy, current.energy, scale=50.0, cap=28.0)
+    macd_strength = _fade_strength(macd_reference, macd_current, scale=30.0, cap=18.0)
+    volume_strength = _fade_strength(volume_reference, volume_current, scale=20.0, cap=12.0)
+    base_score = round(min(82.0, 30.0 + energy_strength + macd_strength + volume_strength), 2)
+    break_component = 6.0 if current.broken_by_next or current.break_stroke_index is not None else 0.0
+    confirmation_score = round(min(92.0, base_score + 12.0 + break_component), 2)
+    return {
+        "base_score": base_score,
+        "macd_strength": macd_strength,
+        "volume_strength": volume_strength,
+        "confirmation_score": confirmation_score,
+        "macd_reference": round(macd_reference, 6),
+        "macd_current": round(macd_current, 6),
+        "volume_reference": round(volume_reference, 4),
+        "volume_current": round(volume_current, 4),
+    }
+
+
+def _fade_strength(reference: float, current: float, *, scale: float, cap: float) -> float:
+    if reference <= 0:
+        return 0.0
+    return round(min(cap, max(0.0, (1 - current / reference) * scale)), 2)
+
+
+def _segment_macd_pressure(segment: ChanSegment, indicators: ChanIndicatorContext | None) -> float:
+    if indicators is None:
+        return 0.0
+    values = _segment_values(segment, indicators.macd_histogram)
+    if not values:
+        return 0.0
+    if segment.direction == "up":
+        directional = [max(0.0, value) for value in values]
+    else:
+        directional = [abs(min(0.0, value)) for value in values]
+    if sum(directional) <= 0:
+        directional = [abs(value) for value in values]
+    price_span = max(abs(segment.end.price - segment.start.price), 1e-6)
+    return (sum(directional) / len(directional)) / price_span
+
+
+def _segment_average_volume(segment: ChanSegment, indicators: ChanIndicatorContext | None) -> float:
+    if indicators is None:
+        return 0.0
+    values = _segment_values(segment, indicators.volume)
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
+
+
+def _segment_values(segment: ChanSegment, series: dict[int, float]) -> list[float]:
+    left = min(segment.start.index, segment.end.index)
+    right = max(segment.start.index, segment.end.index)
+    return [series[index] for index in range(left, right + 1) if index in series]
 
 
 def _structure_signals(
@@ -439,6 +538,7 @@ def _divergence_signals(
 
     buy_divergence = latest_by_action.get("buy")
     if buy_divergence is not None:
+        base_score = buy_divergence.base_score
         signals.append(
             ResearchSignal(
                 trading_day=latest.trading_day,
@@ -447,14 +547,15 @@ def _divergence_signals(
                 kind="CHAN_STRUCT_BUY_T1_DIVERGENCE",
                 action="buy",
                 price=round(latest.close, 3),
-                strength=0.68,
-                score=36.0,
+                strength=_signal_strength(base_score),
+                score=base_score,
                 title="缠论底背驰",
                 reason=_divergence_reason(buy_divergence),
                 tags=("chan", "structure", "divergence", "first-buy"),
             )
         )
         if latest.close >= buy_divergence.segment.end.price * (1 + min_rebound_pct):
+            confirmation_score = buy_divergence.confirmation_score
             signals.append(
                 ResearchSignal(
                     trading_day=latest.trading_day,
@@ -463,8 +564,8 @@ def _divergence_signals(
                     kind="CHAN_STRUCT_BUY_CONFIRM",
                     action="buy",
                     price=round(latest.close, 3),
-                    strength=0.82,
-                    score=52.0,
+                    strength=_signal_strength(confirmation_score),
+                    score=confirmation_score,
                     title="缠论底背驰确认",
                     reason=f"{_divergence_reason(buy_divergence)}，并向上修复超过 {min_rebound_pct:.2%}",
                     tags=("chan", "structure", "divergence", "confirmation", "first-buy"),
@@ -473,6 +574,7 @@ def _divergence_signals(
 
     sell_divergence = latest_by_action.get("sell")
     if sell_divergence is not None:
+        base_score = -sell_divergence.base_score
         signals.append(
             ResearchSignal(
                 trading_day=latest.trading_day,
@@ -481,14 +583,15 @@ def _divergence_signals(
                 kind="CHAN_STRUCT_SELL_T1_DIVERGENCE",
                 action="sell",
                 price=round(latest.close, 3),
-                strength=0.68,
-                score=-36.0,
+                strength=_signal_strength(base_score),
+                score=base_score,
                 title="缠论顶背驰",
                 reason=_divergence_reason(sell_divergence),
                 tags=("chan", "structure", "divergence", "first-sell"),
             )
         )
         if latest.close <= sell_divergence.segment.end.price * (1 - min_rebound_pct):
+            confirmation_score = -sell_divergence.confirmation_score
             signals.append(
                 ResearchSignal(
                     trading_day=latest.trading_day,
@@ -497,8 +600,8 @@ def _divergence_signals(
                     kind="CHAN_STRUCT_SELL_CONFIRM",
                     action="sell",
                     price=round(latest.close, 3),
-                    strength=0.82,
-                    score=-52.0,
+                    strength=_signal_strength(confirmation_score),
+                    score=confirmation_score,
                     title="缠论顶背驰确认",
                     reason=f"{_divergence_reason(sell_divergence)}，并向下破位超过 {min_rebound_pct:.2%}",
                     tags=("chan", "structure", "divergence", "confirmation", "first-sell"),
@@ -507,15 +610,23 @@ def _divergence_signals(
     return signals
 
 
+def _signal_strength(score: float) -> float:
+    return round(min(0.95, max(0.1, abs(score) / 100.0)), 2)
+
+
 def _divergence_reason(divergence: ChanDivergence) -> str:
     if divergence.action == "buy":
         return (
             "下跌线段创新低但单位推进力度减弱："
-            f"{divergence.current_energy:.4f} < {divergence.reference_energy:.4f}"
+            f"{divergence.current_energy:.4f} < {divergence.reference_energy:.4f}，"
+            f"MACD衰减 {divergence.macd_strength:.2f}，"
+            f"成交量衰减 {divergence.volume_strength:.2f}"
         )
     return (
         "上涨线段创新高但单位推进力度减弱："
-        f"{divergence.current_energy:.4f} < {divergence.reference_energy:.4f}"
+        f"{divergence.current_energy:.4f} < {divergence.reference_energy:.4f}，"
+        f"MACD衰减 {divergence.macd_strength:.2f}，"
+        f"成交量衰减 {divergence.volume_strength:.2f}"
     )
 
 

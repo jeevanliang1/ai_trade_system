@@ -196,6 +196,14 @@ def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay
                 reference_energy=divergence.reference_energy,
                 current_energy=divergence.current_energy,
                 price_extreme=divergence.price_extreme,
+                base_score=divergence.base_score,
+                macd_strength=divergence.macd_strength,
+                volume_strength=divergence.volume_strength,
+                confirmation_score=divergence.confirmation_score,
+                macd_reference=divergence.macd_reference,
+                macd_current=divergence.macd_current,
+                volume_reference=divergence.volume_reference,
+                volume_current=divergence.volume_current,
             )
             for divergence in result.divergences
         ],

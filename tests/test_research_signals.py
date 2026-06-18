@@ -111,6 +111,59 @@ def _strict_chan_bars() -> list[Bar]:
     )
 
 
+def _indicator_divergence_bars(*, rebound_after_bottom: bool) -> list[Bar]:
+    points = [
+        (1, 10.0),
+        (6, 15.0),
+        (11, 12.0),
+        (16, 16.0),
+        (21, 13.0),
+        (26, 17.0),
+        (31, 9.0),
+        (36, 14.0),
+        (41, 8.0),
+        (46, 12.0),
+        (51, 7.0),
+        (86, 18.0),
+        (91, 13.0),
+        (96, 19.0),
+        (101, 6.0),
+        (130, 15.0),
+        (160, 5.0),
+        (190, 14.0),
+    ]
+    if not rebound_after_bottom:
+        points.append((220, 4.0))
+
+    bars = _bars_from_extrema(points)
+    adjusted: list[Bar] = []
+    for bar in bars:
+        if bar.trading_day <= date(2024, 1, 1) + timedelta(days=26):
+            volume = 2400.0
+        elif bar.trading_day <= date(2024, 1, 1) + timedelta(days=51):
+            volume = 2200.0
+        elif bar.trading_day <= date(2024, 1, 1) + timedelta(days=96):
+            volume = 850.0
+        elif bar.trading_day <= date(2024, 1, 1) + timedelta(days=160):
+            volume = 700.0
+        else:
+            volume = 900.0
+        adjusted.append(
+            Bar(
+                symbol=bar.symbol,
+                exchange=bar.exchange,
+                trading_day=bar.trading_day,
+                open_price=bar.open_price,
+                high_price=bar.high_price,
+                low_price=bar.low_price,
+                close_price=bar.close_price,
+                volume=volume,
+                turnover=round(volume * bar.close_price, 2),
+            )
+        )
+    return adjusted
+
+
 def test_bars_to_frame_sorts_and_maps_market_bars():
     frame = bars_to_frame([_bar(2, 12.0), _bar(0, 10.0), _bar(1, 11.0)])
 
@@ -287,6 +340,37 @@ def test_chan_structure_builds_non_overlapping_segments_from_breaks():
     assert segment_pivots
 
 
+def test_chan_structure_scores_divergence_with_macd_and_volume_evidence():
+    result = scan_chan_structure(
+        bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=True)),
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+    )
+
+    buy_divergence = next(divergence for divergence in result.divergences if divergence.action == "buy")
+    sell_divergence = next(divergence for divergence in result.divergences if divergence.action == "sell")
+    buy_confirm = next(signal for signal in result.signals if signal.kind == "CHAN_STRUCT_BUY_CONFIRM")
+    sell_confirm = next(signal for signal in result.signals if signal.kind == "CHAN_STRUCT_SELL_CONFIRM")
+
+    assert buy_divergence.base_score > 36.0
+    assert buy_divergence.macd_strength > 0
+    assert buy_divergence.volume_strength > 0
+    assert buy_divergence.confirmation_score > buy_divergence.base_score
+    assert buy_confirm.score == buy_divergence.confirmation_score
+    assert buy_confirm.strength > 0.52
+    assert "MACD" in buy_confirm.reason
+    assert "成交量" in buy_confirm.reason
+
+    assert sell_divergence.base_score > 36.0
+    assert sell_divergence.macd_strength > 0
+    assert sell_divergence.volume_strength > 0
+    assert sell_divergence.confirmation_score > sell_divergence.base_score
+    assert sell_confirm.score == -sell_divergence.confirmation_score
+    assert sell_confirm.strength > 0.52
+    assert "MACD" in sell_confirm.reason
+    assert "成交量" in sell_confirm.reason
+
+
 def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergences():
     bars = _strict_chan_bars()
     result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=4, min_rebound_pct=0.02)
@@ -317,6 +401,25 @@ def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergence
         )
     )
     assert any(segment.break_stroke_index is not None for segment in strict_overlay.segments)
+
+
+def test_chan_structure_overlay_exposes_indicator_divergence_evidence():
+    result = scan_chan_structure(
+        bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=False)),
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+    )
+
+    overlay = _chan_structure_overlay(result)
+
+    assert overlay.divergences[0].base_score == result.divergences[0].base_score
+    assert overlay.divergences[0].macd_strength == result.divergences[0].macd_strength
+    assert overlay.divergences[0].volume_strength == result.divergences[0].volume_strength
+    assert overlay.divergences[0].confirmation_score == result.divergences[0].confirmation_score
+    assert overlay.divergences[0].macd_reference == result.divergences[0].macd_reference
+    assert overlay.divergences[0].macd_current == result.divergences[0].macd_current
+    assert overlay.divergences[0].volume_reference == result.divergences[0].volume_reference
+    assert overlay.divergences[0].volume_current == result.divergences[0].volume_current
 
 
 def test_preview_returns_insufficient_bars_blocker_before_running_detectors():
