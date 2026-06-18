@@ -330,3 +330,69 @@ test("SignalRadarPage submits volume momentum score mode and renders diagnostics
   expect(screen.getAllByText(/放量 2.10倍/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/趋势通过/).length).toBeGreaterThan(0);
 });
+
+
+test("SignalRadarPage submits chan structure score mode and renders diagnostics", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.batchResearchSignals).mockResolvedValue({
+    query: "",
+    universe: "catalog",
+    score_mode: "chan_structure",
+    scanned: 1,
+    available: 1,
+    missing: 0,
+    rows: [
+      {
+        rank: 1,
+        code: "688981",
+        name: "中芯国际",
+        exchange: "SSE",
+        csv_path: "data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv",
+        status: "scanned",
+        score: {
+          total_score: 44,
+          direction: "bullish",
+          confidence: 0.79,
+          chan_score: 44,
+          rsi_score: 0,
+          summary: "分型 7 个，笔 4 条，中枢 2 个，缠论三买",
+          chan_structure: {
+            fractal_count: 7,
+            stroke_count: 4,
+            pivot_count: 2,
+            latest_signal_kind: "CHAN_STRUCT_BUY_T3",
+            latest_signal_title: "缠论三买"
+          }
+        },
+        latest_signal: {
+          trading_day: "2026-06-18",
+          symbol: "688981",
+          exchange: "SSE",
+          kind: "CHAN_STRUCT_BUY_T3",
+          action: "buy",
+          price: 130.5,
+          strength: 0.78,
+          score: 44,
+          title: "缠论三买",
+          reason: "向上离开中枢后的回抽未跌回中枢上沿",
+          tags: ["chan", "structure", "third-buy"]
+        },
+        preview: null,
+        momentum: null,
+        blockers: []
+      }
+    ]
+  });
+
+  render(<SignalRadarPage {...makeProps()} />);
+
+  await user.selectOptions(screen.getByLabelText("评分模式"), "chan_structure");
+  await user.click(screen.getByRole("button", { name: "批量扫描" }));
+
+  expect(api.batchResearchSignals).toHaveBeenCalledWith(makeProps().state.settings, expect.objectContaining({ score_mode: "chan_structure" }));
+  expect(await screen.findByText("缠论结构排行")).toBeVisible();
+  expect(screen.getAllByText(/分型 7/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/笔 4/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/中枢 2/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("缠论三买").length).toBeGreaterThan(0);
+});

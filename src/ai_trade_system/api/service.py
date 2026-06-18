@@ -19,6 +19,8 @@ from ai_trade_system.market import Bar
 from ai_trade_system.paper_service import PaperTradingService
 from ai_trade_system.portfolio import PortfolioStrategy, StrategyAllocation
 from ai_trade_system.research import preview_research_signals as build_research_signal_preview
+from ai_trade_system.research.chan_structure import scan_chan_structure
+from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.risk import RiskGuardrailConfig, evaluate_risk_guardrails
 from ai_trade_system.stock_catalog import StockInfo, load_stock_catalog, search_stock_catalog
 from ai_trade_system.strategy import Strategy
@@ -287,6 +289,9 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
         if request.score_mode == "volume_momentum":
             rows.append(_volume_momentum_batch_row(base_row, bars, request, index))
             continue
+        if request.score_mode == "chan_structure":
+            rows.append(_chan_structure_batch_row(base_row, bars, request, index))
+            continue
 
         preview = build_research_signal_preview(bars, min_bars=request.min_bars, lookback=request.lookback)
         serialized_preview = _serialize(preview)
@@ -362,6 +367,97 @@ def _volume_momentum_batch_row(base_row: dict[str, Any], bars: list[Bar], reques
         "momentum": momentum,
         "blockers": blockers,
         "_order": order,
+    }
+
+
+def _chan_structure_batch_row(base_row: dict[str, Any], bars: list[Bar], request: ResearchSignalBatchRequest, order: int) -> dict[str, Any]:
+    score, latest_signal, blockers, preview = _chan_structure_score(bars, request.min_bars, request.lookback)
+    return {
+        **base_row,
+        "status": "scanned",
+        "score": score,
+        "latest_signal": latest_signal,
+        "preview": preview,
+        "momentum": None,
+        "blockers": blockers,
+        "_order": order,
+    }
+
+
+def _chan_structure_score(
+    bars: list[Bar],
+    min_bars: int,
+    lookback: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, str]], dict[str, Any]]:
+    if len(bars) < min_bars:
+        diagnostics = _chan_structure_diagnostics(0, 0, 0, None)
+        blockers = [{"code": "INSUFFICIENT_BARS", "message": f"至少需要 {min_bars} 根K线，当前 {len(bars)} 根"}]
+        score = _chan_structure_score_payload(0.0, "neutral", 0.0, "缠论结构样本不足", diagnostics)
+        preview = {
+            "symbol": bars[-1].symbol if bars else "",
+            "exchange": bars[-1].exchange if bars else "",
+            "bars": len(bars),
+            "signals": [],
+            "score": score,
+            "blockers": blockers,
+            "chan_structure": diagnostics,
+        }
+        return score, None, blockers, preview
+
+    result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=5, min_rebound_pct=0.03, lookback=lookback)
+    latest_signal = _serialize(result.signals[-1]) if result.signals else None
+    total_score = result.chan_score
+    direction = "bullish" if total_score > 0 else "bearish" if total_score < 0 else "neutral"
+    confidence = round(min(1.0, max(0.0, 0.35 + abs(total_score) / 100.0)), 4)
+    diagnostics = _chan_structure_diagnostics(len(result.fractals), len(result.strokes), len(result.pivots), latest_signal)
+    summary = (
+        f"分型 {diagnostics['fractal_count']} 个，笔 {diagnostics['stroke_count']} 条，"
+        f"中枢 {diagnostics['pivot_count']} 个，{diagnostics['latest_signal_title'] or '暂无结构触发'}"
+    )
+    score = _chan_structure_score_payload(total_score, direction, confidence, summary, diagnostics)
+    blockers = [] if latest_signal else [{"code": "NO_CHAN_STRUCTURE_SIGNAL", "message": summary}]
+    preview = {
+        "symbol": bars[-1].symbol,
+        "exchange": bars[-1].exchange,
+        "bars": len(bars),
+        "signals": _serialize_many(result.signals),
+        "score": score,
+        "blockers": blockers,
+        "chan_structure": diagnostics,
+    }
+    return score, latest_signal, blockers, preview
+
+
+def _chan_structure_diagnostics(
+    fractal_count: int,
+    stroke_count: int,
+    pivot_count: int,
+    latest_signal: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "fractal_count": fractal_count,
+        "stroke_count": stroke_count,
+        "pivot_count": pivot_count,
+        "latest_signal_kind": latest_signal["kind"] if latest_signal else None,
+        "latest_signal_title": latest_signal["title"] if latest_signal else None,
+    }
+
+
+def _chan_structure_score_payload(
+    total_score: float,
+    direction: str,
+    confidence: float,
+    summary: str,
+    diagnostics: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "total_score": total_score,
+        "direction": direction,
+        "confidence": confidence,
+        "chan_score": total_score,
+        "rsi_score": 0,
+        "summary": summary,
+        "chan_structure": diagnostics,
     }
 
 

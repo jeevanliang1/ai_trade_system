@@ -32,7 +32,7 @@ watchlist -> data_manager -> data/market/a_share/{exchange}/{code}/{code}_{excha
 CSV/local storage -> Strategy.on_bar -> Signal -> PaperBroker -> equity/trades/logs
 CSV/local storage -> indicators/analytics -> FastAPI -> React charts/tables
 CSV/local storage -> research Chan/RSI/Chan structure preview -> FastAPI -> React Strategy Workshop
-stock_catalog + local CSV files -> research batch scan -> FastAPI -> React Signal Radar
+stock_catalog + local CSV files -> research/volume/Chan-structure batch scan -> FastAPI -> React Signal Radar
 strategies/*.py -> strategy registry -> selected Strategy -> backtest/paper service
 selected Strategy[] -> portfolio aggregation -> backtest/paper service
 technical snapshot + information notes + risk context -> MockLLMProvider -> LLMInsight

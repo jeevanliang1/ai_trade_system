@@ -98,6 +98,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
           <select aria-label="评分模式" value={scoreMode} onChange={(event) => setScoreMode(event.currentTarget.value as ResearchSignalBatchScoreMode)}>
             <option value="research">Chan/RSI研究分</option>
             <option value="volume_momentum">量价动量</option>
+            <option value="chan_structure">缠论结构</option>
           </select>
         </label>
         <label className="field">
@@ -224,6 +225,13 @@ function RadarResultCard({ row, onPrepareData }: { row: ResearchSignalBatchRow; 
           <span>{row.momentum.trend_pass ? "趋势通过" : "趋势未过"}</span>
         </div>
       ) : null}
+      {row.score?.chan_structure ? (
+        <div className="radar-score-line">
+          <span>分型 {row.score.chan_structure.fractal_count}</span>
+          <span>笔 {row.score.chan_structure.stroke_count}</span>
+          <span>中枢 {row.score.chan_structure.pivot_count}</span>
+        </div>
+      ) : null}
       <p>{row.latest_signal?.title ?? row.blockers[0]?.message ?? row.score?.summary ?? "暂无触发信号"}</p>
       {row.blockers.length ? (
         <div className="radar-blockers">
@@ -243,6 +251,7 @@ function RadarResultCard({ row, onPrepareData }: { row: ResearchSignalBatchRow; 
 
 function radarTableRows(rows: ResearchSignalBatchRow[]): Record<string, unknown>[] {
   const showMomentum = rows.some((row) => row.momentum);
+  const showChanStructure = rows.some((row) => row.score?.chan_structure);
   return rows.map((row) => {
     const base = {
       排名: row.rank,
@@ -254,17 +263,29 @@ function radarTableRows(rows: ResearchSignalBatchRow[]): Record<string, unknown>
       置信度: row.score ? `${Math.round(row.score.confidence * 100)}%` : null,
       最新信号: row.latest_signal?.title ?? row.blockers[0]?.code ?? "-"
     };
-    if (!showMomentum) return base;
     return {
       ...base,
-      动量: formatPercent(row.momentum?.momentum_pct),
-      放量: formatRatio(row.momentum?.volume_ratio),
-      趋势: row.momentum ? (row.momentum.trend_pass ? "通过" : "未过") : "-"
+      ...(showMomentum
+        ? {
+            动量: formatPercent(row.momentum?.momentum_pct),
+            放量: formatRatio(row.momentum?.volume_ratio),
+            趋势: row.momentum ? (row.momentum.trend_pass ? "通过" : "未过") : "-"
+          }
+        : {}),
+      ...(showChanStructure
+        ? {
+            分型: row.score?.chan_structure?.fractal_count ?? "-",
+            笔: row.score?.chan_structure?.stroke_count ?? "-",
+            中枢: row.score?.chan_structure?.pivot_count ?? "-",
+            结构信号: row.score?.chan_structure?.latest_signal_title ?? "-"
+          }
+        : {})
     };
   });
 }
 
 function radarCsv(result: ResearchSignalBatchResponse): string {
+  const showChanStructure = result.rows.some((row) => row.score?.chan_structure);
   const headers = [
     "rank",
     "code",
@@ -281,6 +302,9 @@ function radarCsv(result: ResearchSignalBatchResponse): string {
     "latest_reason",
     "csv_path"
   ];
+  if (showChanStructure) {
+    headers.splice(headers.length - 1, 0, "fractal_count", "stroke_count", "pivot_count", "structure_signal");
+  }
   const rows = result.rows.map((row) =>
     [
       row.rank,
@@ -296,6 +320,14 @@ function radarCsv(result: ResearchSignalBatchResponse): string {
       row.momentum?.volume_ratio ?? "",
       row.momentum ? row.momentum.trend_pass : "",
       row.momentum?.latest_reason ?? "",
+      ...(showChanStructure
+        ? [
+            row.score?.chan_structure?.fractal_count ?? "",
+            row.score?.chan_structure?.stroke_count ?? "",
+            row.score?.chan_structure?.pivot_count ?? "",
+            row.score?.chan_structure?.latest_signal_title ?? ""
+          ]
+        : []),
       row.csv_path
     ]
       .map(csvCell)
@@ -323,6 +355,7 @@ function universeLabel(universe: string): string {
 }
 
 function scoreModeTitle(mode: string | null | undefined): string {
+  if (mode === "chan_structure") return "缠论结构";
   if (mode === "volume_momentum") return "量价动量";
   return "研究评分";
 }

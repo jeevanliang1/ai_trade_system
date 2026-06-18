@@ -139,7 +139,7 @@ class ResearchSignalBatchRequest(DataRequest):
     min_bars: int = Field(default=60, ge=20, le=500)
     lookback: int = Field(default=120, ge=20, le=500)
     universe: Literal["catalog", "local_csv", "current"] = "catalog"
-    score_mode: Literal["research", "volume_momentum"] = "research"
+    score_mode: Literal["research", "volume_momentum", "chan_structure"] = "research"
 
 
 class PaperRunRequest(DataRequest):

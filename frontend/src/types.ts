@@ -93,6 +93,7 @@ export type ResearchSignalScore = {
   rsi_score: number;
   summary: string;
   momentum?: ResearchSignalMomentum | null;
+  chan_structure?: ResearchSignalChanStructure | null;
 };
 
 export type ResearchSignalMomentum = {
@@ -101,6 +102,14 @@ export type ResearchSignalMomentum = {
   trend_pass: boolean;
   entry_ready: boolean;
   latest_reason: string;
+};
+
+export type ResearchSignalChanStructure = {
+  fractal_count: number;
+  stroke_count: number;
+  pivot_count: number;
+  latest_signal_kind: string | null;
+  latest_signal_title: string | null;
 };
 
 export type ResearchSignalPreview = {
@@ -115,7 +124,7 @@ export type ResearchSignalPreview = {
   momentum?: ResearchSignalMomentum | null;
 };
 
-export type ResearchSignalBatchScoreMode = "research" | "volume_momentum";
+export type ResearchSignalBatchScoreMode = "research" | "volume_momentum" | "chan_structure";
 
 export type ResearchSignalBatchRow = {
   rank: number;

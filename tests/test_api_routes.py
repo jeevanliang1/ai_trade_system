@@ -77,6 +77,52 @@ def _momentum_closes(start: float, end: float, count: int = 80) -> list[float]:
     return [round(start + step * index, 2) for index in range(count)]
 
 
+def _chan_structure_closes() -> list[float]:
+    return [
+        10.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+        14.0,
+        13.0,
+        12.0,
+        11.0,
+        10.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+        14.0,
+        13.0,
+        12.0,
+        11.0,
+        10.0,
+        9.5,
+        10.5,
+        11.5,
+        12.5,
+        13.5,
+        14.5,
+        16.0,
+        15.0,
+        14.0,
+        13.0,
+        12.0,
+        11.0,
+        10.5,
+        11.0,
+        12.0,
+        13.0,
+    ] * 2
+
+
 def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
 
@@ -543,6 +589,42 @@ def test_research_signals_batch_route_ranks_volume_momentum_from_managed_csv(tmp
     assert payload["rows"][0]["momentum"]["latest_reason"] == "volume_confirmed_momentum_entry"
     assert payload["rows"][0]["latest_signal"]["title"] == "量价动量触发"
     assert payload["rows"][1]["momentum"]["entry_ready"] is False
+
+
+def test_research_signals_batch_route_ranks_chan_structure_from_managed_csv(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    data_dir = tmp_path / "data"
+    strong = StockInfo("688981", "中芯国际", "SSE")
+    weak = StockInfo("000858", "五粮液", "SZSE")
+    write_stock_catalog([weak, strong], data_dir / "a_share_stocks.csv")
+    strong_path = _write_managed_bars(strong, _chan_structure_closes())
+    weak_path = _write_managed_bars(weak, _momentum_closes(20.0, 20.8, 82))
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "",
+            "limit": 2,
+            "min_bars": 60,
+            "lookback": 82,
+            "universe": "catalog",
+            "score_mode": "chan_structure",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["score_mode"] == "chan_structure"
+    assert payload["available"] == 2
+    assert payload["rows"][0]["code"] == "688981"
+    assert payload["rows"][0]["csv_path"] == strong_path.as_posix()
+    assert payload["rows"][1]["csv_path"] == weak_path.as_posix()
+    assert payload["rows"][0]["score"]["chan_structure"]["fractal_count"] > 0
+    assert payload["rows"][0]["score"]["chan_structure"]["stroke_count"] > 0
+    assert payload["rows"][0]["score"]["chan_structure"]["pivot_count"] > 0
+    assert payload["rows"][0]["latest_signal"]["kind"].startswith("CHAN_STRUCT_")
+    assert payload["rows"][0]["score"]["total_score"] > abs(payload["rows"][1]["score"]["total_score"])
 
 
 def test_research_signals_preview_route_returns_signals_for_demo_data(tmp_path, monkeypatch):
