@@ -448,6 +448,31 @@ def test_chan_structure_strategy_confirmation_mode_exits_after_max_holding_bars(
     assert signals[1].reason == "chan_structure:TIME_EXIT:max_holding_bars=2"
 
 
+def test_chan_structure_strategy_confirmation_mode_trades_third_buy_and_sell(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(bars[2].trading_day, "CHAN_STRUCT_BUY_T3", "buy", 44.0, bars[2].close_price),
+            make_research_signal(bars[4].trading_day, "CHAN_STRUCT_SELL_T3", "sell", -44.0, bars[4].close_price),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        max_holding_bars=0,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T3")
+    assert signals[1].reason.startswith("chan_structure:CHAN_STRUCT_SELL_T3")
+
+
 def test_chan_structure_strategy_rejects_unknown_signal_mode():
     try:
         ChanStructureStrategy("000001", signal_mode="unknown")

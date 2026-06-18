@@ -123,7 +123,7 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
         display_name="缠论结构策略",
-        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖，并可按信号模式切换确认类、结构类或全量结构信号，支持可选最大持仓退出。",
+        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖；确认模式包含背驰确认和三买/三卖回抽确认，支持可选最大持仓退出。",
     ),
 ]
 
@@ -402,9 +402,9 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "signal_mode": ParameterGuidance(
         display_name="信号模式",
-        description="选择缠论结构策略交易的信号家族：confirmation 只交易背驰/确认类信号，structure 只交易二买/二卖/三买/三卖，all 允许全部结构信号。",
+        description="选择缠论结构策略交易的信号家族：confirmation 交易背驰确认和三买/三卖回抽确认，structure 交易二买/二卖/三买/三卖，all 允许全部结构信号。",
         increase_effect="该参数不是数值大小；切换枚举值会改变参与回测的缠论信号家族。",
-        decrease_effect="该参数不是数值大小；confirmation 更聚焦背驰确认，structure 更聚焦二/三买卖，all 保留全部信号。",
+        decrease_effect="该参数不是数值大小；confirmation 更聚焦确认类买卖点，structure 更聚焦结构买卖点，all 保留全部信号。",
     ),
     "min_stroke_bars": ParameterGuidance(
         display_name="成笔最小间隔",
