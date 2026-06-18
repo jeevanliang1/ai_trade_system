@@ -8,6 +8,8 @@ const strategies = [
   {
     id: "builtin:dual:DualMovingAverageStrategy",
     name: "DualMovingAverageStrategy",
+    display_name: "双均线趋势",
+    description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
     class_name: "DualMovingAverageStrategy",
     source: "builtin",
     path: null,
@@ -22,6 +24,8 @@ const strategies = [
   {
     id: "builtin:rsi:RsiMeanReversionStrategy",
     name: "RsiMeanReversionStrategy",
+    display_name: "RSI均值回归",
+    description: "RSI 超卖时买入、超买时卖出，适合短线修复和震荡反弹。",
     class_name: "RsiMeanReversionStrategy",
     source: "builtin",
     path: null,
@@ -35,6 +39,8 @@ const strategies = [
   {
     id: "user:my_strategy:MyStrategy",
     name: "MyStrategy",
+    display_name: "MyStrategy",
+    description: "自定义策略：MyStrategy，按本地源码定义的交易逻辑运行。",
     class_name: "MyStrategy",
     source: "user",
     path: "strategies/my_strategy.py",
@@ -119,8 +125,8 @@ test("PortfolioPage edits allocation rows and shows normalized enabled weights",
   render(<PortfolioPage {...props} />);
 
   expect(screen.getByText("归一化权重")).toBeInTheDocument();
-  expect(screen.getByText("DualMovingAverageStrategy 66.67%")).toBeInTheDocument();
-  expect(screen.getByText("RsiMeanReversionStrategy 33.33%")).toBeInTheDocument();
+  expect(screen.getByText("双均线趋势 66.67%")).toBeInTheDocument();
+  expect(screen.getByText("RSI均值回归 33.33%")).toBeInTheDocument();
   expect(screen.getByText("启用权重合计 3.00")).toBeInTheDocument();
 
   const changedFirstAllocation = {
@@ -183,7 +189,7 @@ test("PortfolioPage renders duplicate strategy allocations without duplicate-key
     />
   );
 
-  expect(screen.getAllByText("DualMovingAverageStrategy 50.00%")).toHaveLength(2);
+  expect(screen.getAllByText("双均线趋势 50.00%")).toHaveLength(2);
   const consoleMessages = consoleError.mock.calls.map((call) => call.join(" "));
   expect(consoleMessages.some((message) => message.includes("Encountered two children with the same key"))).toBe(false);
 
@@ -233,11 +239,11 @@ test("PortfolioPage shows portfolio signal breakdown after preview", () => {
         sell_score: 1,
         active_signals: 2,
         mode: "weighted_vote",
-        reasons: ["DualMovingAverageStrategy:均线金叉", "RsiMeanReversionStrategy:RSI超买"],
+        reasons: ["双均线趋势:均线金叉", "RSI均值回归:RSI超买"],
         contributions: [
           {
             allocation_index: 0,
-            name: "DualMovingAverageStrategy",
+            name: "双均线趋势",
             action: "buy",
             score: 2,
             weight: 2,
@@ -247,7 +253,7 @@ test("PortfolioPage shows portfolio signal breakdown after preview", () => {
           },
           {
             allocation_index: 1,
-            name: "RsiMeanReversionStrategy",
+            name: "RSI均值回归",
             action: "sell",
             score: 1,
             weight: 1,
@@ -258,8 +264,8 @@ test("PortfolioPage shows portfolio signal breakdown after preview", () => {
         ]
       },
       allocations: [
-        { index: 0, name: "DualMovingAverageStrategy", weight: 2, enabled: true },
-        { index: 1, name: "RsiMeanReversionStrategy", weight: 1, enabled: true }
+        { index: 0, name: "双均线趋势", weight: 2, enabled: true },
+        { index: 1, name: "RSI均值回归", weight: 1, enabled: true }
       ]
     }
   });
@@ -271,12 +277,12 @@ test("PortfolioPage shows portfolio signal breakdown after preview", () => {
   expect(breakdown.getByText("买入得分 2.00")).toBeInTheDocument();
   expect(breakdown.getByText("卖出得分 1.00")).toBeInTheDocument();
   expect(breakdown.getByText("参与信号 2")).toBeInTheDocument();
-  expect(breakdown.getByText("DualMovingAverageStrategy")).toBeInTheDocument();
+  expect(breakdown.getByText("双均线趋势")).toBeInTheDocument();
   expect(breakdown.getByText("买入")).toBeInTheDocument();
   expect(breakdown.getByText("贡献 2.00")).toBeInTheDocument();
   expect(breakdown.getByText("采用")).toBeInTheDocument();
   expect(breakdown.getByText("均线金叉")).toBeInTheDocument();
-  expect(breakdown.getByText("RsiMeanReversionStrategy")).toBeInTheDocument();
+  expect(breakdown.getByText("RSI均值回归")).toBeInTheDocument();
   expect(breakdown.getByText("卖出")).toBeInTheDocument();
   expect(breakdown.getByText("未采用")).toBeInTheDocument();
   expect(breakdown.getByText("RSI超买")).toBeInTheDocument();
@@ -306,7 +312,7 @@ test("PortfolioPage shows AI-adjust before and after weights after preview", () 
       allocations: [
         {
           index: 0,
-          name: "DualMovingAverageStrategy",
+          name: "双均线趋势",
           weight: 2.05,
           base_weight: 2,
           adjusted_weight: 2.05,
@@ -316,7 +322,7 @@ test("PortfolioPage shows AI-adjust before and after weights after preview", () 
         },
         {
           index: 1,
-          name: "RsiMeanReversionStrategy",
+          name: "RSI均值回归",
           weight: 1.05,
           base_weight: 1,
           adjusted_weight: 1.05,
@@ -333,9 +339,9 @@ test("PortfolioPage shows AI-adjust before and after weights after preview", () 
   const aiPreview = within(screen.getByLabelText("AI权重调整预览"));
   expect(aiPreview.getByText("AI权重预览")).toBeInTheDocument();
   expect(aiPreview.getByText("方向：看多")).toBeInTheDocument();
-  expect(aiPreview.getByText("DualMovingAverageStrategy")).toBeInTheDocument();
+  expect(aiPreview.getByText("双均线趋势")).toBeInTheDocument();
   expect(aiPreview.getByText("2.00 -> 2.05")).toBeInTheDocument();
   expect(aiPreview.getAllByText("+0.05")).toHaveLength(2);
-  expect(aiPreview.getByText("RsiMeanReversionStrategy")).toBeInTheDocument();
+  expect(aiPreview.getByText("RSI均值回归")).toBeInTheDocument();
   expect(aiPreview.getByText("1.00 -> 1.05")).toBeInTheDocument();
 });

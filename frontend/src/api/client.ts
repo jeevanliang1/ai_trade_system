@@ -3,15 +3,20 @@ import type {
   BacktestResponse,
   BootstrapResponse,
   DataResponse,
+  ManagedDataResponse,
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
+  ResearchSignalBatchResponse,
   ResearchSignalPreview,
   RiskStatus,
   SignalsResponse,
   Stock,
   StrategySelection,
-  StrategySpec
+  StrategySpec,
+  WatchlistDataUpdateRequest,
+  WatchlistDataUpdateResponse,
+  WatchlistResponse
 } from "../types";
 
 export class ApiError extends Error {
@@ -48,6 +53,11 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 export const api = {
   bootstrap: () => apiRequest<BootstrapResponse>("/api/bootstrap"),
   stocks: (query: string, limit = 20) => apiRequest<Stock[]>(`/api/stocks?query=${encodeURIComponent(query)}&limit=${limit}`),
+  watchlist: () => apiRequest<WatchlistResponse>("/api/watchlist"),
+  saveWatchlist: (stocks: Stock[]) => apiRequest<WatchlistResponse>("/api/watchlist", { method: "PUT", body: JSON.stringify({ stocks }) }),
+  managedData: () => apiRequest<ManagedDataResponse>("/api/data/managed"),
+  updateWatchlistData: (request: WatchlistDataUpdateRequest = {}) =>
+    apiRequest<WatchlistDataUpdateResponse>("/api/data/update-watchlist", { method: "POST", body: JSON.stringify(request) }),
   strategies: () => apiRequest<StrategySpec[]>("/api/strategies"),
   strategySource: (path: string) => apiRequest<{ path: string; source: string }>(`/api/strategies/source?path=${encodeURIComponent(path)}`),
   saveStrategySource: (filename: string, source: string) =>
@@ -74,6 +84,20 @@ export const api = {
     apiRequest<ResearchSignalPreview>("/api/research/signals/preview", {
       method: "POST",
       body: JSON.stringify({ settings, min_bars, lookback })
+    }),
+  batchResearchSignals: (
+    settings: PlatformSettings,
+    options: { query: string; limit: number; min_bars: number; lookback: number; universe?: "catalog" | "local_csv" | "current" } = {
+      query: "",
+      limit: 20,
+      min_bars: 60,
+      lookback: 120,
+      universe: "catalog"
+    }
+  ) =>
+    apiRequest<ResearchSignalBatchResponse>("/api/research/signals/batch", {
+      method: "POST",
+      body: JSON.stringify({ settings, ...options })
     }),
   runBacktest: (settings: PlatformSettings, strategy: StrategySelection | null, portfolio: PortfolioRequest | null, mode: "single" | "portfolio") =>
     apiRequest<BacktestResponse>("/api/backtest", { method: "POST", body: JSON.stringify({ settings, strategy, portfolio, mode }) }),

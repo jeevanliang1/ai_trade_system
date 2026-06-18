@@ -64,6 +64,33 @@ PYTHONPATH=src python -m ai_trade_system.cli stocks search 平安
 PYTHONPATH=src python -m ai_trade_system.cli stocks search 000001
 ```
 
+## 自选股本地行情数据管理
+
+股票配置中心的自选股可以统一管理本地日线文件。第一版采用“主 CSV + 每日增量 CSV + manifest 索引”：
+
+```text
+data/market/a_share/SSE/601318/
+  601318_SSE_daily_qfq_latest.csv
+  increments/
+    601318_SSE_daily_qfq_20260618_from_20260617_to_20260618.csv
+  manifest.json
+```
+
+- `*_latest.csv` 是当前完整数据文件，数据中心、回测和信号流程默认读取它。
+- `increments/*.csv` 记录每次新增拉取的数据片段，文件名包含拉取日和数据日期范围。
+- `manifest.json` 记录股票、复权方式、主 CSV 路径、数据起止日期、行数和最近更新时间。
+
+命令行批量更新自选股：
+
+```bash
+PYTHONPATH=src python -m ai_trade_system.cli data update-watchlist \
+  --start 20240618 \
+  --end 20260618 \
+  --if-stale
+```
+
+`--if-stale` 会跳过已经更新到目标结束日期的股票。真正的每日系统级定时任务可以在本机用 cron/launchd 调用这个命令，但本仓库默认不提交机器本地调度配置。
+
 ## 运行回测
 
 ```bash
@@ -93,7 +120,7 @@ python -m ai_trade_system.cli paper \
 
 ## 打开 React Web 平台
 
-默认 Web 平台使用 React + FastAPI，包含数据下载、CSV 查看、策略管理、策略编辑、策略选择回测、组合实验室、信号预览、资金曲线、买卖点、交易记录、纸面交易日志、风控和 Mock AI 研究员。
+默认 Web 平台使用 React + FastAPI，包含数据下载、CSV 查看、策略管理、策略编辑、策略选择回测、组合实验室、信号预览、信号雷达、资金曲线、买卖点、交易记录、纸面交易日志、风控和 Mock AI 研究员。
 
 安装 API 依赖并安装前端依赖：
 

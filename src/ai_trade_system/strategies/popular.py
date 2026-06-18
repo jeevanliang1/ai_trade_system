@@ -204,6 +204,91 @@ class ChanRsiResearchStrategy(Strategy):
         return []
 
 
+class VolumeConfirmedMomentumStrategy(Strategy):
+    def __init__(
+        self,
+        symbol: str,
+        momentum_window: int = 20,
+        min_momentum_pct: float = 0.08,
+        volume_window: int = 20,
+        volume_multiplier: float = 1.5,
+        trend_window: int = 60,
+        max_holding_bars: int = 20,
+        trade_size: int = 100,
+    ) -> None:
+        self.symbol = symbol
+        self.momentum_window = max(1, int(momentum_window))
+        self.min_momentum_pct = float(min_momentum_pct)
+        self.volume_window = max(1, int(volume_window))
+        self.volume_multiplier = max(0.0, float(volume_multiplier))
+        self.trend_window = max(1, int(trend_window))
+        self.max_holding_bars = max(1, int(max_holding_bars))
+        self.trade_size = max(1, int(trade_size))
+        self.closes: deque[float] = deque(maxlen=max(self.momentum_window, self.trend_window) + 1)
+        self.volumes: deque[float] = deque(maxlen=self.volume_window + 1)
+        self.in_position = False
+        self.holding_bars = 0
+
+    def on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+
+        previous_closes = list(self.closes)
+        previous_volumes = list(self.volumes)
+        self.closes.append(bar.close_price)
+        self.volumes.append(bar.volume)
+
+        if self.in_position:
+            self.holding_bars += 1
+            exit_reason = self._exit_reason(bar.close_price, previous_closes)
+            if exit_reason:
+                self.in_position = False
+                self.holding_bars = 0
+                return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, exit_reason)]
+            return []
+
+        if not self._entry_ready(previous_closes, previous_volumes):
+            return []
+        if not self._has_price_momentum(bar.close_price, previous_closes):
+            return []
+        if not self._has_volume_confirmation(bar.volume, previous_volumes):
+            return []
+        if not self._passes_trend_filter(bar.close_price, previous_closes):
+            return []
+
+        self.in_position = True
+        self.holding_bars = 0
+        return [Signal("buy", bar.symbol, bar.close_price, self.trade_size, "volume_confirmed_momentum_entry")]
+
+    def _entry_ready(self, previous_closes: list[float], previous_volumes: list[float]) -> bool:
+        return len(previous_closes) >= max(self.momentum_window, self.trend_window) and len(previous_volumes) >= self.volume_window
+
+    def _has_price_momentum(self, close_price: float, previous_closes: list[float]) -> bool:
+        base = previous_closes[-self.momentum_window]
+        return base > 0 and close_price / base - 1 >= self.min_momentum_pct
+
+    def _has_volume_confirmation(self, volume: float, previous_volumes: list[float]) -> bool:
+        if volume <= 0:
+            return False
+        baseline = mean(previous_volumes[-self.volume_window :])
+        return baseline > 0 and volume >= baseline * self.volume_multiplier
+
+    def _passes_trend_filter(self, close_price: float, previous_closes: list[float]) -> bool:
+        trend_average = mean(previous_closes[-self.trend_window :])
+        return close_price > trend_average
+
+    def _exit_reason(self, close_price: float, previous_closes: list[float]) -> str | None:
+        if len(previous_closes) >= self.momentum_window:
+            base = previous_closes[-self.momentum_window]
+            if base > 0 and close_price <= base:
+                return "momentum_exit"
+        if len(previous_closes) >= self.trend_window and close_price < mean(previous_closes[-self.trend_window :]):
+            return "trend_exit"
+        if self.holding_bars >= self.max_holding_bars:
+            return "time_exit"
+        return None
+
+
 def _rsi(closes: list[float]) -> float:
     gains = []
     losses = []

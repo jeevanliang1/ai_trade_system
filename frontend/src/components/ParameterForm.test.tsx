@@ -73,3 +73,24 @@ test("groups screenshot strategy controls into collapsible sections", async () =
 
   expect(changes.at(-1)).toMatchObject({ ma_type: "EMA", ai_score_threshold: 72, ai_enabled: true });
 });
+
+test("renders Chinese parameter guidance and tuning impact", () => {
+  const parameters = [
+    {
+      name: "fast_window",
+      annotation: "int",
+      default: 5,
+      display_name: "快线周期",
+      description: "用于计算短期均线，决定策略观察短线价格变化的长度。",
+      increase_effect: "调大后均线更平滑，信号更少更慢。",
+      decrease_effect: "调小后均线更敏感，信号更多但噪音也更多。"
+    }
+  ];
+
+  render(<ParameterForm parameters={parameters} values={{ fast_window: 5 }} onChange={vi.fn()} />);
+
+  expect(screen.getByLabelText("快线周期")).toBeInTheDocument();
+  expect(screen.getByText("用于计算短期均线，决定策略观察短线价格变化的长度。")).toBeInTheDocument();
+  expect(screen.getByText("调大：调大后均线更平滑，信号更少更慢。")).toBeInTheDocument();
+  expect(screen.getByText("调小：调小后均线更敏感，信号更多但噪音也更多。")).toBeInTheDocument();
+});

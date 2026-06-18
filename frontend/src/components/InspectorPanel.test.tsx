@@ -70,6 +70,9 @@ test("InspectorPanel shows AI direction, information summary, and risk warnings"
   expect(screen.getByText("高")).toBeInTheDocument();
   expect(screen.getByText("最大回撤超过阈值")).toBeInTheDocument();
   expect(screen.getByText("未通过：最大回撤超过阈值")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "技术指标" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "信息面摘要" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "AI观点" })).not.toBeInTheDocument();
 });
 
 test("InspectorPanel edits AI scoring and risk thresholds", async () => {

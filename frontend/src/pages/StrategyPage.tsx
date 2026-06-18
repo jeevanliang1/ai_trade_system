@@ -1,36 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Circle, Expand, LocateFixed, Plus, RotateCcw, Save, Search, Star } from "lucide-react";
+import { Activity, Circle, Expand, LocateFixed, Plus, RotateCcw, Save, Search } from "lucide-react";
 
 import { api } from "../api/client";
 import { ChartPanel } from "../components/ChartPanel";
 import { DataTable } from "../components/DataTable";
 import { MetricStrip } from "../components/MetricStrip";
 import { ParameterForm, validateStrategyParameterValues } from "../components/ParameterForm";
-import { SegmentedControl } from "../components/SegmentedControl";
 import { SourceEditor } from "../components/SourceEditor";
 import { ToolbarButton } from "../components/ToolbarButton";
-import { drawdownOption, priceOption, volumeOption } from "./chartOptions";
+import { priceOption, volumeOption } from "./chartOptions";
 import { currentStrategy } from "./pageTypes";
 import type { PageProps } from "./pageTypes";
-import type { Bar, BacktestResponse, ResearchSignalPreview, SignalsResponse, StrategySpec } from "../types";
-
-type WorkshopMode = "strategy" | "portfolio" | "backtest";
-type ResultTab = "summary" | "trades" | "positions" | "factors" | "risk" | "attribution";
-
-const MODE_OPTIONS: { label: string; value: WorkshopMode }[] = [
-  { label: "策略", value: "strategy" },
-  { label: "组合", value: "portfolio" },
-  { label: "回测", value: "backtest" }
-];
-
-const RESULT_TABS: { label: string; value: ResultTab }[] = [
-  { label: "回测结果", value: "summary" },
-  { label: "交易明细", value: "trades" },
-  { label: "持仓分析", value: "positions" },
-  { label: "因子暴露", value: "factors" },
-  { label: "风险分析", value: "risk" },
-  { label: "绩效归因", value: "attribution" }
-];
+import type { Bar, ResearchSignalPreview, SignalRow, StrategySpec } from "../types";
 
 const PRICE_VOLUME_GROUP = "strategy-workshop-price-volume";
 
@@ -39,11 +20,9 @@ export function StrategyPage({ state, actions }: PageProps) {
   const [source, setSource] = useState("");
   const [newFile, setNewFile] = useState("my_strategy.py");
   const [newClass, setNewClass] = useState("MyStrategy");
-  const [mode, setMode] = useState<WorkshopMode>("strategy");
   const [query, setQuery] = useState("");
   const [showSignals, setShowSignals] = useState(true);
   const [chartExpanded, setChartExpanded] = useState(false);
-  const [activeResultTab, setActiveResultTab] = useState<ResultTab>("summary");
   const [sourceError, setSourceError] = useState("");
   const [sourceMessage, setSourceMessage] = useState("");
   const [templateError, setTemplateError] = useState("");
@@ -58,12 +37,12 @@ export function StrategyPage({ state, actions }: PageProps) {
     if (!normalized) return state.strategies;
     return state.strategies.filter((strategy) => {
       const sourceLabel = strategy.source === "builtin" ? "内置 builtin" : "自定义 user";
-      return `${strategy.name} ${strategy.class_name} ${sourceLabel}`.toLowerCase().includes(normalized);
+      return `${strategy.display_name} ${strategy.description} ${strategy.name} ${strategy.class_name} ${sourceLabel}`.toLowerCase().includes(normalized);
     });
   }, [query, state.strategies]);
 
   const maLegend = useMemo(() => movingAverageLegend(state.bars), [state.bars]);
-  const comparisonRows = useMemo(() => strategyComparisonRows(state.signals, state.backtest), [state.signals, state.backtest]);
+  const signalRows = useMemo(() => signalPreviewRows(state.signals?.signals ?? []), [state.signals]);
   const researchRows = useMemo(() => researchSignalRows(state.researchSignals), [state.researchSignals]);
 
   useEffect(() => {
@@ -154,7 +133,6 @@ export function StrategyPage({ state, actions }: PageProps) {
         <div className="panel-title between">
           <span>策略列表</span>
         </div>
-        <SegmentedControl options={MODE_OPTIONS} value={mode} onChange={setMode} />
         <details className="template-details">
           <summary>
             <Plus size={14} /> 新建策略
@@ -181,9 +159,12 @@ export function StrategyPage({ state, actions }: PageProps) {
               onClick={() => actions.setSelectedStrategyId(strategy.id)}
             >
               <Circle className="strategy-status-dot" size={9} />
-              <span>{strategy.name}</span>
+              <span className="strategy-label">
+                <strong>{strategy.display_name}</strong>
+                <em>{strategy.class_name}</em>
+                <b>{strategy.description}</b>
+              </span>
               <small>{strategy.source === "builtin" ? "内置" : "自定义"}</small>
-              <Star className={strategy.id === selected?.id ? "favorite-icon active" : "favorite-icon"} size={14} />
             </button>
           ))}
         </div>
@@ -233,13 +214,11 @@ export function StrategyPage({ state, actions }: PageProps) {
           <select value={state.settings.symbol} onChange={(event) => actions.setSettings({ ...state.settings, symbol: event.currentTarget.value })}>
             <option>{state.settings.symbol} 沪深A股</option>
           </select>
-          <button className="tab-button active">日线</button>
-          <button className="tab-button">周线</button>
-          <button className="tab-button">月线</button>
+          <span className="timeframe-pill active">日线</span>
           <span className="date-range">{state.settings.start_date} - {state.settings.end_date}</span>
         </div>
         <ChartPanel
-          title="信号标记 · K线回测视图"
+          title="信号标记 · K线视图"
           option={priceOption(state.bars, showSignals ? state.signals?.signals ?? [] : [])}
           height={360}
           group={PRICE_VOLUME_GROUP}
@@ -275,33 +254,7 @@ export function StrategyPage({ state, actions }: PageProps) {
           }
         />
         <ChartPanel title="成交量" option={volumeOption(state.bars)} height={130} group={PRICE_VOLUME_GROUP} />
-        <ChartPanel title="回撤曲线" option={drawdownOption(state.backtest)} height={120} />
-        <section className="panel">
-          <div className="tabs">
-            {RESULT_TABS.map((tab) => (
-              <button key={tab.value} className={activeResultTab === tab.value ? "active" : ""} onClick={() => setActiveResultTab(tab.value)}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <MetricStrip
-            metrics={[
-              { label: "信号数量", value: state.signals?.summary.signals ?? 0 },
-              { label: "买入信号", value: state.signals?.summary.buys ?? 0, tone: "positive" },
-              { label: "卖出信号", value: state.signals?.summary.sells ?? 0, tone: "negative" },
-              { label: "基准收益", value: formatPercent(state.backtest?.metrics.benchmark_return_pct) },
-              { label: "超额收益", value: formatPercent(state.backtest?.metrics.excess_return_pct), tone: (state.backtest?.metrics.excess_return_pct ?? 0) >= 0 ? "positive" : "negative" },
-              { label: "最大回撤", value: `${state.backtest?.metrics.max_drawdown_pct.toFixed(2) ?? "0.00"}%` },
-              { label: "累计收益", value: `${state.backtest?.metrics.total_return_pct.toFixed(2) ?? "0.00"}%`, tone: "positive" }
-            ]}
-          />
-          <ResultTabContent
-            activeTab={activeResultTab}
-            backtest={state.backtest}
-            signals={state.signals}
-            comparisonRows={comparisonRows}
-          />
-        </section>
+        <SignalPreviewPanel summary={state.signals?.summary} rows={signalRows} />
         <ResearchSignalPanel preview={state.researchSignals} rows={researchRows} />
       </main>
     </div>
@@ -335,63 +288,40 @@ function formatNullableAverage(bars: Bar[], window: number) {
   return average.toFixed(2);
 }
 
-function ResultTabContent({
-  activeTab,
-  backtest,
-  signals,
-  comparisonRows
+function SignalPreviewPanel({
+  summary,
+  rows
 }: {
-  activeTab: ResultTab;
-  backtest: BacktestResponse | null;
-  signals: SignalsResponse | null;
-  comparisonRows: Record<string, unknown>[];
+  summary: { signals: number; buys: number; sells: number } | undefined;
+  rows: Record<string, unknown>[];
 }) {
-  if (activeTab === "trades") {
-    return (
-      <>
-        <div className="panel-title compact-title">交易明细</div>
-        <DataTable rows={tradeRows(backtest)} columns={["交易日", "方向", "标的", "价格", "数量", "手续费"]} emptyText="运行回测后显示交易明细" />
-      </>
-    );
-  }
-  if (activeTab === "positions") {
-    return (
-      <>
-        <div className="panel-title compact-title">持仓分析</div>
-        <DataTable rows={positionRows(backtest)} columns={["指标", "数值"]} emptyText="运行回测后显示持仓分析" />
-      </>
-    );
-  }
-  if (activeTab === "factors") {
-    return (
-      <>
-        <div className="panel-title compact-title">因子暴露</div>
-        <DataTable rows={factorRows(signals, backtest)} columns={["因子", "暴露"]} emptyText="等待预览或回测数据" />
-      </>
-    );
-  }
-  if (activeTab === "risk") {
-    return (
-      <>
-        <div className="panel-title compact-title">风险分析</div>
-        <DataTable rows={riskRows(backtest)} columns={["项目", "状态"]} emptyText="运行回测后显示风险分析" />
-      </>
-    );
-  }
-  if (activeTab === "attribution") {
-    return (
-      <>
-        <div className="panel-title compact-title">绩效归因</div>
-        <DataTable rows={attributionRows(backtest)} columns={["来源", "贡献"]} emptyText="运行回测后显示绩效归因" />
-      </>
-    );
-  }
   return (
-    <>
-      <div className="panel-title compact-title">策略表现对比</div>
-      <DataTable rows={comparisonRows} columns={["指标", "策略回测", "现金基准", "长持"]} emptyText="等待预览或回测数据" />
-    </>
+    <section className="panel signal-preview-panel">
+      <div className="panel-title between">
+        <span>信号预览</span>
+        <span className="caption">完整回测请进入回测中心</span>
+      </div>
+      <MetricStrip
+        metrics={[
+          { label: "信号数量", value: summary?.signals ?? 0 },
+          { label: "买入信号", value: summary?.buys ?? 0, tone: "positive" },
+          { label: "卖出信号", value: summary?.sells ?? 0, tone: "negative" }
+        ]}
+      />
+      <DataTable rows={rows} columns={["日期", "方向", "标的", "价格", "数量", "原因"]} emptyText="点击“预览信号”后显示策略信号" />
+    </section>
   );
+}
+
+function signalPreviewRows(signals: SignalRow[]): Record<string, unknown>[] {
+  return signals.map((signal) => ({
+    日期: signal.trading_day,
+    方向: signal.action,
+    标的: signal.symbol,
+    价格: signal.price,
+    数量: signal.volume,
+    原因: signal.reason
+  }));
 }
 
 function ResearchSignalPanel({ preview, rows }: { preview: ResearchSignalPreview | null; rows: Record<string, unknown>[] }) {
@@ -443,79 +373,4 @@ function researchSignalRows(preview: ResearchSignalPreview | null): Record<strin
     分数: signal.score,
     原因: signal.reason
   }));
-}
-
-function strategyComparisonRows(signals: SignalsResponse | null, backtest: BacktestResponse | null): Record<string, unknown>[] {
-  if (!signals && !backtest) return [];
-  const metrics = backtest?.metrics;
-  return [
-    { 指标: "累计收益", 策略回测: formatPercent(metrics?.total_return_pct), 现金基准: "0.00%", 长持: formatPercent(metrics?.benchmark_return_pct) },
-    { 指标: "基准收益", 策略回测: formatPercent(metrics?.benchmark_return_pct), 现金基准: "0.00%", 长持: formatPercent(metrics?.benchmark_return_pct) },
-    { 指标: "超额收益", 策略回测: formatPercent(metrics?.excess_return_pct), 现金基准: "-", 长持: "0.00%" },
-    { 指标: "最大回撤", 策略回测: formatPercent(metrics?.max_drawdown_pct), 现金基准: "0.00%", 长持: "-" },
-    { 指标: "年化波动", 策略回测: formatPercent(metrics?.annual_volatility_pct), 现金基准: "0.00%", 长持: "-" },
-    { 指标: "夏普比率", 策略回测: formatNumber(metrics?.sharpe_ratio), 现金基准: "-", 长持: "-" },
-    { 指标: "交易胜率", 策略回测: formatPercent(metrics?.win_rate_pct), 现金基准: "-", 长持: `${signals?.summary.buys ?? 0} 买 / ${signals?.summary.sells ?? 0} 卖` },
-    { 指标: "盈亏比", 策略回测: formatNumber(metrics?.profit_factor), 现金基准: "-", 长持: `${metrics?.trade_count ?? 0} 笔交易` }
-  ];
-}
-
-function tradeRows(backtest: BacktestResponse | null): Record<string, unknown>[] {
-  return (backtest?.trades ?? []).map((trade) => ({
-    交易日: trade.trading_day,
-    方向: trade.side,
-    标的: trade.symbol,
-    价格: trade.price,
-    数量: trade.volume,
-    手续费: trade.commission
-  }));
-}
-
-function positionRows(backtest: BacktestResponse | null): Record<string, unknown>[] {
-  const metrics = backtest?.metrics;
-  if (!metrics) return [];
-  return [
-    { 指标: "平均持仓", 数值: formatPercent(metrics.exposure_pct) },
-    { 指标: "交易次数", 数值: metrics.trade_count },
-    { 指标: "最终权益", 数值: metrics.final_equity.toFixed(2) }
-  ];
-}
-
-function factorRows(signals: SignalsResponse | null, backtest: BacktestResponse | null): Record<string, unknown>[] {
-  if (!signals && !backtest) return [];
-  return [
-    { 因子: "趋势信号", 暴露: `${signals?.summary.signals ?? 0} 个` },
-    { 因子: "买入压力", 暴露: `${signals?.summary.buys ?? 0} 个买入` },
-    { 因子: "卖出压力", 暴露: `${signals?.summary.sells ?? 0} 个卖出` },
-    { 因子: "策略波动", 暴露: formatPercent(backtest?.metrics.annual_volatility_pct) }
-  ];
-}
-
-function riskRows(backtest: BacktestResponse | null): Record<string, unknown>[] {
-  if (!backtest) return [];
-  const status = backtest.risk_status;
-  return [
-    { 项目: "风控状态", 状态: status.ok ? "通过" : "未通过" },
-    { 项目: "最大回撤", 状态: formatPercent(backtest.metrics.max_drawdown_pct) },
-    { 项目: "风险提示", 状态: status.warnings.length ? status.warnings.join("；") : "暂无" }
-  ];
-}
-
-function attributionRows(backtest: BacktestResponse | null): Record<string, unknown>[] {
-  const metrics = backtest?.metrics;
-  if (!metrics) return [];
-  return [
-    { 来源: "策略收益", 贡献: formatPercent(metrics.total_return_pct) },
-    { 来源: "基准收益", 贡献: formatPercent(metrics.benchmark_return_pct) },
-    { 来源: "超额收益", 贡献: formatPercent(metrics.excess_return_pct) },
-    { 来源: "交易摩擦", 贡献: `${backtest.trades.length} 笔交易` }
-  ];
-}
-
-function formatNumber(value: number | null | undefined) {
-  return value === null || value === undefined ? "-" : value.toFixed(2);
-}
-
-function formatPercent(value: number | null | undefined) {
-  return value === null || value === undefined ? "-" : `${value.toFixed(2)}%`;
 }

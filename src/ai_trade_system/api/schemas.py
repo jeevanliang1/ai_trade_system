@@ -28,11 +28,17 @@ class StrategyParameterView(BaseModel):
     name: str
     default: Any = None
     annotation: str
+    display_name: str = ""
+    description: str = ""
+    increase_effect: str = ""
+    decrease_effect: str = ""
 
 
 class StrategySpecView(BaseModel):
     id: str
     name: str
+    display_name: str
+    description: str
     class_name: str
     source: str
     path: str | None = None
@@ -44,6 +50,10 @@ class StockView(BaseModel):
     code: str
     name: str
     exchange: str
+
+
+class WatchlistRequest(BaseModel):
+    stocks: list[StockView] = Field(default_factory=list)
 
 
 class StrategySelection(BaseModel):
@@ -81,6 +91,13 @@ class DemoDataRequest(DataRequest):
     count: int = 260
 
 
+class DataUpdateWatchlistRequest(BaseModel):
+    start_date: str | None = None
+    end_date: str | None = None
+    adjust: str = "qfq"
+    if_stale: bool = True
+
+
 class StrategySourceRequest(BaseModel):
     filename: str
     source: str
@@ -114,6 +131,14 @@ class AIResearchRequest(DataRequest):
 class ResearchSignalsRequest(DataRequest):
     min_bars: int = Field(default=60, ge=20, le=500)
     lookback: int = Field(default=120, ge=20, le=500)
+
+
+class ResearchSignalBatchRequest(DataRequest):
+    query: str = ""
+    limit: int = Field(default=20, ge=1, le=50)
+    min_bars: int = Field(default=60, ge=20, le=500)
+    lookback: int = Field(default=120, ge=20, le=500)
+    universe: Literal["catalog", "local_csv", "current"] = "catalog"
 
 
 class PaperRunRequest(DataRequest):

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 from ai_trade_system.backtest import BacktestConfig, run_backtest
 from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
+from ai_trade_system.data_manager import update_watchlist_data
 from ai_trade_system.paper_service import PaperTradingService
 from ai_trade_system.stock_catalog import (
     DEFAULT_STOCK_CATALOG_PATH,
@@ -13,6 +15,7 @@ from ai_trade_system.stock_catalog import (
     search_stock_catalog,
 )
 from ai_trade_system.strategies.dual_moving_average import DualMovingAverageStrategy
+from ai_trade_system.watchlist import load_watchlist
 
 
 def main() -> None:
@@ -53,6 +56,14 @@ def main() -> None:
     stocks_search.add_argument("--catalog", default=str(DEFAULT_STOCK_CATALOG_PATH))
     stocks_search.add_argument("--limit", type=int, default=20)
 
+    data = subparsers.add_parser("data", help="Manage local market data files")
+    data_subparsers = data.add_subparsers(dest="data_command", required=True)
+    data_update_watchlist = data_subparsers.add_parser("update-watchlist", help="Update managed daily CSV files for watchlist stocks")
+    data_update_watchlist.add_argument("--start", default=None, help="YYYYMMDD; default is two years before --end")
+    data_update_watchlist.add_argument("--end", default=None, help="YYYYMMDD; default is today")
+    data_update_watchlist.add_argument("--adjust", default="qfq")
+    data_update_watchlist.add_argument("--if-stale", action="store_true", help="Skip stocks already fresh through --end")
+
     args = parser.parse_args()
     if args.command == "download":
         bars = fetch_akshare_daily_bars(args.symbol, args.start, args.end, args.exchange, args.adjust)
@@ -82,6 +93,20 @@ def main() -> None:
                 print(f"{stock.code}\t{stock.name}\t{stock.exchange}")
             if not results:
                 print("no matching stocks")
+    elif args.command == "data":
+        if args.data_command == "update-watchlist":
+            end_date = args.end or date.today().strftime("%Y%m%d")
+            start_date = args.start or f"{int(end_date[:4]) - 2}{end_date[4:]}"
+            result = update_watchlist_data(
+                load_watchlist(),
+                start_date=start_date,
+                end_date=end_date,
+                adjust=args.adjust,
+                if_stale=args.if_stale,
+            )
+            print(f"updated={result['updated']} skipped={result['skipped']} failed={result['failed']}")
+            for item in result["files"]:
+                print(f"{item['code']}\t{item['exchange']}\t{item['status']}\t{item['latest_path']}")
 
 
 if __name__ == "__main__":

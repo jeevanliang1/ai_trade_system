@@ -21,6 +21,8 @@ class StrategySpec:
     source: str
     path: Path | None
     module_name: str | None = None
+    display_name: str | None = None
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,18 @@ class StrategyParameter:
     name: str
     default: Any
     annotation: str
+    display_name: str = ""
+    description: str = ""
+    increase_effect: str = ""
+    decrease_effect: str = ""
+
+
+@dataclass(frozen=True)
+class ParameterGuidance:
+    display_name: str
+    description: str
+    increase_effect: str
+    decrease_effect: str
 
 
 BUILTIN_STRATEGIES = [
@@ -38,6 +52,8 @@ BUILTIN_STRATEGIES = [
         source="builtin",
         path=None,
         module_name="ai_trade_system.strategies.dual_moving_average",
+        display_name="双均线趋势",
+        description="快慢均线金叉买入、死叉卖出，适合趋势行情。",
     ),
     StrategySpec(
         id="builtin:popular:BollingerMeanReversionStrategy",
@@ -46,6 +62,8 @@ BUILTIN_STRATEGIES = [
         source="builtin",
         path=None,
         module_name="ai_trade_system.strategies.popular",
+        display_name="布林带均值回归",
+        description="价格跌破布林带下轨后尝试买入，回归中轨附近卖出，适合震荡行情。",
     ),
     StrategySpec(
         id="builtin:popular:DonchianBreakoutStrategy",
@@ -54,6 +72,8 @@ BUILTIN_STRATEGIES = [
         source="builtin",
         path=None,
         module_name="ai_trade_system.strategies.popular",
+        display_name="通道突破",
+        description="突破近期高点入场，跌破近期低点离场，偏趋势跟随。",
     ),
     StrategySpec(
         id="builtin:popular:PriceMomentumStrategy",
@@ -62,6 +82,18 @@ BUILTIN_STRATEGIES = [
         source="builtin",
         path=None,
         module_name="ai_trade_system.strategies.popular",
+        display_name="价格动量",
+        description="按固定回看窗口的涨跌幅判断动量，强势买入、转弱退出。",
+    ),
+    StrategySpec(
+        id="builtin:popular:VolumeConfirmedMomentumStrategy",
+        name="VolumeConfirmedMomentumStrategy",
+        class_name="VolumeConfirmedMomentumStrategy",
+        source="builtin",
+        path=None,
+        module_name="ai_trade_system.strategies.popular",
+        display_name="量价动量策略",
+        description="价格上涨动量、成交量放大和趋势过滤同时满足时买入；动量转弱、跌破趋势或持仓超期时卖出。",
     ),
     StrategySpec(
         id="builtin:popular:RsiMeanReversionStrategy",
@@ -70,6 +102,8 @@ BUILTIN_STRATEGIES = [
         source="builtin",
         path=None,
         module_name="ai_trade_system.strategies.popular",
+        display_name="RSI均值回归",
+        description="RSI 超卖时买入、超买时卖出，适合短线修复和震荡反弹。",
     ),
     StrategySpec(
         id="builtin:popular:ChanRsiResearchStrategy",
@@ -78,6 +112,8 @@ BUILTIN_STRATEGIES = [
         source="builtin",
         path=None,
         module_name="ai_trade_system.strategies.popular",
+        display_name="缠论RSI研究",
+        description="结合缠论二买/二卖和增强 RSI 信号，输出可回测的研究信号。",
     ),
 ]
 
@@ -103,6 +139,8 @@ def discover_strategies(user_dir: Path | str = "strategies") -> list[StrategySpe
                     class_name=strategy_class.__name__,
                     source="user",
                     path=path,
+                    display_name=strategy_class.__name__,
+                    description=f"自定义策略：{strategy_class.__name__}，按本地源码定义的交易逻辑运行。",
                 )
             )
     return specs
@@ -133,7 +171,18 @@ def inspect_strategy_parameters(spec: StrategySpec) -> list[StrategyParameter]:
             continue
         default = None if parameter.default is inspect.Parameter.empty else parameter.default
         annotation = _annotation_name(parameter.annotation)
-        params.append(StrategyParameter(name=name, default=default, annotation=annotation))
+        guidance = _parameter_guidance(name, annotation)
+        params.append(
+            StrategyParameter(
+                name=name,
+                default=default,
+                annotation=annotation,
+                display_name=guidance.display_name,
+                description=guidance.description,
+                increase_effect=guidance.increase_effect,
+                decrease_effect=guidance.decrease_effect,
+            )
+        )
     return params
 
 
@@ -206,6 +255,165 @@ def _annotation_name(annotation: Any) -> str:
     if isinstance(annotation, str):
         return annotation
     return getattr(annotation, "__name__", str(annotation))
+
+
+PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
+    "symbol": ParameterGuidance(
+        display_name="交易标的",
+        description="策略只处理这个股票代码的行情和信号。",
+        increase_effect="股票代码不是数值参数，不能用调大理解；换代码等于换交易标的。",
+        decrease_effect="股票代码不是数值参数，不能用调小理解；换代码等于换交易标的。",
+    ),
+    "fast_window": ParameterGuidance(
+        display_name="快线周期",
+        description="用于计算短期均线，决定策略观察短线价格变化的长度。",
+        increase_effect="调大后短期均线更平滑，信号更少更慢。",
+        decrease_effect="调小后短期均线更敏感，信号更多但噪音也更多。",
+    ),
+    "slow_window": ParameterGuidance(
+        display_name="慢线周期",
+        description="用于计算长期均线，作为趋势判断的基准线。",
+        increase_effect="调大后更看重长期趋势，入场/离场更慢，交易次数通常减少。",
+        decrease_effect="调小后更贴近近期走势，信号更快，但更容易被短期波动干扰。",
+    ),
+    "trade_size": ParameterGuidance(
+        display_name="每次交易股数",
+        description="每次买入或卖出时使用的股票数量。",
+        increase_effect="调大后仓位更重，盈利和亏损都会被放大。",
+        decrease_effect="调小后仓位更轻，收益弹性降低，单次亏损也更小。",
+    ),
+    "rsi_period": ParameterGuidance(
+        display_name="RSI周期",
+        description="计算 RSI 指标时使用的回看天数。",
+        increase_effect="调大后 RSI 更平滑，信号更稳但反应更慢。",
+        decrease_effect="调小后 RSI 更敏感，能更早反应，但假信号更多。",
+    ),
+    "oversold": ParameterGuidance(
+        display_name="超卖阈值",
+        description="RSI 低于该值时，策略认为价格可能进入超卖区域并考虑买入。",
+        increase_effect="调大后更容易触发买入，机会更多但质量可能下降。",
+        decrease_effect="调小后买入更严格，信号更少但通常更偏极端超卖。",
+    ),
+    "overbought": ParameterGuidance(
+        display_name="超买阈值",
+        description="RSI 高于该值时，策略认为价格可能进入超买区域并考虑卖出。",
+        increase_effect="调大后卖出更晚，可能吃到更多趋势，也可能回吐利润。",
+        decrease_effect="调小后卖出更早，保护利润更积极，但可能过早离场。",
+    ),
+    "window": ParameterGuidance(
+        display_name="统计窗口",
+        description="计算均值、波动或通道时使用的回看天数。",
+        increase_effect="调大后指标更稳定，信号更少更慢。",
+        decrease_effect="调小后指标更灵敏，信号更多但更容易受噪音影响。",
+    ),
+    "num_std": ParameterGuidance(
+        display_name="标准差倍数",
+        description="布林带上下轨距离中轨的宽度。",
+        increase_effect="调大后通道更宽，触发买入更少，条件更严格。",
+        decrease_effect="调小后通道更窄，触发买入更多，但误判概率也更高。",
+    ),
+    "entry_window": ParameterGuidance(
+        display_name="突破入场窗口",
+        description="判断价格是否突破近期高点时使用的回看天数。",
+        increase_effect="调大后突破门槛更高，信号更少但趋势确认更强。",
+        decrease_effect="调小后更容易突破入场，信号更快但假突破更多。",
+    ),
+    "exit_window": ParameterGuidance(
+        display_name="突破离场窗口",
+        description="判断价格是否跌破近期低点并离场时使用的回看天数。",
+        increase_effect="调大后离场更宽松，持仓更久但回撤可能更大。",
+        decrease_effect="调小后离场更敏感，止损更快但可能被震荡洗出。",
+    ),
+    "lookback": ParameterGuidance(
+        display_name="回看周期",
+        description="策略判断动量或研究信号时使用的历史行情长度。",
+        increase_effect="调大后更看重中长期变化，信号更稳但更慢。",
+        decrease_effect="调小后更看重近期变化，信号更快但更容易反复。",
+    ),
+    "entry_threshold": ParameterGuidance(
+        display_name="入场涨幅阈值",
+        description="价格动量达到该涨幅后，策略才考虑买入。",
+        increase_effect="调大后买入更严格，信号更少但动量更强。",
+        decrease_effect="调小后更容易买入，机会更多但追弱势反弹的风险更高。",
+    ),
+    "exit_threshold": ParameterGuidance(
+        display_name="离场跌幅阈值",
+        description="价格动量跌到该阈值后，策略考虑退出持仓。",
+        increase_effect="调大后更容易触发离场，保护更积极但可能提前卖出。",
+        decrease_effect="调小后离场更宽松，持仓更久但亏损可能扩大。",
+    ),
+    "momentum_window": ParameterGuidance(
+        display_name="动量回看周期",
+        description="比较当前收盘价和多少个交易日前的收盘价，用来判断价格涨幅是否足够强。",
+        increase_effect="调大后更看重中期动量，信号更稳但更慢。",
+        decrease_effect="调小后更看重短期动量，信号更快但更容易被噪音影响。",
+    ),
+    "min_momentum_pct": ParameterGuidance(
+        display_name="最小动量涨幅",
+        description="当前价格相对回看日前价格至少达到多少价格涨幅才允许入场。",
+        increase_effect="调大后只追更强的上涨，交易更少。",
+        decrease_effect="调小后更容易触发买入，机会更多但强度要求下降。",
+    ),
+    "volume_window": ParameterGuidance(
+        display_name="成交量基准周期",
+        description="计算平均成交量时使用的回看天数。",
+        increase_effect="调大后成交量基准更稳定，异常放量确认更严格。",
+        decrease_effect="调小后成交量基准更贴近近期变化，信号更敏感。",
+    ),
+    "volume_multiplier": ParameterGuidance(
+        display_name="放量倍数",
+        description="当前成交量至少达到历史平均成交量的多少倍，才认为有成交量放大确认。",
+        increase_effect="调大后需要更明显放量才买入，交易更少但确认更强。",
+        decrease_effect="调小后放量要求降低，信号更多但确认力度下降。",
+    ),
+    "trend_window": ParameterGuidance(
+        display_name="趋势过滤周期",
+        description="计算趋势均线时使用的回看天数，当前价格需站上该均线才允许买入。",
+        increase_effect="调大后更偏中长期趋势过滤，入场更慢。",
+        decrease_effect="调小后趋势过滤更灵敏，入场更早但抗噪更弱。",
+    ),
+    "max_holding_bars": ParameterGuidance(
+        display_name="最大持仓天数",
+        description="买入后最大持仓多少根日线，超过后即使未触发其他退出条件也会离场。",
+        increase_effect="调大后允许趋势运行更久，但可能承受更大回撤。",
+        decrease_effect="调小后退出更快，资金周转更快但可能错过后续趋势。",
+    ),
+    "min_bars": ParameterGuidance(
+        display_name="最少行情数",
+        description="研究信号开始计算前必须具备的最少 K 线数量。",
+        increase_effect="调大后样本要求更严格，信号更少但基础更充分。",
+        decrease_effect="调小后更早开始输出信号，但样本不足时稳定性更差。",
+    ),
+    "min_signal_score": ParameterGuidance(
+        display_name="最低信号分",
+        description="研究信号分数达到该值后，才允许转换为交易信号。",
+        increase_effect="调大后信号更严格，交易更少。",
+        decrease_effect="调小后信号更宽松，交易更多但质量可能下降。",
+    ),
+}
+
+
+def _parameter_guidance(name: str, annotation: str) -> ParameterGuidance:
+    if name in PARAMETER_GUIDANCE:
+        return PARAMETER_GUIDANCE[name]
+    display_name = _humanize_parameter_name(name)
+    if annotation in {"int", "float"}:
+        return ParameterGuidance(
+            display_name=display_name,
+            description=f"{display_name} 参数，具体含义由策略源码中的构造函数定义。",
+            increase_effect="调大后该条件或数量的影响更强，建议通过回测确认收益和回撤变化。",
+            decrease_effect="调小后该条件或数量的影响更弱，建议通过回测确认信号频率变化。",
+        )
+    return ParameterGuidance(
+        display_name=display_name,
+        description=f"{display_name} 参数，具体含义由策略源码中的构造函数定义。",
+        increase_effect="该参数不适合简单按调大理解，修改前先确认源码含义。",
+        decrease_effect="该参数不适合简单按调小理解，修改前先确认源码含义。",
+    )
+
+
+def _humanize_parameter_name(name: str) -> str:
+    return name.replace("_", " ")
 
 
 def _sanitize_strategy_filename(filename: str) -> str:

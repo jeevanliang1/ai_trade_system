@@ -25,6 +25,13 @@
 - Treat risk controls, paper execution behavior, and event logs as user-facing trading-system behavior; update tests when changing them.
 - Prefer extending `src/ai_trade_system` modules and existing CLI patterns over adding new top-level systems.
 - Treat the React + FastAPI platform (`./scripts/run_app.sh`, `http://localhost:5173`) as the default browser surface. Streamlit (`./scripts/run_web.sh`, `http://localhost:8501`) is legacy unless a task explicitly targets it.
+- Do not leave decorative or nonfunctional controls in the React platform. A visible button/tab/switch should either be wired to useful behavior, shown as read-only state, or removed until implemented.
+- User-facing strategy displays should prefer Chinese `display_name` plus a plain-language description, while preserving the English class name where source traceability matters.
+- User-facing strategy parameters should include a Chinese label, plain-language purpose, and simple tuning impact for increasing or decreasing the value when the parameter semantics allow it.
+- Stock-aware React controls should use the shared watchlist selector and `selectStock` action so `symbol`, `exchange`, `csv_path`, strategy params, portfolio params, and stale market-derived results stay synchronized.
+- Watchlist market-data workflows should use `src/ai_trade_system/data_manager.py` and canonical paths under `data/market/a_share/{exchange}/{code}/`; do not reintroduce ad hoc `data/{code}_daily.csv` defaults for stock-aware flows. Product code may expose CLI/API update hooks, but committing machine-local scheduling such as launchd still requires owner confirmation.
+- Strategy effect comparisons should reuse the fixed local benchmark fixtures for 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` over `20230619` to `20260619` with `qfq` adjustment, persisted under `data/market/a_share/{exchange}/{code}/`; record comparable results under `docs/qa/`.
+- Global shell controls should summarize current context or navigate to the next workflow step; page-owned execution actions such as running backtests, scans, AI research, risk checks, or paper trading should live inside their responsible workspace.
 
 ## Required Context Before Development
 
@@ -41,6 +48,7 @@
 - Report any verification command that was not run and why.
 - At task close-out, provide a headless Chrome screenshot for user acceptance whenever a browser-renderable project surface is available; if no such surface can be captured, report the exact reason.
 - When the user gives a persona, requirement, page/function to replicate, or asks to continue broad product work, first decompose the work into concrete feature items and update `docs/context/pending-features.md`. Remove completed items from the pending list, add newly discovered pending work before starting it, and keep exactly one next recommended feature recorded there.
+- When the user asks to "继续完成项目" or similar, follow `docs/rules/feature-backlog-continuation.md` five-feature continuation mode: complete five meaningful backlog features in sequence when feasible, update pending items after each feature, run targeted verification per feature, and run broader verification only after the batch.
 
 ## AI Auto Sedimentation Rules
 

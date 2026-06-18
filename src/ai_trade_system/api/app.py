@@ -11,14 +11,17 @@ from .schemas import (
     AIResearchRequest,
     BacktestRequest,
     DataRequest,
+    DataUpdateWatchlistRequest,
     DemoDataRequest,
     PaperRunRequest,
     PortfolioPreviewRequest,
+    ResearchSignalBatchRequest,
     ResearchSignalsRequest,
     RiskEvaluateRequest,
     SignalsRequest,
     StrategySourceRequest,
     StrategyTemplateRequest,
+    WatchlistRequest,
 )
 
 
@@ -40,6 +43,14 @@ def create_app() -> FastAPI:
     def stocks(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
         return _handle(lambda: service.list_stocks(query, limit))
 
+    @app.get("/api/watchlist")
+    def watchlist() -> dict[str, Any]:
+        return _handle(service.list_watchlist)
+
+    @app.put("/api/watchlist")
+    def save_watchlist(request: WatchlistRequest) -> dict[str, Any]:
+        return _handle(lambda: service.put_watchlist([stock.model_dump() for stock in request.stocks]))
+
     @app.post("/api/data/load")
     def load_data(request: DataRequest) -> dict[str, Any]:
         return _handle(lambda: service.load_data(request))
@@ -47,6 +58,14 @@ def create_app() -> FastAPI:
     @app.post("/api/data/download")
     def download_data(request: DataRequest) -> dict[str, Any]:
         return _handle(lambda: service.download_data(request))
+
+    @app.get("/api/data/managed")
+    def managed_data() -> dict[str, Any]:
+        return _handle(service.list_managed_data)
+
+    @app.post("/api/data/update-watchlist")
+    def update_watchlist_data(request: DataUpdateWatchlistRequest) -> dict[str, Any]:
+        return _handle(lambda: service.update_watchlist_data(request))
 
     @app.post("/api/data/demo")
     def demo_data(request: DemoDataRequest) -> dict[str, Any]:
@@ -87,6 +106,10 @@ def create_app() -> FastAPI:
     @app.post("/api/research/signals/preview")
     def research_signals_preview(request: ResearchSignalsRequest) -> dict[str, Any]:
         return _handle(lambda: service.preview_research_signals(request))
+
+    @app.post("/api/research/signals/batch")
+    def research_signals_batch(request: ResearchSignalBatchRequest) -> dict[str, Any]:
+        return _handle(lambda: service.batch_research_signals(request))
 
     @app.post("/api/paper/run")
     def paper_run(request: PaperRunRequest) -> dict[str, Any]:

@@ -67,6 +67,10 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
       risk_enabled: true,
       stop_loss_mode: "fixed_pct"
     },
+    watchlist: [
+      { code: "000001", name: "平安银行", exchange: "SZSE" },
+      { code: "601318", name: "中国平安", exchange: "SSE" }
+    ],
     strategies: [],
     selectedStrategyId: "",
     strategyParams: {},
@@ -87,6 +91,8 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
     backtest: null,
     insight: null,
     riskStatus: null,
+    aiPrompt: null,
+    researchSignals: null,
     paper: null,
     message: "准备就绪",
     busy: false,
@@ -96,6 +102,8 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
   };
   const actions: PlatformActions = {
     setSettings: vi.fn(),
+    selectStock: vi.fn(),
+    setWatchlist: vi.fn(),
     setSelectedStrategyId: vi.fn(),
     setStrategyParams: vi.fn(),
     setPortfolio: vi.fn(),
@@ -126,12 +134,18 @@ test("DataPage searches stocks and selecting a result updates symbol exchange an
   await waitFor(() => expect(api.stocks).toHaveBeenCalledWith("平安", 8));
   await user.click(await screen.findByRole("button", { name: "601318 中国平安 SSE" }));
 
-  expect(props.actions.setSettings).toHaveBeenCalledWith({
-    ...props.state.settings,
-    symbol: "601318",
-    exchange: "SSE",
-    csv_path: "data/601318_daily.csv"
-  });
+  expect(props.actions.selectStock).toHaveBeenCalledWith({ code: "601318", name: "中国平安", exchange: "SSE" });
+});
+
+test("DataPage can switch the current stock from the shared watchlist dropdown", async () => {
+  const user = userEvent.setup();
+  const props = makeProps();
+
+  render(<DataPage {...props} />);
+
+  await user.selectOptions(screen.getByLabelText("数据中心自选股票"), "SSE:601318");
+
+  expect(props.actions.selectStock).toHaveBeenCalledWith({ code: "601318", name: "中国平安", exchange: "SSE" });
 });
 
 test("DataPage explains stock search network failures as local API connection issues", async () => {

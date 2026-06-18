@@ -5,7 +5,7 @@ import { ChartPanel } from "../components/ChartPanel";
 import { DataTable } from "../components/DataTable";
 import { ToolbarButton } from "../components/ToolbarButton";
 import { equityOption } from "./chartOptions";
-import { currentStrategy } from "./pageTypes";
+import { currentStrategy, strategyDisplayName } from "./pageTypes";
 import type { PageProps, PlatformState } from "./pageTypes";
 
 type PaperMode = "single" | "portfolio";
@@ -270,7 +270,7 @@ function PaperConfigItem({ label, value }: { label: string; value: string }) {
 
 function paperRunConfig(state: PlatformState, mode: PaperMode) {
   const strategy = currentStrategy(state);
-  const strategyLabel = strategy?.name ?? (state.selectedStrategyId || "-");
+  const strategyLabel = strategyDisplayName(strategy) ?? (state.selectedStrategyId || "-");
   return {
     symbol: `${state.settings.symbol} ${state.settings.exchange}`,
     dateRange: `${state.settings.start_date || "起始"} - ${state.settings.end_date || "最新"}`,

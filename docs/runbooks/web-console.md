@@ -76,6 +76,42 @@ python -m pip install -e ".[web,data]"
 
 legacy 地址仍为 `http://localhost:8501`。
 
+## API 错误响应契约
+
+React 工作台通过 `frontend/src/api/client.ts` 统一请求 FastAPI。本地 API 报错时，优先查看浏览器 Network 面板里的 HTTP 状态码和 JSON `detail` 字段，再回到页面提示定位具体操作。
+
+业务输入错误和本地路径安全错误返回 HTTP 400，响应形状为：
+
+```json
+{
+  "detail": "CSV data not found: data/missing.csv"
+}
+```
+
+上游或本地运行时依赖失败返回 HTTP 502，响应形状同样使用字符串 `detail`：
+
+```json
+{
+  "detail": "AKShare request failed"
+}
+```
+
+请求体缺字段、字段类型错误或不符合 Pydantic schema 时，FastAPI 返回 HTTP 422，`detail` 是校验错误列表：
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["body", "settings"],
+      "msg": "Field required",
+      "type": "missing"
+    }
+  ]
+}
+```
+
+前端页面主要面向字符串 `detail` 展示可读错误，例如 `请求失败：CSV data not found: data/missing.csv`。如果看到 422 或浏览器原生网络错误，通常说明前端请求 payload、API schema 或本地 API 连接状态不一致，应先检查请求体、后端日志和 `./scripts/run_all.sh --check` 输出。
+
 ## 常见输入
 
 - CSV 数据：默认 `data/000001_daily.csv`
@@ -94,6 +130,7 @@ React 工作台包含八个区域：
 - `策略工坊`：发现内置和用户策略，新建/编辑用户策略，预览信号。
 - `组合实验室`：添加多个策略，配置权重和聚合模式，预览组合信号。
 - `回测中心`：运行单策略或组合策略回测，查看价格、买卖点、权益、回撤、指标和交易表。
+- `信号雷达`：批量扫描股票目录、本地 CSV 候选或当前标的，按缠论/增强 RSI 研究评分排序，标出缺失行情 CSV 的候选，并支持准备缺失数据、保留扫描历史和导出 CSV。
 - `AI研究员`：基于技术指标、信息面摘要和风控上下文生成结构化 Mock AI 观点。
 - `纸面交易`：重放 CSV 行情并输出 JSONL 事件日志。
 - `风控`：查看确定性风控阈值和回测风险状态。
@@ -142,6 +179,14 @@ AI研究员当前使用 `MockLLMProvider`：
 
 Web 侧边栏启动时只加载本地股票目录，不会自动联网刷新。
 
+信号雷达页同样只读取本地股票目录和 `data/<股票代码>_daily.csv`。扫描范围支持：
+
+- `全部目录候选`：按股票目录和搜索词取候选，缺少 CSV 的候选会保留在结果中并标为 `缺少CSV`。
+- `仅本地CSV`：只扫描已有 `data/<股票代码>_daily.csv` 的候选，适合快速复扫可用数据池。
+- `当前标的`：只扫描当前全局设置里的 symbol/exchange/csv_path。
+
+它不会自动联网下载缺失行情；缺少 CSV 的候选可点击 `准备数据` 写入数据中心设置，再到数据中心下载或手动放入对应文件后重新扫描。成功扫描会在页面保留最近历史摘要，当前排行可用 `导出CSV` 下载。
+
 刷新目录：
 
 ```bash
@@ -156,3 +201,14 @@ PYTHONPATH=src python -m ai_trade_system.cli stocks search 000001
 ```
 
 如果目录文件不存在，侧边栏会显示手动输入股票代码和交易所的兜底控件。
+
+## 交付检查清单
+
+准备提交或打开 PR 前，按影响范围勾选以下检查：
+
+- Python 行为：涉及 `src/ai_trade_system/` 或 API 路由时运行 `python -m pytest`，或至少运行直接覆盖变更的测试文件并说明范围。
+- 前端行为：涉及 React、TypeScript 或样式时在 `frontend/` 运行相关 `npm test`，并在累积 UI 变更后运行 `npm run build`。
+- API 契约：涉及请求/响应形状时同步更新 `tests/test_api_routes.py`、`frontend/src/api/client.test.ts` 或调用方测试。
+- 文档和待办：广义功能推进后更新 `docs/context/pending-features.md`，保持一个 `Next Recommended Feature`。
+- 浏览器验收：浏览器可见变更需运行 headless Chrome 截图流程，并在收尾说明截图路径；无可截图界面时说明原因。
+- 风控边界：确认没有新增默认实盘交易入口，AI 观点、回测、纸面交易和风险控制边界仍然清晰。

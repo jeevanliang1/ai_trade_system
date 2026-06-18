@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jeevan.ai-trade-system.hourly-continue</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeevanliang/Desktop/github/ai_trade_system/scripts/hourly_continue_project.sh</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>3600</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/jeevanliang/Desktop/github/ai_trade_system</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeevanliang/Desktop/github/ai_trade_system/logs/automation/launchd.out</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeevanliang/Desktop/github/ai_trade_system/logs/automation/launchd.err</string>
+</dict>
+</plist>

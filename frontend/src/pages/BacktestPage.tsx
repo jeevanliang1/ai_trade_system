@@ -7,6 +7,7 @@ import { SegmentedControl } from "../components/SegmentedControl";
 import { ToolbarButton } from "../components/ToolbarButton";
 import type { BacktestResponse, PortfolioRequest, PlatformSettings, SignalRow, StrategySpec } from "../types";
 import { drawdownOption, equityOption, priceOption } from "./chartOptions";
+import { strategyDisplayName } from "./pageTypes";
 import type { PageProps, PlatformState } from "./pageTypes";
 import { useState } from "react";
 
@@ -301,7 +302,7 @@ function backtestRunConfig(
   mode: BacktestMode
 ): BacktestRunConfig {
   const selectedStrategy = strategies.find((strategy) => strategy.id === selectedStrategyId);
-  const strategyLabel = selectedStrategy?.name ?? (selectedStrategyId || "-");
+  const strategyLabel = strategyDisplayName(selectedStrategy) ?? (selectedStrategyId || "-");
   return {
     symbol: `${settings.symbol} ${settings.exchange}`,
     dateRange: `${settings.start_date || "起始"} - ${settings.end_date || "最新"}`,

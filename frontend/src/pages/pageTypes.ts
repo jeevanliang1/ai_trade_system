@@ -3,18 +3,22 @@ import type {
   BacktestResponse,
   Bar,
   DataSummary,
+  ManagedDataFile,
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
   ResearchSignalPreview,
   RiskStatus,
   SignalsResponse,
+  Stock,
   StrategySelection,
   StrategySpec
 } from "../types";
 
 export type PlatformState = {
   settings: PlatformSettings;
+  watchlist: Stock[];
+  managedData: ManagedDataFile[];
   strategies: StrategySpec[];
   selectedStrategyId: string;
   strategyParams: Record<string, unknown>;
@@ -36,6 +40,9 @@ export type PlatformState = {
 
 export type PlatformActions = {
   setSettings: (settings: PlatformSettings) => void;
+  selectStock: (stock: Stock) => void;
+  setWatchlist: (stocks: Stock[]) => void;
+  updateWatchlistData: () => Promise<void>;
   setSelectedStrategyId: (id: string) => void;
   setStrategyParams: (params: Record<string, unknown>) => void;
   setPortfolio: (portfolio: PortfolioRequest) => void;
@@ -60,6 +67,10 @@ export type PageProps = {
 
 export function currentStrategy(state: PlatformState): StrategySpec | undefined {
   return state.strategies.find((strategy) => strategy.id === state.selectedStrategyId) ?? state.strategies[0];
+}
+
+export function strategyDisplayName(strategy: StrategySpec | undefined): string | undefined {
+  return strategy?.display_name || strategy?.name;
 }
 
 export function currentSelection(state: PlatformState): StrategySelection {

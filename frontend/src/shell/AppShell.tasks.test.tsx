@@ -19,6 +19,10 @@ const apiMock = vi.hoisted(() => {
     api: {
       bootstrap: vi.fn(),
       stocks: vi.fn(),
+      watchlist: vi.fn(),
+      saveWatchlist: vi.fn(),
+      managedData: vi.fn(),
+      updateWatchlistData: vi.fn(),
       loadData: vi.fn(),
       demoData: vi.fn(),
       downloadData: vi.fn(),
@@ -59,6 +63,8 @@ const settings = {
 const strategy = {
   id: "builtin:dual:DualMovingAverageStrategy",
   name: "DualMovingAverageStrategy",
+  display_name: "双均线趋势",
+  description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
   class_name: "DualMovingAverageStrategy",
   source: "builtin",
   path: null,
@@ -245,7 +251,7 @@ test("AppShell clears stale bars and summaries when Data Center selects a differ
   await user.type(screen.getByLabelText("搜索股票名称或代码"), "平安");
   await user.click(await screen.findByRole("button", { name: "601318 中国平安 SSE" }));
 
-  await waitFor(() => expect(screen.getByDisplayValue("data/601318_daily.csv")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByDisplayValue("data/market/a_share/SSE/601318/601318_SSE_daily_qfq_latest.csv")).toBeInTheDocument());
   expect(screen.getByText("0 行")).toBeInTheDocument();
   expect(screen.getByText("暂无数据")).toBeInTheDocument();
   expect(screen.queryByText("000001")).not.toBeInTheDocument();
@@ -288,6 +294,104 @@ test("AppShell disables duplicate backtest runs and shows the active mode while 
 
   await waitFor(() => expect(within(backtestSettings).getByRole("button", { name: "运行回测" })).toBeEnabled());
   expect(screen.getByLabelText("回测运行状态")).toHaveTextContent("等待运行");
+});
+
+test("AppShell top next-step button navigates without running a backtest", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  expect(screen.getByText("策略工坊")).toHaveClass("active");
+
+  await user.click(screen.getByRole("button", { name: "去回测中心" }));
+
+  expect(screen.getByText("回测中心")).toHaveClass("active");
+  expect(screen.getByText("回测设置")).toBeInTheDocument();
+  expect(apiMock.api.runBacktest).not.toHaveBeenCalled();
+});
+
+test("AppShell exposes a global watchlist selector that changes the current stock target", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    watchlist: [
+      { code: "000001", name: "平安银行", exchange: "SZSE" },
+      { code: "601318", name: "中国平安", exchange: "SSE" }
+    ],
+    catalog_available: true,
+    catalog_size: 2,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.selectOptions(screen.getByLabelText("全局自选股票"), "SSE:601318");
+
+  await waitFor(() => expect(screen.getByText("路径：data/market/a_share/SSE/601318/601318_SSE_daily_qfq_latest.csv")).toBeInTheDocument());
+  expect(screen.getByText("601318 SSE")).toBeInTheDocument();
+  expect(screen.getByText("已切换数据目标：601318 SSE，请加载或下载行情")).toBeInTheDocument();
+});
+
+test("AppShell shows backtest API errors and clears the active run mode", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.runBacktest.mockRejectedValueOnce(new apiMock.ApiError(400, "backtest requires loaded bars"));
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "回测中心" }));
+  const backtestSettings = screen.getAllByText("回测设置").at(-1)!.closest("section")!;
+  await user.click(within(backtestSettings).getByRole("button", { name: "运行回测" }));
+
+  await waitFor(() => expect(screen.getAllByText("请求失败：backtest requires loaded bars").length).toBeGreaterThan(0));
+  expect(within(backtestSettings).getByRole("button", { name: "运行回测" })).toBeEnabled();
+  expect(screen.getByLabelText("回测运行状态")).toHaveTextContent("等待运行");
+});
+
+test("AppShell shows AI research API errors without replacing prior insight", async () => {
+  const user = userEvent.setup();
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings,
+    catalog_available: true,
+    catalog_size: 1,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+  apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.research.mockRejectedValueOnce(new apiMock.ApiError(502, "Mock provider unavailable"));
+
+  render(<AppShell />);
+
+  await screen.findByText("已加载 1 根K线");
+  await user.click(screen.getByRole("button", { name: "AI研究员" }));
+  await user.click(screen.getByRole("button", { name: "生成AI观点" }));
+
+  await waitFor(() => expect(screen.getAllByText("请求失败：Mock provider unavailable").length).toBeGreaterThan(0));
+  expect(screen.getByText("生成观点后显示技术指标、价格结构和信号证据。")).toBeVisible();
 });
 
 test("AppShell loads paper events from the configured log path", async () => {

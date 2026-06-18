@@ -18,6 +18,18 @@ def test_discover_strategies_includes_builtin_dual_moving_average():
     assert "DualMovingAverageStrategy" in names
 
 
+def test_builtin_strategy_specs_expose_chinese_names_and_descriptions():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+
+    dual = next(spec for spec in specs if spec.class_name == "DualMovingAverageStrategy")
+    rsi = next(spec for spec in specs if spec.class_name == "RsiMeanReversionStrategy")
+
+    assert dual.display_name == "双均线趋势"
+    assert "快慢均线金叉" in dual.description
+    assert rsi.display_name == "RSI均值回归"
+    assert "超卖" in rsi.description
+
+
 def test_discover_strategies_loads_user_strategy_from_file(tmp_path):
     strategy_file = tmp_path / "my_strategy.py"
     strategy_file.write_text(
@@ -41,6 +53,8 @@ class MyStrategy(Strategy):
     user_spec = next(spec for spec in specs if spec.name == "MyStrategy")
     strategy = instantiate_strategy(user_spec, {"symbol": "000001", "trade_size": 300})
 
+    assert user_spec.display_name == "MyStrategy"
+    assert "自定义策略" in user_spec.description
     assert strategy.symbol == "000001"
     assert strategy.trade_size == 300
 
@@ -70,6 +84,34 @@ class ParamStrategy(Strategy):
         ("threshold", 1.2, "float"),
         ("enabled", True, "bool"),
     ]
+
+
+def test_strategy_parameters_include_chinese_guidance_for_tuning():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    dual = next(spec for spec in specs if spec.class_name == "DualMovingAverageStrategy")
+
+    params = {param.name: param for param in inspect_strategy_parameters(dual)}
+
+    assert params["fast_window"].display_name == "快线周期"
+    assert "短期均线" in params["fast_window"].description
+    assert "更平滑" in params["fast_window"].increase_effect
+    assert "更敏感" in params["fast_window"].decrease_effect
+    assert params["trade_size"].display_name == "每次交易股数"
+    assert "仓位" in params["trade_size"].increase_effect
+
+
+def test_volume_confirmed_momentum_strategy_metadata_and_parameter_guidance():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    spec = next(item for item in specs if item.name == "VolumeConfirmedMomentumStrategy")
+
+    assert spec.display_name == "量价动量策略"
+    assert "成交量放大" in spec.description
+
+    params = {param.name: param for param in inspect_strategy_parameters(spec)}
+    assert params["momentum_window"].display_name == "动量回看周期"
+    assert "价格涨幅" in params["min_momentum_pct"].description
+    assert "成交量" in params["volume_multiplier"].description
+    assert "持仓" in params["max_holding_bars"].description
 
 
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):

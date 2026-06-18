@@ -4,6 +4,7 @@
 
 - `market`: 统一的 `Bar` 和 `Signal` 数据模型。
 - `data`: AKShare 数据标准化、CSV 读写。
+- `data_manager`: 自选股本地行情文件管理，维护规范主 CSV、每日增量 CSV、manifest 索引和批量更新流程。
 - `stock_catalog`: 本地 A股股票目录加载、搜索、刷新和交易所推断。
 - `strategy`: 策略抽象接口。
 - `strategy_registry`: 发现内置和 `strategies/` 用户策略、读取/保存策略源码、按构造函数生成参数。
@@ -27,9 +28,11 @@
 ```text
 AKShare/public stock list -> stock_catalog -> data/a_share_stocks.csv -> Web/CLI search
 AKShare/public data -> normalize_bars -> CSV/local storage
+watchlist -> data_manager -> data/market/a_share/{exchange}/{code}/{code}_{exchange}_daily_{adjust}_latest.csv + increments/ + manifest.json
 CSV/local storage -> Strategy.on_bar -> Signal -> PaperBroker -> equity/trades/logs
 CSV/local storage -> indicators/analytics -> FastAPI -> React charts/tables
 CSV/local storage -> research Chan/RSI preview -> FastAPI -> React Strategy Workshop
+stock_catalog + local CSV files -> research batch scan -> FastAPI -> React Signal Radar
 strategies/*.py -> strategy registry -> selected Strategy -> backtest/paper service
 selected Strategy[] -> portfolio aggregation -> backtest/paper service
 technical snapshot + information notes + risk context -> MockLLMProvider -> LLMInsight

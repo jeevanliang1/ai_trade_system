@@ -21,11 +21,17 @@ export type StrategyParameter = {
   name: string;
   default: unknown;
   annotation: string;
+  display_name?: string;
+  description?: string;
+  increase_effect?: string;
+  decrease_effect?: string;
 };
 
 export type StrategySpec = {
   id: string;
   name: string;
+  display_name: string;
+  description: string;
   class_name: string;
   source: "builtin" | "user" | string;
   path: string | null;
@@ -99,6 +105,28 @@ export type ResearchSignalPreview = {
   blockers: ResearchSignalBlocker[];
 };
 
+export type ResearchSignalBatchRow = {
+  rank: number;
+  code: string;
+  name: string;
+  exchange: string;
+  csv_path: string;
+  status: "scanned" | "missing_data" | string;
+  score: ResearchSignalScore | null;
+  latest_signal: ResearchSignal | null;
+  preview: ResearchSignalPreview | null;
+  blockers: ResearchSignalBlocker[];
+};
+
+export type ResearchSignalBatchResponse = {
+  query: string;
+  universe: "catalog" | "local_csv" | "current" | string;
+  scanned: number;
+  available: number;
+  missing: number;
+  rows: ResearchSignalBatchRow[];
+};
+
 export type TradeRow = {
   trading_day: string;
   side: string;
@@ -170,8 +198,69 @@ export type BootstrapResponse = {
   catalog_available: boolean;
   catalog_size: number;
   stocks: Stock[];
+  watchlist?: Stock[];
+  managed_data?: ManagedDataFile[];
   strategies: StrategySpec[];
   limits: Record<string, unknown>;
+};
+
+export type WatchlistResponse = {
+  stocks: Stock[];
+};
+
+export type ManagedDataFile = {
+  code: string;
+  name: string;
+  exchange: string;
+  adjust: string;
+  latest_path: string;
+  manifest_path: string;
+  exists: boolean;
+  stale: boolean;
+  latest_start: string | null;
+  latest_end: string | null;
+  latest_rows: number;
+  last_increment_path: string | null;
+  last_updated_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+};
+
+export type WatchlistDataUpdateRequest = {
+  start_date?: string;
+  end_date?: string;
+  adjust?: string;
+  if_stale?: boolean;
+};
+
+export type WatchlistDataUpdateResult = {
+  code: string;
+  name: string;
+  exchange: string;
+  adjust: string;
+  status: "updated" | "skipped" | "failed" | string;
+  requested_start: string;
+  requested_end: string;
+  fetched_start: string | null;
+  fetched_end: string | null;
+  fetched_rows: number;
+  latest_rows: number;
+  latest_start: string | null;
+  latest_end: string | null;
+  latest_path: string;
+  increment_path: string | null;
+  message: string;
+};
+
+export type ManagedDataResponse = {
+  files: ManagedDataFile[];
+};
+
+export type WatchlistDataUpdateResponse = {
+  updated: number;
+  skipped: number;
+  failed: number;
+  files: WatchlistDataUpdateResult[];
 };
 
 export type StrategySelection = {
@@ -207,6 +296,7 @@ export type DataSummary = {
 export type DataResponse = {
   bars: Bar[];
   summary: DataSummary;
+  managed_file?: ManagedDataFile | null;
 };
 
 export type PortfolioSignalContribution = {

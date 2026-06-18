@@ -28,6 +28,8 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
       {
         id: "dual_ma",
         name: "Dual Moving Average",
+        display_name: "双均线趋势",
+        description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
         class_name: "DualMovingAverageStrategy",
         source: "builtin",
         path: null,
@@ -103,7 +105,7 @@ test("PaperPage shows run configuration and idle status before starting", async 
   expect(screen.getByText("运行配置")).toBeVisible();
   expect(screen.getByText(/标的 000001 SZSE/)).toBeVisible();
   expect(screen.getByText(/区间 20240101 - 20241231/)).toBeVisible();
-  expect(screen.getByText(/策略\/组合 单策略：Dual Moving Average/)).toBeVisible();
+  expect(screen.getByText(/策略\/组合 单策略：双均线趋势/)).toBeVisible();
   expect(screen.getByText(/初始资金 100000/)).toBeVisible();
   expect(screen.getByText(/手续费 0.0003/)).toBeVisible();
   expect(screen.getByText(/滑点 0.01/)).toBeVisible();

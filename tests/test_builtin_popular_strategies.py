@@ -8,6 +8,7 @@ from ai_trade_system.strategies.popular import (
     DonchianBreakoutStrategy,
     PriceMomentumStrategy,
     RsiMeanReversionStrategy,
+    VolumeConfirmedMomentumStrategy,
 )
 from ai_trade_system.strategy_registry import discover_strategies
 
@@ -26,6 +27,29 @@ def make_bar(day: int, close: float) -> Bar:
     )
 
 
+def make_volume_bar(day: int, close: float, volume: float) -> Bar:
+    return Bar(
+        symbol="000001",
+        exchange="SZSE",
+        trading_day=date(2024, 1, day),
+        open_price=close,
+        high_price=close,
+        low_price=close,
+        close_price=close,
+        volume=volume,
+        turnover=close * volume,
+    )
+
+
+def collect_volume_momentum_signals(closes: list[float], volumes: list[float], **kwargs):
+    strategy = VolumeConfirmedMomentumStrategy("000001", trade_size=100, **kwargs)
+    return [
+        signal
+        for index, (close, volume) in enumerate(zip(closes, volumes), start=1)
+        for signal in strategy.on_bar(make_volume_bar(index, close, volume))
+    ]
+
+
 def test_registry_includes_popular_builtin_strategies():
     names = {spec.name for spec in discover_strategies(user_dir="/tmp/nonexistent-ai-trade-strategies")}
 
@@ -35,6 +59,7 @@ def test_registry_includes_popular_builtin_strategies():
         "DonchianBreakoutStrategy",
         "PriceMomentumStrategy",
         "RsiMeanReversionStrategy",
+        "VolumeConfirmedMomentumStrategy",
     }.issubset(names)
 
 
@@ -98,3 +123,106 @@ def test_chan_rsi_research_strategy_is_backtestable():
 
     assert len(result.trades) == 1
     assert result.trades[0].side == "buy"
+
+
+def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():
+    signals = collect_volume_momentum_signals(
+        [10, 10.2, 10.4, 10.6, 11.2],
+        [1000, 1000, 1000, 1000, 2200],
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        max_holding_bars=5,
+    )
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].reason == "volume_confirmed_momentum_entry"
+
+
+def test_volume_confirmed_momentum_rejects_price_momentum_without_volume_expansion():
+    signals = collect_volume_momentum_signals(
+        [10, 10.2, 10.4, 10.6, 11.2],
+        [1000, 1000, 1000, 1000, 1200],
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        max_holding_bars=5,
+    )
+
+    assert signals == []
+
+
+def test_volume_confirmed_momentum_sells_when_momentum_weakens():
+    signals = collect_volume_momentum_signals(
+        [10, 10.2, 10.4, 10.6, 11.2, 10.3],
+        [1000, 1000, 1000, 1000, 2200, 1000],
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        max_holding_bars=10,
+    )
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[1].reason == "momentum_exit"
+
+
+def test_volume_confirmed_momentum_sells_when_trend_breaks():
+    signals = collect_volume_momentum_signals(
+        [10, 10.2, 10.4, 10.6, 10.8, 11.2, 10.7],
+        [1000, 1000, 1000, 1000, 1000, 2200, 1000],
+        momentum_window=5,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        max_holding_bars=10,
+    )
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[1].reason == "trend_exit"
+
+
+def test_volume_confirmed_momentum_sells_after_max_holding_bars():
+    signals = collect_volume_momentum_signals(
+        [10, 10.2, 10.4, 10.6, 11.2, 11.4, 11.6],
+        [1000, 1000, 1000, 1000, 2200, 1000, 1000],
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        max_holding_bars=2,
+    )
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[1].reason == "time_exit"
+
+
+def test_volume_confirmed_momentum_is_backtestable():
+    strategy = VolumeConfirmedMomentumStrategy(
+        "000001",
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        max_holding_bars=2,
+        trade_size=100,
+    )
+    bars = [
+        make_volume_bar(index, close, volume)
+        for index, (close, volume) in enumerate(
+            zip([10, 10.2, 10.4, 10.6, 11.2, 11.4, 11.6], [1000, 1000, 1000, 1000, 2200, 1000, 1000]),
+            start=1,
+        )
+    ]
+
+    result = run_backtest(bars, strategy)
+
+    assert [trade.side for trade in result.trades] == ["buy", "sell"]

@@ -52,11 +52,6 @@ export function InspectorPanel({ insight, riskStatus, settings, portfolio, onSet
           <input aria-label="AI参与评分" type="checkbox" checked={portfolio.ai_adjust} onChange={(event) => updateAiScoring(event.currentTarget.checked)} />
         </label>
       </div>
-      <div className="tabs">
-        <button>技术指标</button>
-        <button className="active">信息面摘要</button>
-        <button>AI观点</button>
-      </div>
 
       <section className="inspector-card">
         <div className="panel-title compact-title">信息面摘要</div>

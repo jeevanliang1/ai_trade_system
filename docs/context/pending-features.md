@@ -1,6 +1,6 @@
 # Pending Features
 
-Last updated: 2026-06-14
+Last updated: 2026-06-19
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This file is the durable continuation handoff for broad product requests, replic
 
 ## Current Goal
 
-Replicate the screenshot-style AI量化平台 desktop workbench with a React + FastAPI default interface. The current implementation is functional but still below the screenshot target in density, workflow depth, right-side AI/risk behavior, result tables, and end-to-end polish.
+Replicate the screenshot-style AI量化平台 desktop workbench with a React + FastAPI default interface, then continue into practical A-share strategy development. The current implementation is functional enough to start adding strategy templates that run through the existing strategy registry, backtest, paper trading, and React workbench surfaces.
 
 ## Completion Grain
 
@@ -18,7 +18,7 @@ Each pending item below should be small enough to finish in one focused implemen
 
 - React + TypeScript + Vite frontend with default `./scripts/run_app.sh` entry.
 - FastAPI local API for bootstrap, data, strategies, signals, portfolio preview, backtest, AI research, paper run/events, and risk evaluation.
-- Eight React workspaces exist: overview, data center, strategy workshop, portfolio lab, backtest center, AI researcher, paper trading, and risk.
+- Nine React workspaces exist: overview, data center, strategy workshop, portfolio lab, backtest center, signal radar, AI researcher, paper trading, and risk.
 - Screenshot-like shell exists with left navigation, top command bar, center work area, right inspector, and bottom status bar.
 - Strategy workshop has strategy list, parameter form, signal preview, K-line, volume, basic result metrics, and source editor state.
 - K-line chart has red-rise/green-fall candlesticks, MA20/MA60 overlays, visible volume bars, and no initial chart animation flicker.
@@ -49,9 +49,26 @@ Each pending item below should be small enough to finish in one focused implemen
 - Risk Workspace UI/API hardening is complete for current scope: focused tests cover RiskPage rendering, AppShell risk evaluation failure recovery, and `/api/risk/evaluate` valid plus invalid payload route behavior.
 - Responsive platform collapse is complete for current scope: at 390px narrow width the shell uses natural scrolling, navigation wraps, content and inspector stack to one column, and Browser QA confirmed no horizontal overflow.
 - Repeatable headless screenshots are complete for current scope: `scripts/capture_app_screenshots.mjs` captures desktop 1440x1024 and narrow 390x844 React platform PNGs after waiting for real app content, with usage documented in `docs/qa/headless-chrome-screenshots.md`.
+- First-cut UI cleanup is complete for current scope: the React platform no longer shows nonfunctional top command buttons, fake Strategy Workshop mode tabs, strategy favorite stars, inactive week/month cycle buttons, the unused sidebar collapse control, or inactive right-inspector tabs.
+- Strategy metadata localization is complete for current scope: built-in strategies expose Chinese display names and plain-language descriptions through the registry/API, custom strategies get a safe default description, and React strategy/backtest/portfolio/paper/status displays prefer the Chinese name while retaining English class names for source traceability.
+- Workbench information architecture cleanup is complete for current scope: side navigation is grouped by workflow stage, the global top bar now summarizes context and navigates to the next workspace instead of running page-owned tasks, and Strategy Workshop focuses on strategy selection, signal preview, research preview, and source editing while Backtest Center remains the owner for full backtest execution and results.
+- Strategy parameter guidance is complete for current scope: strategy parameters now expose Chinese labels, plain-language purpose, and simple increase/decrease tuning impact through the registry/API, and the shared React parameter form renders that guidance under each control.
+- Stock Configuration Center is complete for current scope: FastAPI persists a local watchlist in `config/watchlist.json`, bootstrap exposes the watchlist and a dynamic two-year default data range, React adds a `股票配置` workspace, and shared watchlist dropdowns update the global stock target through one `selectStock` action.
+- Watchlist Data Management is complete for current scope: `data_manager` owns canonical local market-data paths under `data/market/a_share/{exchange}/{code}/`, writes latest CSV plus dated increment CSV snapshots and manifest files, exposes API/CLI batch watchlist updates, and the React stock configuration center shows status plus update controls.
 - Market Analysis Strategy Fusion first slice is complete for current scope: backend `ai_trade_system.research` modules generate lightweight Chan plus enhanced RSI previews, FastAPI exposes `/api/research/signals/preview`, and Strategy Workshop can request and render score, blockers, and signal rows.
 - Market Analysis Strategy Fusion backtest wrapper is complete for current scope: `ChanRsiResearchStrategy` is a built-in `Strategy` that reuses the research preview semantics, appears in strategy discovery, emits backtestable `Signal` objects, and can run through the existing local backtest engine.
 - One-shot React + FastAPI startup preflight is complete for current scope: `scripts/run_all.sh` checks Python/API dependencies, Node/npm/frontend dependencies, installs missing frontend packages, validates ports, reports clear `原因/建议` failures, and `scripts/run_app.sh` remains a compatibility wrapper.
+- Signal Radar first slice is complete for current scope: FastAPI exposes `/api/research/signals/batch`, batch scanning ranks local CSV-backed catalog candidates with Chan/RSI research scores, marks missing CSV blockers, and React adds a dedicated `信号雷达` workspace with scan controls, summary metrics, score table, and detail cards.
+- Signal Radar scan universe selection is complete for current scope: batch scans accept catalog, local-CSV-only, and current-symbol universes, the API response records the selected universe, and React submits plus displays the active scan range.
+- Signal Radar missing-data handoff is complete for current scope: missing CSV result cards expose a prepare-data action that writes the candidate symbol, exchange, and CSV path into shared Data Center settings for follow-up download/load.
+- Signal Radar scan history and export is complete for current scope: each successful scan records a compact recent-history row, and the current ranked result can be downloaded as CSV from the radar table header.
+- Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
+- Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
+- JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
+- PR delivery checklist documentation is complete for current scope: `docs/runbooks/web-console.md` now covers Python tests, frontend tests/build, API contract checks, pending-list updates, browser screenshots, and live-trading boundary review.
+- Engineering hygiene stale-item cleanup is complete for current scope: current `git status` no longer shows `src/ai_trade_system/web/app.py` or `data/000001_daily.csv`, so the old Streamlit split and generated CSV removal reminders were cleared from the pending list.
+- Reviewable commit split plan is complete for current scope: `docs/runbooks/reviewable-commit-plan.md` groups the current migration into backend API, React Signal Radar, frontend API failure tests, documentation/rules, and local automation commits with staging and verification commands.
+- Signal Radar five-feature QA is complete for current scope: browser-visible acceptance evidence and screenshot path are recorded in `docs/qa/2026-06-14-signal-radar-five-feature-qa.md`.
 
 ## Pending
 
@@ -69,28 +86,31 @@ No current pending items.
 
 ### Responsive And Visual QA
 
-- Add visual regression notes or baseline screenshots under `docs/qa/` after each major fidelity pass.
+No current pending items.
 
 ### Market Analysis Strategy Fusion
 
-- Add a dedicated Signal Radar page and batch scan mode after the single-symbol preview is stable.
+No current pending items.
 
 ### API And Error Handling
 
-- Add frontend error-state tests for failed `/api/data/load`, `/api/backtest`, and `/api/ai/research`.
-- Add API tests for strategy template creation, strategy source save, paper run/events, and portfolio preview.
-- Add JSON error response shape documentation in `docs/runbooks/web-console.md`.
+No current pending items.
+
+### Watchlist Data Management
+
+No current pending items.
+
+### Strategy Development
+
+- After the volume-confirmed momentum strategy is complete, evaluate whether Signal Radar should rank candidates by the same volume-price momentum semantics or stay on the current Chan/RSI research score.
 
 ### Engineering And Review Hygiene
 
-- Split the current large migration into reviewable commits: core capability/API, React frontend, docs/rules, and Streamlit legacy changes.
-- Decide whether the large `src/ai_trade_system/web/app.py` Streamlit changes belong in this migration or should be split into a legacy-console commit.
-- Remove generated `data/000001_daily.csv` from the intended commit unless the PR explicitly wants a demo CSV fixture.
-- Add a short PR checklist covering Python tests, frontend tests, build, audit, Browser QA, and headless screenshot path.
+- Execute the reviewable commit split from `docs/runbooks/reviewable-commit-plan.md` after confirming whether the local launchd automation files should be included in version control.
 
 ## Next Recommended Feature
 
-Start with "Market Analysis Strategy Fusion - Add a dedicated Signal Radar page and batch scan mode". This is the best next task because the single-symbol Chan plus enhanced RSI preview is now available both as a research preview and as a backtestable strategy, so the next useful product step is broader discovery across a selected stock universe.
+Start with "Strategy Development - Evaluate whether Signal Radar should rank candidates by the same volume-price momentum semantics or stay on the current Chan/RSI research score". The previous engineering-hygiene commit split remains pending, but strategy development is the active user-confirmed direction.
 
 ## Update Rules
 

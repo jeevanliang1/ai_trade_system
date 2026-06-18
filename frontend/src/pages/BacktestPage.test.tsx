@@ -27,6 +27,8 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     {
       id: "builtin:dual:DualMovingAverageStrategy",
       name: "DualMovingAverageStrategy",
+      display_name: "双均线趋势",
+      description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
       class_name: "DualMovingAverageStrategy",
       source: "builtin",
       path: null,
@@ -143,7 +145,7 @@ test("BacktestPage shows run configuration summary beside results and updates mo
   expect(within(summary).getByText("000001 SZSE")).toBeInTheDocument();
   expect(within(summary).getByText("20240101 - 20241231")).toBeInTheDocument();
   expect(within(summary).getByText("单策略")).toBeInTheDocument();
-  expect(within(summary).getByText("DualMovingAverageStrategy")).toBeInTheDocument();
+  expect(within(summary).getByText("双均线趋势")).toBeInTheDocument();
   expect(within(summary).getByText("100,000")).toBeInTheDocument();
   expect(within(summary).getByText("0.03%")).toBeInTheDocument();
   expect(within(summary).getByText("0.01")).toBeInTheDocument();

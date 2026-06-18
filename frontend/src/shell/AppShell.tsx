@@ -1,29 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowRight,
   BarChart3,
-  Bell,
   Bot,
-  CalendarDays,
-  Copy,
   Database,
-  FileDown,
-  FlaskConical,
   Gauge,
   Home,
   Layers3,
   NotebookTabs,
-  Play,
-  Plus,
-  Save,
+  Radar,
   ShieldCheck,
   SlidersHorizontal,
-  Square,
-  UserRound
+  Star,
 } from "lucide-react";
 
 import { api } from "../api/client";
 import { formatRequestError } from "../api/errors";
 import { InspectorPanel } from "../components/InspectorPanel";
+import { StockQuickSelect } from "../components/StockQuickSelect";
 import { ToolbarButton } from "../components/ToolbarButton";
 import { AIPage } from "../pages/AIPage";
 import { BacktestPage } from "../pages/BacktestPage";
@@ -32,29 +26,63 @@ import { OverviewPage } from "../pages/OverviewPage";
 import { PaperPage } from "../pages/PaperPage";
 import { PortfolioPage } from "../pages/PortfolioPage";
 import { RiskPage } from "../pages/RiskPage";
+import { SignalRadarPage } from "../pages/SignalRadarPage";
+import { StockConfigPage } from "../pages/StockConfigPage";
 import { StrategyPage } from "../pages/StrategyPage";
-import { currentSelection } from "../pages/pageTypes";
+import { currentSelection, strategyDisplayName } from "../pages/pageTypes";
 import type { PlatformActions, PlatformState } from "../pages/pageTypes";
-import type { BootstrapResponse, PlatformSettings, PortfolioRequest, StrategySpec } from "../types";
+import { defaultTwoYearDateRange } from "../utils/dateRange";
+import type { BootstrapResponse, PlatformSettings, PortfolioRequest, Stock, StrategySpec } from "../types";
 
-export const NAV_ITEMS = [
-  { id: "overview", label: "总览", icon: Home },
-  { id: "data", label: "数据中心", icon: Database },
-  { id: "strategies", label: "策略工坊", icon: SlidersHorizontal },
-  { id: "portfolio", label: "组合实验室", icon: Layers3 },
-  { id: "backtest", label: "回测中心", icon: BarChart3 },
-  { id: "ai", label: "AI研究员", icon: Bot },
-  { id: "paper", label: "纸面交易", icon: NotebookTabs },
-  { id: "risk", label: "风控", icon: ShieldCheck }
+export const NAV_GROUPS = [
+  {
+    label: "准备",
+    items: [
+      { id: "overview", label: "总览", icon: Home },
+      { id: "stocks", label: "股票配置", icon: Star },
+      { id: "data", label: "数据中心", icon: Database },
+      { id: "radar", label: "信号雷达", icon: Radar }
+    ]
+  },
+  {
+    label: "策略",
+    items: [
+      { id: "strategies", label: "策略工坊", icon: SlidersHorizontal },
+      { id: "portfolio", label: "组合实验室", icon: Layers3 }
+    ]
+  },
+  {
+    label: "验证",
+    items: [
+      { id: "backtest", label: "回测中心", icon: BarChart3 },
+      { id: "paper", label: "纸面交易", icon: NotebookTabs }
+    ]
+  },
+  {
+    label: "辅助",
+    items: [
+      { id: "ai", label: "AI研究员", icon: Bot },
+      { id: "risk", label: "风控", icon: ShieldCheck }
+    ]
+  }
 ] as const;
 
-type PageId = (typeof NAV_ITEMS)[number]["id"];
+export const NAV_ITEMS = [
+  ...NAV_GROUPS[0].items,
+  ...NAV_GROUPS[1].items,
+  ...NAV_GROUPS[2].items,
+  ...NAV_GROUPS[3].items
+] as const;
+
+type PageId = (typeof NAV_GROUPS)[number]["items"][number]["id"];
+
+const DEFAULT_RANGE = defaultTwoYearDateRange();
 
 const DEFAULT_SETTINGS: PlatformSettings = {
   symbol: "000001",
   exchange: "SZSE",
-  start_date: "20220101",
-  end_date: "20250516",
+  start_date: DEFAULT_RANGE.start_date,
+  end_date: DEFAULT_RANGE.end_date,
   adjust: "qfq",
   csv_path: "data/000001_daily.csv",
   log_path: "logs/paper_events.jsonl",
@@ -73,6 +101,8 @@ const FALLBACK_STRATEGIES: StrategySpec[] = [
   {
     id: "builtin:dual_moving_average:DualMovingAverageStrategy",
     name: "DualMovingAverageStrategy",
+    display_name: "双均线趋势",
+    description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
     class_name: "DualMovingAverageStrategy",
     source: "builtin",
     path: null,
@@ -89,6 +119,8 @@ const FALLBACK_STRATEGIES: StrategySpec[] = [
 function initialState(): PlatformState {
   return {
     settings: DEFAULT_SETTINGS,
+    watchlist: [],
+    managedData: [],
     strategies: FALLBACK_STRATEGIES,
     selectedStrategyId: FALLBACK_STRATEGIES[0].id,
     strategyParams: { symbol: "000001", fast: 5, slow: 20, size: 100 },
@@ -144,20 +176,20 @@ export function AppShell() {
     () => ({
       setSettings: (settings) =>
         setState((current) => {
-          if (!dataRequestChanged(current.settings, settings)) {
-            return { ...current, settings };
-          }
-          return {
-            ...current,
-            settings,
-            bars: [],
-            dataSummary: null,
-            signals: null,
-            researchSignals: null,
-            backtest: null,
-            paper: null,
-            message: `已切换数据目标：${settings.symbol} ${settings.exchange}，请加载或下载行情`
-          };
+          return applySettings(current, settings);
+        }),
+      selectStock: (stock) => setState((current) => applyStockSelection(current, stock)),
+      setWatchlist: (watchlist) => setState((current) => ({ ...current, watchlist })),
+      updateWatchlistData: () =>
+        runTask(setState, "更新自选股数据", async (current) => {
+          await api.updateWatchlistData({
+            start_date: current.settings.start_date,
+            end_date: current.settings.end_date,
+            adjust: current.settings.adjust,
+            if_stale: true
+          });
+          const managed = await api.managedData();
+          return { managedData: managed.files };
         }),
       setSelectedStrategyId: (id) => {
         setState((current) => {
@@ -196,7 +228,11 @@ export function AppShell() {
       downloadData: () =>
         runTask(setState, "下载日线数据", async (current) => {
           const data = await api.downloadData(current.settings);
-          return { bars: data.bars, dataSummary: data.summary };
+          const patch: Partial<PlatformState> = { bars: data.bars, dataSummary: data.summary };
+          if (data.managed_file) {
+            patch.managedData = upsertManagedData(current.managedData, data.managed_file);
+          }
+          return patch;
         }),
       previewSignals: () =>
         runTask(setState, "预览信号", async (current) => ({ signals: await api.previewSignals(current.settings, currentSelection(current)) })),
@@ -237,10 +273,12 @@ export function AppShell() {
   const pageProps = { state, actions };
   const page = {
     overview: <OverviewPage {...pageProps} />,
+    stocks: <StockConfigPage {...pageProps} />,
     data: <DataPage {...pageProps} />,
     strategies: <StrategyPage {...pageProps} />,
     portfolio: <PortfolioPage {...pageProps} />,
     backtest: <BacktestPage {...pageProps} />,
+    radar: <SignalRadarPage {...pageProps} />,
     ai: <AIPage {...pageProps} />,
     paper: <PaperPage {...pageProps} />,
     risk: <RiskPage {...pageProps} />
@@ -250,7 +288,7 @@ export function AppShell() {
     <div className="app-shell">
       <SideNav activePage={activePage} setActivePage={setActivePage} />
       <div className="app-main">
-        <TopCommandBar state={state} actions={actions} />
+        <TopCommandBar state={state} activePage={activePage} setActivePage={setActivePage} onStockSelect={actions.selectStock} />
         <div className="content-shell">
           <div className="content-area">{page}</div>
           <InspectorPanel
@@ -278,56 +316,72 @@ function SideNav({ activePage, setActivePage }: { activePage: PageId; setActiveP
         <strong>AI量化平台</strong>
       </div>
       <nav>
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button key={item.id} className={activePage === item.id ? "active" : ""} onClick={() => setActivePage(item.id)}>
-              <Icon size={18} />
-              {item.label}
-            </button>
-          );
-        })}
+        {NAV_GROUPS.map((group) => (
+          <div className="nav-group" key={group.label}>
+            <div className="nav-group-label">{group.label}</div>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button key={item.id} className={activePage === item.id ? "active" : ""} onClick={() => setActivePage(item.id)}>
+                  <Icon size={18} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
-      <button className="collapse-button">收起</button>
     </aside>
   );
 }
 
-function TopCommandBar({ state, actions }: { state: PlatformState; actions: PlatformActions }) {
+function TopCommandBar({
+  state,
+  activePage,
+  setActivePage,
+  onStockSelect
+}: {
+  state: PlatformState;
+  activePage: PageId;
+  setActivePage: (page: PageId) => void;
+  onStockSelect: (stock: Stock) => void;
+}) {
+  const selectedStrategy = strategyDisplayName(state.strategies.find((item) => item.id === state.selectedStrategyId)) ?? "-";
+  const nextStep = nextStepFor(activePage);
   return (
     <header className="topbar">
       <div className="market-status">
-        <strong>沪深A股</strong>
+        <strong>{state.settings.symbol} {state.settings.exchange}</strong>
         <span className="dot" />
         <span>已连接</span>
         <span>数据日期：{state.bars.at(-1)?.trading_day ?? state.settings.end_date}</span>
+        <span>策略：{selectedStrategy}</span>
       </div>
       <div className="toolbar">
-        <ToolbarButton icon={<Plus size={15} />} variant="primary">
-          新建策略
+        <StockQuickSelect label="全局自选股票" value={state.settings} stocks={state.watchlist} onSelect={onStockSelect} compact />
+        <ToolbarButton icon={<ArrowRight size={15} />} variant="primary" onClick={() => setActivePage(nextStep.page)}>
+          {nextStep.label}
         </ToolbarButton>
-        <ToolbarButton icon={<Save size={15} />}>保存</ToolbarButton>
-        <ToolbarButton icon={<Copy size={15} />}>另存为</ToolbarButton>
-        <ToolbarButton disabled={state.busy} icon={<Play size={15} />} variant="success" onClick={() => actions.runBacktest("single")}>
-          {state.activeBacktestMode ? "运行中..." : "运行回测"}
-        </ToolbarButton>
-        <ToolbarButton icon={<Square size={15} />}>停止</ToolbarButton>
-        <ToolbarButton icon={<SlidersHorizontal size={15} />}>回测设置</ToolbarButton>
-        <ToolbarButton icon={<FileDown size={15} />}>导出报告</ToolbarButton>
-      </div>
-      <div className="top-actions">
-        <Bell size={17} />
-        <CalendarDays size={17} />
-        <FlaskConical size={17} />
-        <UserRound size={18} />
-        <span>研究员</span>
       </div>
     </header>
   );
 }
 
+function nextStepFor(page: PageId): { label: string; page: PageId } {
+  if (page === "overview") return { label: "去股票配置", page: "stocks" };
+  if (page === "stocks") return { label: "去数据中心", page: "data" };
+  if (page === "data") return { label: "去策略工坊", page: "strategies" };
+  if (page === "radar") return { label: "去数据中心", page: "data" };
+  if (page === "strategies") return { label: "去回测中心", page: "backtest" };
+  if (page === "portfolio") return { label: "去回测中心", page: "backtest" };
+  if (page === "backtest") return { label: "去纸面交易", page: "paper" };
+  if (page === "ai") return { label: "去风控", page: "risk" };
+  if (page === "risk") return { label: "去纸面交易", page: "paper" };
+  return { label: "回到总览", page: "overview" };
+}
+
 function StatusBar({ state }: { state: PlatformState }) {
-  const selectedStrategy = state.strategies.find((item) => item.id === state.selectedStrategyId)?.name ?? "-";
+  const selectedStrategy = strategyDisplayName(state.strategies.find((item) => item.id === state.selectedStrategyId)) ?? "-";
   const health = state.riskStatus?.ok === false ? "告警" : "正常";
   return (
     <footer className="statusbar">
@@ -351,12 +405,71 @@ function fromBootstrap(current: PlatformState, bootstrap: BootstrapResponse): Pl
   return {
     ...current,
     settings: bootstrap.settings,
+    watchlist: bootstrap.watchlist ?? [],
+    managedData: bootstrap.managed_data ?? [],
     strategies,
     selectedStrategyId,
     strategyParams: paramsFromStrategy(strategies[0], bootstrap.settings.symbol),
     portfolio: defaultPortfolio(selectedStrategyId),
     message: `已连接 MockProvider，发现 ${strategies.length} 个策略`
   };
+}
+
+function applySettings(current: PlatformState, settings: PlatformSettings): PlatformState {
+  if (!dataRequestChanged(current.settings, settings)) {
+    return { ...current, settings };
+  }
+  return {
+    ...current,
+    settings,
+    bars: [],
+    dataSummary: null,
+    signals: null,
+    researchSignals: null,
+    backtest: null,
+    paper: null,
+    message: `已切换数据目标：${settings.symbol} ${settings.exchange}，请加载或下载行情`
+  };
+}
+
+function applyStockSelection(current: PlatformState, stock: Stock): PlatformState {
+  const settings = {
+    ...current.settings,
+    symbol: stock.code,
+    exchange: stock.exchange,
+    csv_path: managedCsvPath(stock, current.settings.adjust)
+  };
+  const next = applySettings(current, settings);
+  return {
+    ...next,
+    strategyParams: syncSymbolParam(next.strategyParams, stock.code),
+    portfolio: {
+      ...next.portfolio,
+      allocations: next.portfolio.allocations.map((allocation) => ({
+        ...allocation,
+        strategy: {
+          ...allocation.strategy,
+          params: syncSymbolParam(allocation.strategy.params, stock.code)
+        }
+      }))
+    }
+  };
+}
+
+function managedCsvPath(stock: Stock, adjust: string): string {
+  const cleanAdjust = (adjust || "qfq").toLowerCase();
+  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_daily_${cleanAdjust}_latest.csv`;
+}
+
+function upsertManagedData(files: PlatformState["managedData"], file: PlatformState["managedData"][number]) {
+  const key = `${file.exchange}:${file.code}:${file.adjust}`;
+  const others = files.filter((item) => `${item.exchange}:${item.code}:${item.adjust}` !== key);
+  return [...others, file];
+}
+
+function syncSymbolParam(params: Record<string, unknown>, symbol: string): Record<string, unknown> {
+  if (!("symbol" in params)) return params;
+  return { ...params, symbol };
 }
 
 function paramsFromStrategy(strategy: StrategySpec | undefined, symbol: string): Record<string, unknown> {

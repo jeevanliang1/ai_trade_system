@@ -18,6 +18,8 @@ const strategies = [
   {
     id: "builtin:dual:DualMovingAverageStrategy",
     name: "DualMovingAverageStrategy",
+    display_name: "双均线趋势",
+    description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
     class_name: "DualMovingAverageStrategy",
     source: "builtin",
     path: null,
@@ -32,6 +34,8 @@ const strategies = [
   {
     id: "user:rsi:RsiStrategy",
     name: "RsiStrategy",
+    display_name: "RSI自定义策略",
+    description: "用户策略：按本地源码定义的 RSI 条件运行。",
     class_name: "RsiStrategy",
     source: "user",
     path: "strategies/rsi.py",
@@ -65,7 +69,14 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
     strategyParams: { symbol: "000001", fast: 5, slow: 20, size: 100 },
     bars: [],
     dataSummary: null,
-    signals: { bars: [], signals: [], summary: { signals: 3, buys: 2, sells: 1 } },
+    signals: {
+      bars: [],
+      signals: [
+        { trading_day: "2024-02-05", action: "buy", symbol: "000001", price: 10.5, volume: 100, reason: "均线金叉" },
+        { trading_day: "2024-02-08", action: "sell", symbol: "000001", price: 10.2, volume: 100, reason: "均线死叉" }
+      ],
+      summary: { signals: 2, buys: 1, sells: 1 }
+    },
     researchSignals: null,
     backtest: {
       bars: [],
@@ -123,47 +134,49 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-test("StrategyPage filters strategies and exposes screenshot workshop controls", async () => {
+test("StrategyPage filters strategies and keeps only functional workshop controls", async () => {
   const user = userEvent.setup();
   render(<StrategyPage {...makeProps()} />);
 
-  expect(screen.getByRole("button", { name: "策略" })).toHaveClass("selected");
-  await user.click(screen.getByRole("button", { name: "组合" }));
-  expect(screen.getByRole("button", { name: "组合" })).toHaveClass("selected");
+  expect(screen.queryByRole("button", { name: "策略" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "组合" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "回测" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "周线" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "月线" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "日线" })).not.toBeInTheDocument();
+  expect(screen.getByText("日线")).toBeInTheDocument();
+  expect(document.querySelector(".favorite-icon")).not.toBeInTheDocument();
+  expect(screen.getByText("双均线趋势")).toBeInTheDocument();
+  expect(screen.getByText("DualMovingAverageStrategy")).toBeInTheDocument();
+  expect(screen.getByText("快慢均线金叉买入、死叉卖出，适合趋势行情。")).toBeInTheDocument();
 
   await user.type(screen.getByLabelText("搜索策略名称或来源"), "rsi");
-  expect(screen.queryByText("DualMovingAverageStrategy")).not.toBeInTheDocument();
+  expect(screen.queryByText("双均线趋势")).not.toBeInTheDocument();
+  expect(screen.getByText("RSI自定义策略")).toBeInTheDocument();
   expect(screen.getByText("RsiStrategy")).toBeInTheDocument();
 
   expect(screen.getByLabelText("显示信号标记")).toBeChecked();
   expect(screen.getByText("MA20")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "重置视图" })).toBeInTheDocument();
-  expect(screen.getByText("回撤曲线")).toBeInTheDocument();
-  expect(screen.getByText("策略表现对比")).toBeInTheDocument();
-  expect(screen.getAllByText("策略回测").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("基准收益").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("超额收益").length).toBeGreaterThan(0);
-  expect(screen.getByText("长持")).toBeInTheDocument();
+  expect(screen.queryByText("回撤曲线")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "回测结果" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "交易明细" })).not.toBeInTheDocument();
+  expect(screen.queryByText("策略表现对比")).not.toBeInTheDocument();
+  expect(screen.queryByText("策略回测")).not.toBeInTheDocument();
+  expect(screen.getByText("信号预览")).toBeInTheDocument();
+  expect(screen.getByText("2024-02-05")).toBeInTheDocument();
+  expect(screen.getByText("均线金叉")).toBeInTheDocument();
 });
 
-test("StrategyPage switches dense result tabs for trades, risk, and attribution", async () => {
-  const user = userEvent.setup();
+test("StrategyPage keeps full backtest result review out of the workshop", () => {
   render(<StrategyPage {...makeProps()} />);
 
-  expect(screen.getByRole("button", { name: "回测结果" })).toHaveClass("active");
-  expect(screen.getByText("策略表现对比")).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: "交易明细" }));
-  expect(screen.getByText("2024-02-05")).toBeInTheDocument();
-  expect(screen.getByText("buy")).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: "风险分析" }));
-  expect(screen.getByText("风控状态")).toBeInTheDocument();
-  expect(screen.getByText("通过")).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: "绩效归因" }));
-  expect(screen.getByText("策略收益")).toBeInTheDocument();
-  expect(screen.getAllByText("基准收益").length).toBeGreaterThan(0);
+  expect(screen.queryByRole("button", { name: "持仓分析" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "因子暴露" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "风险分析" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "绩效归因" })).not.toBeInTheDocument();
+  expect(screen.queryByText("风控状态")).not.toBeInTheDocument();
+  expect(screen.queryByText("策略收益")).not.toBeInTheDocument();
 });
 
 test("StrategyPage loads editable source into a line-numbered safe editor", async () => {
@@ -185,6 +198,8 @@ test("StrategyPage auto-selects a newly created strategy template", async () => 
   const newStrategy = {
     id: "user:my_strategy:MyStrategy",
     name: "MyStrategy",
+    display_name: "MyStrategy",
+    description: "自定义策略：MyStrategy",
     class_name: "MyStrategy",
     source: "user",
     path: "strategies/my_strategy.py",

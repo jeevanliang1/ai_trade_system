@@ -1,0 +1,349 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Callable, Iterable
+
+from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
+from ai_trade_system.market import Bar
+from ai_trade_system.stock_catalog import StockInfo
+from ai_trade_system.watchlist import normalize_watchlist
+
+
+DEFAULT_MARKET_DATA_ROOT = Path("data/market/a_share")
+DEFAULT_ADJUST = "qfq"
+
+BarFetcher = Callable[[str, str, str, str, str], list[Bar]]
+
+
+@dataclass(frozen=True)
+class ManagedDataFile:
+    code: str
+    name: str
+    exchange: str
+    adjust: str
+    directory: Path
+    latest_path: Path
+    increments_dir: Path
+    manifest_path: Path
+
+    def increment_path(self, run_date: str, start_date: str, end_date: str) -> Path:
+        return self.increments_dir / f"{self.code}_{self.exchange}_daily_{self.adjust}_{run_date}_from_{start_date}_to_{end_date}.csv"
+
+    def load_manifest(self) -> dict:
+        if not self.manifest_path.exists():
+            return {}
+        return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+
+    def write_manifest(self, payload: dict) -> None:
+        self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        self.manifest_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def status(self, as_of: date | None = None) -> dict:
+        manifest = self.load_manifest()
+        exists = self.latest_path.exists()
+        latest_end = manifest.get("latest_end")
+        stale = True
+        if latest_end and as_of is not None:
+            stale = latest_end < as_of.isoformat()
+        elif exists:
+            stale = False
+        return {
+            "code": self.code,
+            "name": self.name,
+            "exchange": self.exchange,
+            "adjust": self.adjust,
+            "latest_path": self.latest_path.as_posix(),
+            "manifest_path": self.manifest_path.as_posix(),
+            "exists": exists,
+            "stale": stale,
+            "latest_start": manifest.get("latest_start"),
+            "latest_end": latest_end,
+            "latest_rows": manifest.get("latest_rows", 0),
+            "last_increment_path": manifest.get("last_increment_path"),
+            "last_updated_at": manifest.get("last_updated_at"),
+            "last_status": manifest.get("last_status"),
+            "last_error": manifest.get("last_error"),
+        }
+
+
+@dataclass(frozen=True)
+class DataUpdateResult:
+    code: str
+    name: str
+    exchange: str
+    adjust: str
+    status: str
+    requested_start: str
+    requested_end: str
+    fetched_start: str | None
+    fetched_end: str | None
+    fetched_rows: int
+    latest_rows: int
+    latest_start: str | None
+    latest_end: str | None
+    latest_path: str
+    increment_path: str | None
+    message: str
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def data_file_for_stock(stock: object, adjust: str = DEFAULT_ADJUST, root: str | Path = DEFAULT_MARKET_DATA_ROOT) -> ManagedDataFile:
+    normalized = normalize_watchlist([stock])
+    if not normalized:
+        raise ValueError("stock requires code, name, and exchange")
+    item = normalized[0]
+    clean_adjust = str(adjust or DEFAULT_ADJUST).strip().lower()
+    directory = Path(root) / item.exchange / item.code
+    latest_path = directory / f"{item.code}_{item.exchange}_daily_{clean_adjust}_latest.csv"
+    increments_dir = directory / "increments"
+    return ManagedDataFile(
+        code=item.code,
+        name=item.name,
+        exchange=item.exchange,
+        adjust=clean_adjust,
+        directory=directory,
+        latest_path=latest_path,
+        increments_dir=increments_dir,
+        manifest_path=directory / "manifest.json",
+    )
+
+
+def list_watchlist_data_status(
+    stocks: Iterable[object],
+    *,
+    adjust: str = DEFAULT_ADJUST,
+    as_of: date | None = None,
+    root: str | Path = DEFAULT_MARKET_DATA_ROOT,
+) -> list[dict]:
+    return [data_file_for_stock(stock, adjust=adjust, root=root).status(as_of=as_of) for stock in normalize_watchlist(stocks)]
+
+
+def update_watchlist_data(
+    stocks: Iterable[object],
+    *,
+    start_date: str,
+    end_date: str,
+    adjust: str = DEFAULT_ADJUST,
+    if_stale: bool = True,
+    fetcher: BarFetcher | None = None,
+    root: str | Path = DEFAULT_MARKET_DATA_ROOT,
+) -> dict:
+    files: list[dict] = []
+    updated = skipped = failed = 0
+    for stock in normalize_watchlist(stocks):
+        try:
+            result = update_stock_data(
+                stock,
+                start_date=start_date,
+                end_date=end_date,
+                adjust=adjust,
+                if_stale=if_stale,
+                fetcher=fetcher,
+                root=root,
+            )
+            files.append(result.as_dict())
+            if result.status == "updated":
+                updated += 1
+            elif result.status == "skipped":
+                skipped += 1
+            else:
+                failed += 1
+        except Exception as exc:
+            data_file = data_file_for_stock(stock, adjust=adjust, root=root)
+            files.append(
+                DataUpdateResult(
+                    code=data_file.code,
+                    name=data_file.name,
+                    exchange=data_file.exchange,
+                    adjust=data_file.adjust,
+                    status="failed",
+                    requested_start=start_date,
+                    requested_end=end_date,
+                    fetched_start=None,
+                    fetched_end=None,
+                    fetched_rows=0,
+                    latest_rows=0,
+                    latest_start=None,
+                    latest_end=None,
+                    latest_path=data_file.latest_path.as_posix(),
+                    increment_path=None,
+                    message=str(exc),
+                ).as_dict()
+            )
+            failed += 1
+    return {"updated": updated, "skipped": skipped, "failed": failed, "files": files}
+
+
+def update_stock_data(
+    stock: object,
+    *,
+    start_date: str,
+    end_date: str,
+    adjust: str = DEFAULT_ADJUST,
+    if_stale: bool = False,
+    fetcher: BarFetcher | None = None,
+    root: str | Path = DEFAULT_MARKET_DATA_ROOT,
+) -> DataUpdateResult:
+    fetch = fetcher or fetch_akshare_daily_bars
+    data_file = data_file_for_stock(stock, adjust=adjust, root=root)
+    requested_start = _date_key(start_date)
+    requested_end = _date_key(end_date)
+    manifest = data_file.load_manifest()
+    existing_bars = _read_existing_bars(data_file.latest_path)
+    latest_end = _latest_end(manifest, existing_bars)
+    latest_start = _latest_start(manifest, existing_bars)
+
+    if if_stale and latest_end and _iso_to_key(latest_end) >= requested_end:
+        return DataUpdateResult(
+            code=data_file.code,
+            name=data_file.name,
+            exchange=data_file.exchange,
+            adjust=data_file.adjust,
+            status="skipped",
+            requested_start=requested_start,
+            requested_end=requested_end,
+            fetched_start=None,
+            fetched_end=None,
+            fetched_rows=0,
+            latest_rows=len(existing_bars),
+            latest_start=latest_start,
+            latest_end=latest_end,
+            latest_path=data_file.latest_path.as_posix(),
+            increment_path=None,
+            message="data is already fresh",
+        )
+
+    fetch_start = requested_start
+    if latest_end:
+        next_day = datetime.strptime(latest_end, "%Y-%m-%d").date() + timedelta(days=1)
+        fetch_start = max(requested_start, next_day.strftime("%Y%m%d"))
+
+    if fetch_start > requested_end:
+        return DataUpdateResult(
+            code=data_file.code,
+            name=data_file.name,
+            exchange=data_file.exchange,
+            adjust=data_file.adjust,
+            status="skipped",
+            requested_start=requested_start,
+            requested_end=requested_end,
+            fetched_start=None,
+            fetched_end=None,
+            fetched_rows=0,
+            latest_rows=len(existing_bars),
+            latest_start=latest_start,
+            latest_end=latest_end,
+            latest_path=data_file.latest_path.as_posix(),
+            increment_path=None,
+            message="no missing date range",
+        )
+
+    fetched_bars = fetch(data_file.code, fetch_start, requested_end, data_file.exchange, data_file.adjust)
+    if not fetched_bars:
+        return DataUpdateResult(
+            code=data_file.code,
+            name=data_file.name,
+            exchange=data_file.exchange,
+            adjust=data_file.adjust,
+            status="skipped",
+            requested_start=requested_start,
+            requested_end=requested_end,
+            fetched_start=fetch_start,
+            fetched_end=requested_end,
+            fetched_rows=0,
+            latest_rows=len(existing_bars),
+            latest_start=latest_start,
+            latest_end=latest_end,
+            latest_path=data_file.latest_path.as_posix(),
+            increment_path=None,
+            message="fetch returned no bars",
+        )
+
+    merged_bars = _merge_bars(existing_bars, fetched_bars)
+    increment_path = data_file.increment_path(requested_end, fetch_start, requested_end)
+    write_bars_csv(fetched_bars, increment_path)
+    write_bars_csv(merged_bars, data_file.latest_path)
+    manifest_payload = _manifest_payload(data_file, merged_bars, increment_path, "updated", None)
+    data_file.write_manifest(manifest_payload)
+    return DataUpdateResult(
+        code=data_file.code,
+        name=data_file.name,
+        exchange=data_file.exchange,
+        adjust=data_file.adjust,
+        status="updated",
+        requested_start=requested_start,
+        requested_end=requested_end,
+        fetched_start=fetch_start,
+        fetched_end=requested_end,
+        fetched_rows=len(fetched_bars),
+        latest_rows=len(merged_bars),
+        latest_start=manifest_payload["latest_start"],
+        latest_end=manifest_payload["latest_end"],
+        latest_path=data_file.latest_path.as_posix(),
+        increment_path=increment_path.as_posix(),
+        message=f"updated {len(fetched_bars)} bars",
+    )
+
+
+def _read_existing_bars(path: Path) -> list[Bar]:
+    if not path.exists():
+        return []
+    return read_bars_csv(path)
+
+
+def _merge_bars(existing: Iterable[Bar], incoming: Iterable[Bar]) -> list[Bar]:
+    by_day: dict[date, Bar] = {}
+    for bar in existing:
+        by_day[bar.trading_day] = bar
+    for bar in incoming:
+        by_day[bar.trading_day] = bar
+    return [by_day[day] for day in sorted(by_day)]
+
+
+def _manifest_payload(data_file: ManagedDataFile, bars: list[Bar], increment_path: Path | None, status: str, error: str | None) -> dict:
+    return {
+        "code": data_file.code,
+        "name": data_file.name,
+        "exchange": data_file.exchange,
+        "adjust": data_file.adjust,
+        "latest_path": data_file.latest_path.as_posix(),
+        "latest_start": bars[0].trading_day.isoformat() if bars else None,
+        "latest_end": bars[-1].trading_day.isoformat() if bars else None,
+        "latest_rows": len(bars),
+        "last_increment_path": increment_path.as_posix() if increment_path else None,
+        "last_updated_at": datetime.now().replace(microsecond=0).isoformat(),
+        "last_status": status,
+        "last_error": error,
+    }
+
+
+def _latest_start(manifest: dict, bars: list[Bar]) -> str | None:
+    if manifest.get("latest_start"):
+        return manifest["latest_start"]
+    if bars:
+        return bars[0].trading_day.isoformat()
+    return None
+
+
+def _latest_end(manifest: dict, bars: list[Bar]) -> str | None:
+    if manifest.get("latest_end"):
+        return manifest["latest_end"]
+    if bars:
+        return bars[-1].trading_day.isoformat()
+    return None
+
+
+def _date_key(value: str) -> str:
+    clean = str(value).strip().replace("-", "")
+    if len(clean) != 8 or not clean.isdigit():
+        raise ValueError(f"date must use YYYYMMDD or YYYY-MM-DD: {value}")
+    return clean
+
+
+def _iso_to_key(value: str) -> str:
+    return _date_key(value)

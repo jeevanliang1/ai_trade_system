@@ -8,7 +8,7 @@ import { SegmentedControl } from "../components/SegmentedControl";
 import { Switch } from "../components/Switch";
 import { ToolbarButton } from "../components/ToolbarButton";
 import { priceOption } from "./chartOptions";
-import { currentStrategy } from "./pageTypes";
+import { currentStrategy, strategyDisplayName } from "./pageTypes";
 import type { PageProps } from "./pageTypes";
 import type { PortfolioAllocation, PortfolioPreviewAllocation, PortfolioRequest, PortfolioSignalContribution, SignalsResponse, StrategySpec } from "../types";
 
@@ -142,7 +142,7 @@ export function PortfolioPage({ state, actions }: PageProps) {
                   >
                     {state.strategies.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name}
+                        {strategyDisplayName(item)}
                       </option>
                     ))}
                   </select>
@@ -205,7 +205,7 @@ export function PortfolioPage({ state, actions }: PageProps) {
           <div className="panel-title">策略配置</div>
           <DataTable
             rows={allocations.map((allocation) => ({
-              策略: state.strategies.find((item) => item.id === allocation.strategy.id)?.name ?? allocation.strategy.id,
+              策略: strategyDisplayName(state.strategies.find((item) => item.id === allocation.strategy.id)) ?? allocation.strategy.id,
               权重: allocation.weight,
               归一化: normalizedWeightLabel(allocation, allocations),
               启用: allocation.enabled ? "是" : "否"
@@ -325,7 +325,7 @@ function normalizedWeightSummary(allocations: PortfolioAllocation[], strategies:
     total,
     rows: enabledRows.map((allocation) => ({
       id: allocation.strategy.id,
-      name: strategies.find((strategy) => strategy.id === allocation.strategy.id)?.name ?? allocation.strategy.id,
+      name: strategyDisplayName(strategies.find((strategy) => strategy.id === allocation.strategy.id)) ?? allocation.strategy.id,
       percent: total > 0 ? `${((allocation.weight / total) * 100).toFixed(2)}%` : "0.00%"
     }))
   };
@@ -412,7 +412,7 @@ function portfolioBreakdownRows(
 function currentAllocationViews(allocations: PortfolioAllocation[], strategies: StrategySpec[]): PortfolioPreviewAllocation[] {
   return allocations.map((allocation, index) => ({
     index,
-    name: strategies.find((strategy) => strategy.id === allocation.strategy.id)?.name ?? allocation.strategy.id,
+    name: strategyDisplayName(strategies.find((strategy) => strategy.id === allocation.strategy.id)) ?? allocation.strategy.id,
     weight: allocation.weight,
     enabled: allocation.enabled
   }));

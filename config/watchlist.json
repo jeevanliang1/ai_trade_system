@@ -1,0 +1,9 @@
+{
+  "stocks": [
+    {
+      "code": "601318",
+      "name": "中国平安",
+      "exchange": "SSE"
+    }
+  ]
+}

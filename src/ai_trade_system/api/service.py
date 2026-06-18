@@ -11,6 +11,7 @@ import pandas as pd
 from ai_trade_system.analytics import calculate_backtest_metrics, drawdown_series
 from ai_trade_system.backtest import BacktestConfig, run_backtest
 from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
+from ai_trade_system.data_manager import data_file_for_stock, list_watchlist_data_status, update_watchlist_data as update_watchlist_data_files
 from ai_trade_system.indicators import latest_indicator_snapshot
 from ai_trade_system.llm import LLMResearchRequest as CoreAIResearchRequest
 from ai_trade_system.llm import MockLLMProvider, build_research_prompt
@@ -30,6 +31,7 @@ from ai_trade_system.strategy_registry import (
     read_strategy_source,
     save_strategy_source,
 )
+from ai_trade_system.watchlist import load_watchlist, save_watchlist
 from ai_trade_system.web.view_models import (
     load_paper_events,
     paper_events_to_frames,
@@ -39,10 +41,12 @@ from ai_trade_system.web.view_models import (
 from .schemas import (
     BacktestRequest,
     DataRequest,
+    DataUpdateWatchlistRequest,
     DemoDataRequest,
     PaperRunRequest,
     PlatformSettings,
     PortfolioRequest,
+    ResearchSignalBatchRequest,
     ResearchSignalsRequest,
     RiskConfigView,
     StrategySelection,
@@ -53,18 +57,33 @@ class ApiInputError(ValueError):
     """Raised for invalid API input that should be reported as HTTP 400."""
 
 
-DEFAULT_SETTINGS = PlatformSettings()
 AI_WEIGHT_DELTA = 0.05
+
+
+def default_settings(today: date | None = None) -> PlatformSettings:
+    current = today or date.today()
+    try:
+        start = current.replace(year=current.year - 2)
+    except ValueError:
+        start = current.replace(year=current.year - 2, day=28)
+    return PlatformSettings(start_date=start.strftime("%Y%m%d"), end_date=current.strftime("%Y%m%d"))
+
+
+DEFAULT_SETTINGS = default_settings()
 
 
 def bootstrap() -> dict[str, Any]:
     catalog = load_stock_catalog()
+    settings = default_settings()
+    watchlist = list_watchlist()["stocks"]
     return {
-        "settings": DEFAULT_SETTINGS.model_dump(),
+        "settings": settings.model_dump(),
         "catalog_available": bool(catalog),
         "catalog_size": len(catalog),
         "stocks": [_stock_view(stock) for stock in catalog[:20]],
         "strategies": list_strategies(),
+        "watchlist": watchlist,
+        "managed_data": list_managed_data()["files"],
         "limits": {
             "live_trading": False,
             "broker_gateway": "not_configured",
@@ -75,6 +94,31 @@ def bootstrap() -> dict[str, Any]:
 
 def list_stocks(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
     return [_stock_view(stock) for stock in search_stock_catalog(load_stock_catalog(), query, limit)]
+
+
+def list_watchlist() -> dict[str, Any]:
+    return {"stocks": [_stock_view(stock) for stock in load_watchlist()]}
+
+
+def put_watchlist(stocks: Iterable[Any]) -> dict[str, Any]:
+    return {"stocks": [_stock_view(stock) for stock in save_watchlist(stocks)]}
+
+
+def list_managed_data(adjust: str = "qfq") -> dict[str, Any]:
+    return {"files": list_watchlist_data_status(load_watchlist(), adjust=adjust, as_of=date.today())}
+
+
+def update_watchlist_data(request: DataUpdateWatchlistRequest) -> dict[str, Any]:
+    settings = default_settings()
+    start_date = request.start_date or settings.start_date
+    end_date = request.end_date or settings.end_date
+    return update_watchlist_data_files(
+        load_watchlist(),
+        start_date=start_date,
+        end_date=end_date,
+        adjust=request.adjust or settings.adjust,
+        if_stale=request.if_stale,
+    )
 
 
 def list_strategies() -> list[dict[str, Any]]:
@@ -111,7 +155,9 @@ def download_data(request: DataRequest) -> dict[str, Any]:
         adjust=settings.adjust,
     )
     write_bars_csv(bars, _safe_data_path(settings.csv_path))
-    return _data_payload(bars, settings)
+    payload = _data_payload(bars, settings)
+    payload["managed_file"] = _managed_file_for_settings(settings)
+    return payload
 
 
 def demo_data(request: DemoDataRequest) -> dict[str, Any]:
@@ -202,6 +248,80 @@ def preview_research_signals(request: ResearchSignalsRequest) -> dict[str, Any]:
     return _serialize(preview)
 
 
+def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any]:
+    candidates = _research_batch_candidates(request)
+
+    rows: list[dict[str, Any]] = []
+    for index, stock in enumerate(candidates):
+        csv_path = Path("data") / f"{stock.code}_daily.csv"
+        safe_csv_path = _safe_data_path(csv_path)
+        base_row = {
+            "code": stock.code,
+            "name": stock.name,
+            "exchange": stock.exchange,
+            "csv_path": csv_path.as_posix(),
+            "rank": None,
+        }
+        if not safe_csv_path.exists():
+            rows.append(
+                {
+                    **base_row,
+                    "status": "missing_data",
+                    "score": None,
+                    "latest_signal": None,
+                    "preview": None,
+                    "blockers": [{"code": "MISSING_CSV", "message": f"未找到本地行情 CSV：{csv_path.as_posix()}"}],
+                    "_order": index,
+                }
+            )
+            continue
+
+        settings = request.settings.model_copy(update={"symbol": stock.code, "exchange": stock.exchange, "csv_path": csv_path.as_posix()})
+        preview = build_research_signal_preview(_load_bars(settings), min_bars=request.min_bars, lookback=request.lookback)
+        serialized_preview = _serialize(preview)
+        rows.append(
+            {
+                **base_row,
+                "status": "scanned",
+                "score": serialized_preview["score"],
+                "latest_signal": serialized_preview["signals"][-1] if serialized_preview["signals"] else None,
+                "preview": serialized_preview,
+                "blockers": serialized_preview["blockers"],
+                "_order": index,
+            }
+        )
+
+    rows.sort(key=lambda row: (0 if row["status"] == "scanned" else 1, -abs((row["score"] or {}).get("total_score", 0)), row["_order"]))
+    for rank, row in enumerate(rows, start=1):
+        row["rank"] = rank
+        row.pop("_order", None)
+
+    available = sum(1 for row in rows if row["status"] == "scanned")
+    missing = sum(1 for row in rows if row["status"] == "missing_data")
+    return {
+        "query": request.query,
+        "universe": request.universe,
+        "scanned": len(rows),
+        "available": available,
+        "missing": missing,
+        "rows": rows,
+    }
+
+
+def _research_batch_candidates(request: ResearchSignalBatchRequest) -> list[StockInfo]:
+    if request.universe == "current":
+        return [StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)]
+
+    catalog = load_stock_catalog()
+    candidates = search_stock_catalog(catalog, request.query, request.limit)
+    if request.universe == "local_csv":
+        candidates = [stock for stock in candidates if _safe_data_path(Path("data") / f"{stock.code}_daily.csv").exists()]
+
+    if not candidates and request.universe == "catalog":
+        return [StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)]
+    return candidates
+
+
 def run_paper_request(request: PaperRunRequest) -> dict[str, Any]:
     settings = request.settings
     bars = _load_bars(settings)
@@ -267,11 +387,12 @@ def _portfolio_allocations(request: PortfolioRequest) -> tuple[list[StrategyAllo
         base_weight = item.weight
         adjusted_weight = round(base_weight + AI_WEIGHT_DELTA, 10) if applied else base_weight
         ai_delta = round(adjusted_weight - base_weight, 10)
-        allocations.append(StrategyAllocation(spec.name, strategy, adjusted_weight, item.enabled))
+        strategy_label = _strategy_display_name(spec)
+        allocations.append(StrategyAllocation(strategy_label, strategy, adjusted_weight, item.enabled))
         allocation_views.append(
             {
                 "index": index,
-                "name": spec.name,
+                "name": strategy_label,
                 "weight": adjusted_weight,
                 "base_weight": base_weight,
                 "adjusted_weight": adjusted_weight,
@@ -331,12 +452,18 @@ def _strategy_view(spec: StrategySpec) -> dict[str, Any]:
     return {
         "id": spec.id,
         "name": spec.name,
+        "display_name": _strategy_display_name(spec),
+        "description": spec.description or f"自定义策略：{spec.class_name}，按本地源码定义的交易逻辑运行。",
         "class_name": spec.class_name,
         "source": spec.source,
         "path": str(spec.path) if spec.path else None,
         "editable": spec.source == "user" and spec.path is not None,
         "parameters": [_serialize(param) for param in inspect_strategy_parameters(spec)],
     }
+
+
+def _strategy_display_name(spec: StrategySpec) -> str:
+    return spec.display_name or spec.name
 
 
 def _stock_view(stock: StockInfo) -> dict[str, str]:
@@ -357,6 +484,13 @@ def _data_payload(bars: list[Bar], settings: PlatformSettings) -> dict[str, Any]
         "latest_turnover": bars[-1].turnover if bars else None,
     }
     return {"bars": _frame_records(frame), "summary": summary}
+
+
+def _managed_file_for_settings(settings: PlatformSettings) -> dict[str, Any] | None:
+    data_file = data_file_for_stock({"code": settings.symbol, "name": settings.symbol, "exchange": settings.exchange}, adjust=settings.adjust)
+    if Path(settings.csv_path).as_posix() != data_file.latest_path.as_posix():
+        return None
+    return data_file.status(as_of=date.today())
 
 
 def _paper_payload(events: list[dict[str, Any]]) -> dict[str, Any]:

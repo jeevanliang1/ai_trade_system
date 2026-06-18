@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from ai_trade_system.api import service
 from ai_trade_system.api.app import create_app
+from ai_trade_system.market import Bar
+from ai_trade_system.stock_catalog import StockInfo, write_stock_catalog
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
@@ -38,6 +42,20 @@ def _settings_payload() -> dict:
     }
 
 
+def _bar(symbol: str, exchange: str, day: date, close: float) -> Bar:
+    return Bar(
+        symbol=symbol,
+        exchange=exchange,
+        trading_day=day,
+        open_price=close - 0.2,
+        high_price=close + 0.4,
+        low_price=close - 0.5,
+        close_price=close,
+        volume=1000,
+        turnover=close * 1000,
+    )
+
+
 def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
 
@@ -46,9 +64,120 @@ def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch)
     assert response.status_code == 200
     payload = response.json()
     assert payload["settings"]["csv_path"] == "data/000001_daily.csv"
+    assert payload["watchlist"] == []
     assert payload["catalog_available"] is False
     assert payload["strategies"][0]["id"].startswith("builtin:")
+    assert payload["strategies"][0]["display_name"]
+    assert payload["strategies"][0]["description"]
     assert payload["strategies"][0]["parameters"]
+    fast_window = next(parameter for parameter in payload["strategies"][0]["parameters"] if parameter["name"] == "fast_window")
+    assert fast_window["display_name"] == "快线周期"
+    assert "短期均线" in fast_window["description"]
+    assert "更平滑" in fast_window["increase_effect"]
+    assert "更敏感" in fast_window["decrease_effect"]
+
+
+def test_default_settings_use_two_year_range_from_current_date():
+    settings = service.default_settings(today=date(2026, 6, 18))
+
+    assert settings.start_date == "20240618"
+    assert settings.end_date == "20260618"
+
+
+def test_watchlist_routes_persist_local_stock_configuration(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    empty_response = client.get("/api/watchlist")
+    assert empty_response.status_code == 200
+    assert empty_response.json() == {"stocks": []}
+
+    save_response = client.put(
+        "/api/watchlist",
+        json={
+            "stocks": [
+                {"code": "601318", "name": "中国平安", "exchange": "sse"},
+                {"code": "601318", "name": "中国平安", "exchange": "SSE"},
+                {"code": "000001", "name": "平安银行", "exchange": "SZSE"},
+            ]
+        },
+    )
+
+    assert save_response.status_code == 200
+    assert save_response.json() == {
+        "stocks": [
+            {"code": "601318", "name": "中国平安", "exchange": "SSE"},
+            {"code": "000001", "name": "平安银行", "exchange": "SZSE"},
+        ]
+    }
+    assert (tmp_path / "config/watchlist.json").exists()
+    assert client.get("/api/watchlist").json() == save_response.json()
+
+
+def test_managed_data_routes_report_and_update_watchlist_files(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    client.put(
+        "/api/watchlist",
+        json={"stocks": [{"code": "601318", "name": "中国平安", "exchange": "SSE"}]},
+    )
+
+    status_response = client.get("/api/data/managed")
+
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert status_payload["files"][0]["code"] == "601318"
+    assert status_payload["files"][0]["exists"] is False
+    assert status_payload["files"][0]["latest_path"].endswith("601318_SSE_daily_qfq_latest.csv")
+
+    from ai_trade_system import data_manager
+
+    def fake_fetch(symbol: str, start_date: str, end_date: str, exchange: str, adjust: str):
+        assert (symbol, start_date, end_date, exchange, adjust) == ("601318", "20260617", "20260618", "SSE", "qfq")
+        return [_bar(symbol, exchange, date(2026, 6, 17), 51.0), _bar(symbol, exchange, date(2026, 6, 18), 52.0)]
+
+    monkeypatch.setattr(data_manager, "fetch_akshare_daily_bars", fake_fetch)
+
+    update_response = client.post(
+        "/api/data/update-watchlist",
+        json={"start_date": "20260617", "end_date": "20260618", "adjust": "qfq", "if_stale": True},
+    )
+
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["updated"] == 1
+    assert update_payload["skipped"] == 0
+    assert update_payload["failed"] == 0
+    assert update_payload["files"][0]["status"] == "updated"
+    assert update_payload["files"][0]["latest_rows"] == 2
+    assert (tmp_path / "data/market/a_share/SSE/601318/601318_SSE_daily_qfq_latest.csv").exists()
+    assert (tmp_path / "data/market/a_share/SSE/601318/manifest.json").exists()
+
+
+def test_strategy_template_create_and_source_save_routes(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    create_response = client.post(
+        "/api/strategies/template",
+        json={"filename": "my_signal.py", "class_name": "MySignalStrategy"},
+    )
+
+    assert create_response.status_code == 200
+    create_payload = create_response.json()
+    assert create_payload["path"] == "strategies/my_signal.py"
+    assert any(strategy["id"] == "user:my_signal:MySignalStrategy" for strategy in create_payload["strategies"])
+
+    source = """from ai_trade_system.market import Signal\nfrom ai_trade_system.strategy import Strategy\n\n\nclass SavedStrategy(Strategy):\n    def on_bar(self, bar):\n        return [Signal(\"buy\", bar.symbol, bar.close_price, 100, \"saved\")]\n"""
+    save_response = client.put(
+        "/api/strategies/source",
+        json={"filename": "saved_strategy.py", "source": source},
+    )
+
+    assert save_response.status_code == 200
+    save_payload = save_response.json()
+    assert save_payload["path"] == "strategies/saved_strategy.py"
+    assert any(strategy["id"] == "user:saved_strategy:SavedStrategy" for strategy in save_payload["strategies"])
+    read_response = client.get("/api/strategies/source", params={"path": "strategies/saved_strategy.py"})
+    assert read_response.status_code == 200
+    assert "class SavedStrategy" in read_response.json()["source"]
 
 
 def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
@@ -108,6 +237,36 @@ def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
     )
     assert risk_response.status_code == 200
     assert risk_response.json()["ok"] is False
+
+
+def test_paper_run_and_events_routes_round_trip_log(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    settings = _settings_payload()
+    demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
+    assert demo_response.status_code == 200
+
+    run_response = client.post(
+        "/api/paper/run",
+        json={
+            "settings": settings,
+            "strategy": _strategy_payload(),
+            "portfolio": None,
+            "mode": "single",
+        },
+    )
+
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["events"]
+    assert run_payload["summary"]["event"] == "service_stopped"
+    assert (tmp_path / settings["log_path"]).exists()
+
+    events_response = client.get("/api/paper/events", params={"path": settings["log_path"]})
+
+    assert events_response.status_code == 200
+    events_payload = events_response.json()
+    assert len(events_payload["events"]) == len(run_payload["events"])
+    assert events_payload["summary"]["event"] == "service_stopped"
 
 
 def test_risk_evaluate_route_accepts_valid_payload(tmp_path, monkeypatch):
@@ -181,8 +340,9 @@ def test_portfolio_preview_returns_breakdown_contract(tmp_path, monkeypatch):
     assert payload["breakdown"]["mode"] == "weighted_vote"
     assert "contributions" in payload["breakdown"]
     assert payload["allocations"][0]["index"] == 0
-    assert payload["allocations"][0]["name"] == "DualMovingAverageStrategy"
+    assert payload["allocations"][0]["name"] == "双均线趋势"
     assert payload["allocations"][1]["index"] == 1
+    assert payload["allocations"][1]["name"] == "RSI均值回归"
 
 
 def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkeypatch):
@@ -227,11 +387,13 @@ def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkey
         "delta": 0.05,
     }
     assert payload["allocations"][0]["base_weight"] == 2
+    assert payload["allocations"][0]["name"] == "双均线趋势"
     assert payload["allocations"][0]["adjusted_weight"] == 2.05
     assert payload["allocations"][0]["ai_delta"] == 0.05
     assert payload["allocations"][0]["ai_adjusted"] is True
     assert payload["allocations"][0]["weight"] == 2.05
     assert payload["allocations"][1]["base_weight"] == 1
+    assert payload["allocations"][1]["name"] == "RSI均值回归"
     assert payload["allocations"][1]["adjusted_weight"] == 1.05
 
 
@@ -261,6 +423,70 @@ def test_research_signals_preview_route_returns_blocker_for_short_demo_data(tmp_
     assert payload["symbol"] == "000001"
     assert payload["blockers"][0]["code"] == "INSUFFICIENT_BARS"
     assert payload["score"]["direction"] == "neutral"
+
+
+def test_research_signals_batch_route_scans_local_csv_catalog(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    data_dir = tmp_path / "data"
+    write_stock_catalog(
+        [
+            StockInfo("000001", "平安银行", "SZSE"),
+            StockInfo("601318", "中国平安", "SSE"),
+            StockInfo("688981", "中芯国际", "SSE"),
+        ],
+        data_dir / "a_share_stocks.csv",
+    )
+    for code, exchange in [("000001", "SZSE"), ("601318", "SSE")]:
+        settings = {**_settings_payload(), "symbol": code, "exchange": exchange, "csv_path": f"data/{code}_daily.csv"}
+        demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
+        assert demo_response.status_code == 200
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={"settings": _settings_payload(), "query": "", "limit": 3, "min_bars": 40, "lookback": 60},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scanned"] == 3
+    assert payload["available"] == 2
+    assert payload["missing"] == 1
+    assert [row["code"] for row in payload["rows"]] == ["000001", "601318", "688981"]
+    assert payload["rows"][0]["status"] == "scanned"
+    assert payload["rows"][0]["preview"]["symbol"] == "000001"
+    assert payload["rows"][0]["score"]["direction"] in {"bullish", "bearish", "neutral"}
+    assert payload["rows"][2]["status"] == "missing_data"
+    assert payload["rows"][2]["blockers"][0]["code"] == "MISSING_CSV"
+
+
+def test_research_signals_batch_route_can_scan_only_local_csv_universe(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    data_dir = tmp_path / "data"
+    write_stock_catalog(
+        [
+            StockInfo("000001", "平安银行", "SZSE"),
+            StockInfo("601318", "中国平安", "SSE"),
+            StockInfo("688981", "中芯国际", "SSE"),
+        ],
+        data_dir / "a_share_stocks.csv",
+    )
+    for code, exchange in [("000001", "SZSE"), ("601318", "SSE")]:
+        settings = {**_settings_payload(), "symbol": code, "exchange": exchange, "csv_path": f"data/{code}_daily.csv"}
+        demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
+        assert demo_response.status_code == 200
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={"settings": _settings_payload(), "query": "", "limit": 3, "min_bars": 40, "lookback": 60, "universe": "local_csv"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["universe"] == "local_csv"
+    assert payload["scanned"] == 2
+    assert payload["available"] == 2
+    assert payload["missing"] == 0
+    assert {row["code"] for row in payload["rows"]} == {"000001", "601318"}
 
 
 def test_research_signals_preview_route_returns_signals_for_demo_data(tmp_path, monkeypatch):
