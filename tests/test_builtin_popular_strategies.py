@@ -1,7 +1,10 @@
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from ai_trade_system.market import Bar
 from ai_trade_system.backtest import run_backtest
+from ai_trade_system.research.models import ResearchSignal
+from ai_trade_system.strategies import popular as popular_strategies
 from ai_trade_system.strategies.popular import (
     BollingerMeanReversionStrategy,
     ChanStructureStrategy,
@@ -113,6 +116,26 @@ def make_low_confidence_t2_chan_bars() -> list[Bar]:
         make_chan_bar(12, 12.0, 12.4, 11.6),
         make_chan_bar(13, 12.4, 12.8, 12.0),
     ]
+
+
+def make_research_signal(day: date, kind: str, action: str, score: float, price: float) -> ResearchSignal:
+    return ResearchSignal(
+        trading_day=day,
+        symbol="000001",
+        exchange="SZSE",
+        kind=kind,
+        action=action,
+        price=price,
+        strength=min(0.95, abs(score) / 100),
+        score=score,
+        title=kind,
+        reason=f"test {kind}",
+        tags=("chan", "structure", "confirmation"),
+    )
+
+
+def patch_chan_structure_scan(monkeypatch, signals: list[ResearchSignal]) -> None:
+    monkeypatch.setattr(popular_strategies, "scan_chan_structure", lambda *args, **kwargs: SimpleNamespace(signals=signals))
 
 
 def collect_volume_momentum_signals(closes: list[float], volumes: list[float], **kwargs):
@@ -378,6 +401,53 @@ def test_chan_structure_strategy_signal_mode_filters_confirmation_family():
     assert structure_signals == []
 
 
+def test_chan_structure_strategy_confirmation_mode_exits_on_opposite_signal(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(bars[2].trading_day, "CHAN_STRUCT_BUY_CONFIRM", "buy", 70.0, bars[2].close_price),
+            make_research_signal(bars[4].trading_day, "CHAN_STRUCT_SELL_CONFIRM", "sell", -65.0, bars[4].close_price),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        max_holding_bars=0,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_CONFIRM")
+    assert signals[1].reason.startswith("chan_structure:CHAN_STRUCT_SELL_CONFIRM")
+
+
+def test_chan_structure_strategy_confirmation_mode_exits_after_max_holding_bars(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [make_research_signal(bars[2].trading_day, "CHAN_STRUCT_BUY_CONFIRM", "buy", 70.0, bars[2].close_price)],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        max_holding_bars=2,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[1].price == bars[4].close_price
+    assert signals[1].reason == "chan_structure:TIME_EXIT:max_holding_bars=2"
+
+
 def test_chan_structure_strategy_rejects_unknown_signal_mode():
     try:
         ChanStructureStrategy("000001", signal_mode="unknown")
@@ -385,6 +455,15 @@ def test_chan_structure_strategy_rejects_unknown_signal_mode():
         assert "signal_mode" in str(exc)
     else:
         raise AssertionError("unsupported signal_mode should raise ValueError")
+
+
+def test_chan_structure_strategy_rejects_negative_max_holding_bars():
+    try:
+        ChanStructureStrategy("000001", max_holding_bars=-1)
+    except ValueError as exc:
+        assert "max_holding_bars" in str(exc)
+    else:
+        raise AssertionError("negative max_holding_bars should raise ValueError")
 
 
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():

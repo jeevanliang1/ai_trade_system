@@ -231,6 +231,7 @@ class ChanStructureStrategy(Strategy):
         min_rebound_pct: float = 0.03,
         min_signal_score: float = 30.0,
         signal_mode: str = "all",
+        max_holding_bars: int = 0,
         trade_size: int = 100,
     ) -> None:
         if min_bars < 3:
@@ -245,6 +246,8 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("min_signal_score must be non-negative")
         if signal_mode not in CHAN_SIGNAL_MODES:
             raise ValueError("signal_mode must be one of: all, confirmation, structure")
+        if max_holding_bars < 0:
+            raise ValueError("max_holding_bars must be non-negative")
         if trade_size <= 0:
             raise ValueError("trade_size must be positive")
         self.symbol = symbol
@@ -254,15 +257,19 @@ class ChanStructureStrategy(Strategy):
         self.min_rebound_pct = min_rebound_pct
         self.min_signal_score = min_signal_score
         self.signal_mode = signal_mode
+        self.max_holding_bars = max_holding_bars
         self.trade_size = trade_size
         self.bars: deque[Bar] = deque(maxlen=lookback)
         self.in_position = False
+        self.holding_bars = 0
         self.emitted: set[tuple[object, str, str]] = set()
 
     def on_bar(self, bar: Bar) -> list[Signal]:
         if bar.symbol != self.symbol:
             return []
         self.bars.append(bar)
+        if self.in_position:
+            self.holding_bars += 1
         if len(self.bars) < self.min_bars:
             return []
 
@@ -287,11 +294,25 @@ class ChanStructureStrategy(Strategy):
             if signal.action == "buy" and not self.in_position:
                 self.emitted.add(key)
                 self.in_position = True
+                self.holding_bars = 0
                 return [Signal("buy", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
             if signal.action == "sell" and self.in_position:
                 self.emitted.add(key)
                 self.in_position = False
+                self.holding_bars = 0
                 return [Signal("sell", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
+        if self.in_position and self.max_holding_bars > 0 and self.holding_bars >= self.max_holding_bars:
+            self.in_position = False
+            self.holding_bars = 0
+            return [
+                Signal(
+                    "sell",
+                    bar.symbol,
+                    bar.close_price,
+                    self.trade_size,
+                    f"chan_structure:TIME_EXIT:max_holding_bars={self.max_holding_bars}",
+                )
+            ]
         return []
 
     def _signal_mode_allows(self, kind: str) -> bool:

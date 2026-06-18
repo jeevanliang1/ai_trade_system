@@ -123,7 +123,7 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
         display_name="缠论结构策略",
-        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖，并可按信号模式切换确认类、结构类或全量结构信号。",
+        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖，并可按信号模式切换确认类、结构类或全量结构信号，支持可选最大持仓退出。",
     ),
 ]
 
@@ -384,7 +384,7 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "max_holding_bars": ParameterGuidance(
         display_name="最大持仓天数",
-        description="买入后最大持仓多少根日线，超过后即使未触发其他退出条件也会离场。",
+        description="买入后最大持仓多少根日线，超过后即使未触发其他退出条件也会离场；支持该约定的策略可用 0 表示禁用时间退出。",
         increase_effect="调大后允许趋势运行更久，但可能承受更大回撤。",
         decrease_effect="调小后退出更快，资金周转更快但可能错过后续趋势。",
     ),

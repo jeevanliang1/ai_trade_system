@@ -130,6 +130,7 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert params["signal_mode"].display_name == "信号模式"
     assert "confirmation" in params["signal_mode"].description
     assert "structure" in params["signal_mode"].description
+    assert "0" in params["max_holding_bars"].description
 
 
 def test_chan_structure_strategy_registry_exposes_tuned_default_score():
@@ -140,6 +141,7 @@ def test_chan_structure_strategy_registry_exposes_tuned_default_score():
 
     assert defaults["min_signal_score"] == 30.0
     assert defaults["signal_mode"] == "all"
+    assert defaults["max_holding_bars"] == 0
 
 
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):
