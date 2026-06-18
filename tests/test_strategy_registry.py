@@ -133,6 +133,13 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert "0" in params["max_holding_bars"].description
     assert params["watch_confirm_bars"].display_name == "背驰观察有效期"
     assert "背驰" in params["watch_confirm_bars"].description
+    assert params["allowed_point_types"].display_name == "买卖点类型过滤"
+    assert "all" in params["allowed_point_types"].description
+    assert "first-buy" in params["allowed_point_types"].description
+    assert "third-sell" in params["allowed_point_types"].description
+    assert params["allowed_levels"].display_name == "结构层级过滤"
+    assert "segment" in params["allowed_levels"].description
+    assert "fractal" in params["allowed_levels"].description
 
 
 def test_chan_structure_strategy_registry_exposes_tuned_default_score():
@@ -143,6 +150,8 @@ def test_chan_structure_strategy_registry_exposes_tuned_default_score():
 
     assert defaults["min_signal_score"] == 30.0
     assert defaults["signal_mode"] == "all"
+    assert defaults["allowed_point_types"] == "all"
+    assert defaults["allowed_levels"] == "all"
     assert defaults["max_holding_bars"] == 0
     assert defaults["watch_confirm_bars"] == 20
 

@@ -125,6 +125,7 @@ def make_research_signal(
     score: float,
     price: float,
     tags: tuple[str, ...] = ("chan", "structure", "confirmation"),
+    metadata: dict[str, object] | None = None,
 ) -> ResearchSignal:
     return ResearchSignal(
         trading_day=day,
@@ -138,6 +139,7 @@ def make_research_signal(
         title=kind,
         reason=f"test {kind}",
         tags=tags,
+        metadata=metadata or {},
     )
 
 
@@ -480,6 +482,87 @@ def test_chan_structure_strategy_confirmation_mode_trades_third_buy_and_sell(mon
     assert signals[1].reason.startswith("chan_structure:CHAN_STRUCT_SELL_T3")
 
 
+def test_chan_structure_strategy_filters_allowed_point_types(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                40.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "second-buy"),
+                metadata={"point_type": "second-buy", "level": "fractal"},
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=6,
+        min_signal_score=30.0,
+        signal_mode="all",
+        allowed_point_types="third-buy",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].price == bars[4].close_price
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T3")
+
+
+def test_chan_structure_strategy_filters_allowed_levels(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_CONFIRM",
+                "buy",
+                70.0,
+                bars[2].close_price,
+                metadata={"point_type": "first-buy", "level": "segment"},
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=6,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        allowed_levels="stroke",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].price == bars[4].close_price
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T3")
+
+
 def test_chan_structure_strategy_arms_bottom_divergence_watch_and_confirms_with_t2(monkeypatch):
     bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
     patch_chan_structure_scan(
@@ -519,6 +602,46 @@ def test_chan_structure_strategy_arms_bottom_divergence_watch_and_confirms_with_
     assert signals[0].reason.startswith(
         "chan_structure:ARMED_CONFIRM:CHAN_STRUCT_BUY_T1_DIVERGENCE->CHAN_STRUCT_BUY_T2"
     )
+
+
+def test_chan_structure_strategy_armed_watch_respects_confirmation_filters(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+                "buy",
+                62.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "divergence", "watch"),
+                metadata={"point_type": "first-buy", "level": "segment"},
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                28.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "second-buy"),
+                metadata={"point_type": "second-buy", "level": "fractal"},
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=6,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        watch_confirm_bars=5,
+        allowed_point_types="third-buy",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert signals == []
 
 
 def test_chan_structure_strategy_arms_top_divergence_watch_and_confirms_with_t3(monkeypatch):
@@ -644,6 +767,24 @@ def test_chan_structure_strategy_rejects_unknown_signal_mode():
         assert "signal_mode" in str(exc)
     else:
         raise AssertionError("unsupported signal_mode should raise ValueError")
+
+
+def test_chan_structure_strategy_rejects_unknown_allowed_point_types():
+    try:
+        ChanStructureStrategy("000001", allowed_point_types="second-buy,bad-token")
+    except ValueError as exc:
+        assert "allowed_point_types" in str(exc)
+    else:
+        raise AssertionError("unsupported allowed_point_types should raise ValueError")
+
+
+def test_chan_structure_strategy_rejects_unknown_allowed_levels():
+    try:
+        ChanStructureStrategy("000001", allowed_levels="segment,bad-level")
+    except ValueError as exc:
+        assert "allowed_levels" in str(exc)
+    else:
+        raise AssertionError("unsupported allowed_levels should raise ValueError")
 
 
 def test_chan_structure_strategy_rejects_negative_max_holding_bars():

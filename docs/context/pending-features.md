@@ -76,6 +76,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Chan confirmation T3 consumption is complete for current scope: `ChanStructureStrategy` confirmation mode now admits three-buy/three-sell pivot-retest confirmation signals while keeping two-buy/two-sell in structure mode; fixed 中芯国际 and 五粮液 benchmarks no longer produce zero confirmation-mode trades.
 - Chan watch-divergence arming is complete for current scope: `ChanStructureStrategy` now accepts `watch_confirm_bars`, stores qualifying T1 bottom/top divergence watch signals for bounded later confirmation by same-direction confirm/T2/T3 structures, exposes Chinese parameter guidance, and records fixed 中芯国际/五粮液 benchmarks plus disabled-arming comparison in QA.
 - Chan same-level lineage is complete for current scope: `research.chan_structure` now assigns segment-level `level`/`sequence_index`/`lineage_id`, emits structured `ResearchSignal.metadata` for T1/T2/T3/confirmation point hierarchy and pivot relationships, exposes segment identity through overlays/frontend types, and records fixed 中芯国际/五粮液 benchmarks in QA.
+- Chan point-family filters are complete for current scope: `ChanStructureStrategy` now accepts `allowed_point_types` and `allowed_levels` metadata filters, preserving default `all` behavior while allowing first/second/third buy-sell and segment/stroke/fractal sub-strategy benchmarks on the fixed 中芯国际/五粮液 fixtures.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -116,8 +117,7 @@ No current pending items.
 
 ### Strategy Development
 
-- Add `ChanStructureStrategy` point-family filters backed by signal metadata so first/second/third buy-sell points, confirmation signals, and segment/stroke/fractal levels can be benchmarked independently without changing analyzer output.
-- Upgrade enum-like strategy parameters such as `signal_mode` to expose allowed options through the registry/API and render as select controls instead of free-text inputs in React.
+- Upgrade enum-like strategy parameters such as `signal_mode`, `allowed_point_types`, and `allowed_levels` to expose allowed options through the registry/API and render as select/multi-select controls instead of free-text inputs in React.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
@@ -126,7 +126,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Add `ChanStructureStrategy` point-family filters backed by signal metadata so first/second/third buy-sell points, confirmation signals, and segment/stroke/fractal levels can be benchmarked independently without changing analyzer output".
+Start with "Strategy Development - Upgrade enum-like strategy parameters such as `signal_mode`, `allowed_point_types`, and `allowed_levels` to expose allowed options through the registry/API and render as select/multi-select controls instead of free-text inputs in React".
 
 ## Update Rules
 

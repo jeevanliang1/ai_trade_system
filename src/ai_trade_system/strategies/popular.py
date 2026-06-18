@@ -38,6 +38,15 @@ CHAN_ARMED_CONFIRMATION_SIGNAL_KINDS = {
     "CHAN_STRUCT_BUY_T3",
     "CHAN_STRUCT_SELL_T3",
 }
+CHAN_POINT_TYPES = {
+    "first-buy",
+    "first-sell",
+    "second-buy",
+    "second-sell",
+    "third-buy",
+    "third-sell",
+}
+CHAN_LEVELS = {"segment", "stroke", "fractal"}
 
 
 @dataclass(frozen=True)
@@ -257,6 +266,8 @@ class ChanStructureStrategy(Strategy):
         min_rebound_pct: float = 0.03,
         min_signal_score: float = 30.0,
         signal_mode: str = "all",
+        allowed_point_types: str = "all",
+        allowed_levels: str = "all",
         max_holding_bars: int = 0,
         watch_confirm_bars: int = 20,
         trade_size: int = 100,
@@ -273,6 +284,10 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("min_signal_score must be non-negative")
         if signal_mode not in CHAN_SIGNAL_MODES:
             raise ValueError("signal_mode must be one of: all, confirmation, structure")
+        allowed_point_type_set = _parse_chan_filter_values(
+            allowed_point_types, CHAN_POINT_TYPES, "allowed_point_types"
+        )
+        allowed_level_set = _parse_chan_filter_values(allowed_levels, CHAN_LEVELS, "allowed_levels")
         if max_holding_bars < 0:
             raise ValueError("max_holding_bars must be non-negative")
         if watch_confirm_bars < 0:
@@ -286,6 +301,10 @@ class ChanStructureStrategy(Strategy):
         self.min_rebound_pct = min_rebound_pct
         self.min_signal_score = min_signal_score
         self.signal_mode = signal_mode
+        self.allowed_point_types = allowed_point_types
+        self.allowed_levels = allowed_levels
+        self.allowed_point_type_set = allowed_point_type_set
+        self.allowed_level_set = allowed_level_set
         self.max_holding_bars = max_holding_bars
         self.watch_confirm_bars = watch_confirm_bars
         self.trade_size = trade_size
@@ -343,7 +362,11 @@ class ChanStructureStrategy(Strategy):
                             f"chan_structure:ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}:{signal.reason}",
                         )
                     ]
-            if abs(signal.score) < self.min_signal_score or not self._signal_mode_allows(signal.kind):
+            if (
+                abs(signal.score) < self.min_signal_score
+                or not self._signal_mode_allows(signal.kind)
+                or not self._signal_filters_allow(signal)
+            ):
                 continue
             key = (signal.trading_day, signal.kind, signal.action)
             if key in self.emitted:
@@ -382,6 +405,14 @@ class ChanStructureStrategy(Strategy):
             return kind in CHAN_CONFIRMATION_SIGNAL_KINDS
         return kind in CHAN_STRUCTURE_SIGNAL_KINDS
 
+    def _signal_filters_allow(self, signal) -> bool:
+        metadata = getattr(signal, "metadata", {}) or {}
+        if self.allowed_point_type_set is not None and metadata.get("point_type") not in self.allowed_point_type_set:
+            return False
+        if self.allowed_level_set is not None and metadata.get("level") not in self.allowed_level_set:
+            return False
+        return True
+
     def _is_watch_signal(self, signal) -> bool:
         return signal.kind in CHAN_WATCH_SIGNAL_KINDS and "watch" in signal.tags
 
@@ -415,7 +446,11 @@ class ChanStructureStrategy(Strategy):
             return False
         if self.bar_index <= self.armed_watch.bar_index:
             return False
-        return signal.action == self.armed_watch.action and signal.kind in CHAN_ARMED_CONFIRMATION_SIGNAL_KINDS
+        return (
+            signal.action == self.armed_watch.action
+            and signal.kind in CHAN_ARMED_CONFIRMATION_SIGNAL_KINDS
+            and self._signal_filters_allow(signal)
+        )
 
     def _can_emit_action(self, action: str) -> bool:
         if action == "buy":
@@ -523,3 +558,16 @@ def _rsi(closes: list[float]) -> float:
         return 100.0
     relative_strength = average_gain / average_loss
     return 100 - (100 / (1 + relative_strength))
+
+
+def _parse_chan_filter_values(raw_value: str, allowed_values: set[str], parameter_name: str) -> set[str] | None:
+    value = raw_value.strip().lower()
+    if value == "all":
+        return None
+    selected = {part.strip().lower() for part in value.split(",") if part.strip()}
+    unknown = selected - allowed_values
+    if not selected or unknown:
+        allowed = ", ".join(["all", *sorted(allowed_values)])
+        bad = ", ".join(sorted(unknown)) if unknown else raw_value
+        raise ValueError(f"{parameter_name} contains unsupported values: {bad}; allowed values: {allowed}")
+    return selected

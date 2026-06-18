@@ -412,6 +412,18 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         increase_effect="该参数不是数值大小；切换枚举值会改变参与回测的缠论信号家族。",
         decrease_effect="该参数不是数值大小；confirmation 更聚焦确认类买卖点，structure 更聚焦结构买卖点，all 保留全部信号。",
     ),
+    "allowed_point_types": ParameterGuidance(
+        display_name="买卖点类型过滤",
+        description="缠论买卖点过滤，填 all 表示不过滤；也可用逗号列出 first-buy、first-sell、second-buy、second-sell、third-buy、third-sell。",
+        increase_effect="该参数不是数值大小；收窄到少数买卖点类型会让回测更聚焦、交易更少。",
+        decrease_effect="该参数不是数值大小；改回 all 或增加类型会让更多缠论买卖点参与交易。",
+    ),
+    "allowed_levels": ParameterGuidance(
+        display_name="结构层级过滤",
+        description="缠论结构层级过滤，填 all 表示不过滤；也可用逗号列出 segment、stroke、fractal，分别对应线段、笔、分型层级。",
+        increase_effect="该参数不是数值大小；只保留某个层级会让信号来源更单一，适合做分层回测。",
+        decrease_effect="该参数不是数值大小；改回 all 或增加层级会让更多结构层级参与交易。",
+    ),
     "min_stroke_bars": ParameterGuidance(
         display_name="成笔最小间隔",
         description="相邻顶/底分型之间至少间隔多少根K线，才允许构成缠论笔。",
