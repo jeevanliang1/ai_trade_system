@@ -261,6 +261,42 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
     assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_CONFIRM")
 
 
+def test_chan_structure_strategy_default_filters_low_confidence_structure_signals():
+    bars = [
+        make_chan_bar(0, 12.0, 12.4, 11.6),
+        make_chan_bar(1, 11.4, 11.8, 11.0),
+        make_chan_bar(2, 10.8, 11.2, 10.4),
+        make_chan_bar(3, 10.1, 10.5, 9.7),
+        make_chan_bar(4, 9.8, 10.2, 9.4),
+        make_chan_bar(5, 10.4, 10.8, 10.0),
+        make_chan_bar(6, 11.1, 11.5, 10.7),
+        make_chan_bar(7, 11.6, 12.0, 11.2),
+        make_chan_bar(8, 10.9, 11.3, 10.5),
+        make_chan_bar(9, 10.4, 10.8, 10.0),
+        make_chan_bar(10, 10.8, 11.2, 10.4),
+        make_chan_bar(11, 11.5, 11.9, 11.1),
+        make_chan_bar(12, 12.0, 12.4, 11.6),
+        make_chan_bar(13, 12.4, 12.8, 12.0),
+    ]
+    tuned_default = ChanStructureStrategy("000001", min_bars=12, lookback=40, min_stroke_bars=2, min_rebound_pct=0.03)
+    lower_threshold = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=40,
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+        min_signal_score=24.0,
+    )
+
+    tuned_signals = [signal for bar in bars for signal in tuned_default.on_bar(bar)]
+    lower_threshold_signals = [signal for bar in bars for signal in lower_threshold.on_bar(bar)]
+
+    assert tuned_default.min_signal_score == 30.0
+    assert tuned_signals == []
+    assert [signal.action for signal in lower_threshold_signals] == ["buy"]
+    assert lower_threshold_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T2")
+
+
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():
     signals = collect_volume_momentum_signals(
         [10, 10.2, 10.4, 10.6, 11.2],

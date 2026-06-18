@@ -69,6 +69,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Chan core deepening first slice is complete for current scope: `research.chan_structure` now builds simplified line segments, stroke/segment recursive pivots, segment-energy divergence records, and divergence/confirmation signals, while preview, batch diagnostics, chart overlays, and `ChanStructureStrategy` consume the expanded structure.
 - Chan strict segment rules first slice is complete for current scope: `research.chan_structure` now builds non-overlapping stateful segments, extends active segments until confirmed breaks, records start/end/break stroke indexes, and preserves segment-level recursive pivots plus confirmation signals on explicit break/rebuild structures.
 - Chan indicator divergence scoring first slice is complete for current scope: segment-level divergences now carry MACD pressure, volume participation, base score, and confirmation score evidence; divergence/confirmation signals use dynamic directional scores; API overlays and frontend types expose the evidence fields.
+- Chan structure default threshold tuning is complete for current scope: `ChanStructureStrategy` now defaults `min_signal_score` to `30.0`, filtering lower-confidence 28-point T2/T3 churn while retaining stronger divergence/confirmation signals; fixed 中芯国际 and 五粮液 benchmarks are recorded in QA.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -109,7 +110,7 @@ No current pending items.
 
 ### Strategy Development
 
-- Tune `ChanStructureStrategy` signal score thresholds, `min_rebound_pct`, and `min_stroke_bars` against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` benchmark fixtures after indicator-backed divergence scoring.
+- Add `ChanStructureStrategy` signal-family or trading-mode controls so confirmation-style divergence signals, T2/T3 structure signals, and full exploratory structure signals can be benchmarked independently against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` fixtures.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
@@ -118,7 +119,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Tune `ChanStructureStrategy` signal score thresholds, `min_rebound_pct`, and `min_stroke_bars` against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` benchmark fixtures after indicator-backed divergence scoring".
+Start with "Strategy Development - Add `ChanStructureStrategy` signal-family or trading-mode controls so confirmation-style divergence signals, T2/T3 structure signals, and full exploratory structure signals can be benchmarked independently against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` fixtures".
 
 ## Update Rules
 

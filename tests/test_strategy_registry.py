@@ -129,6 +129,15 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert "交易更少" in params["min_signal_score"].increase_effect
 
 
+def test_chan_structure_strategy_registry_exposes_tuned_default_score():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    spec = next(item for item in specs if item.name == "ChanStructureStrategy")
+
+    defaults = {param.name: param.default for param in inspect_strategy_parameters(spec)}
+
+    assert defaults["min_signal_score"] == 30.0
+
+
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):
     path = save_strategy_source(tmp_path, "../bad name", create_strategy_template("ExampleStrategy"))
 

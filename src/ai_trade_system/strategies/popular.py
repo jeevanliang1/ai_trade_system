@@ -214,7 +214,7 @@ class ChanStructureStrategy(Strategy):
         lookback: int = 160,
         min_stroke_bars: int = 5,
         min_rebound_pct: float = 0.03,
-        min_signal_score: float = 24.0,
+        min_signal_score: float = 30.0,
         trade_size: int = 100,
     ) -> None:
         if min_bars < 3:
