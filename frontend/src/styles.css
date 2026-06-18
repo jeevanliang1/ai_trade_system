@@ -1487,6 +1487,14 @@ button {
   white-space: nowrap;
 }
 
+.structure-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .icon-button {
   width: 26px;
   height: 26px;

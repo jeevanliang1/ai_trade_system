@@ -36,6 +36,52 @@ class ResearchSignalScore:
 
 
 @dataclass(frozen=True)
+class ChanFractalOverlay:
+    index: int
+    trading_day: date
+    kind: str
+    price: float
+    high: float
+    low: float
+
+
+@dataclass(frozen=True)
+class ChanStrokeOverlay:
+    direction: str
+    start_index: int
+    end_index: int
+    start_day: date
+    end_day: date
+    start_price: float
+    end_price: float
+    high: float
+    low: float
+
+
+@dataclass(frozen=True)
+class ChanPivotOverlay:
+    start_index: int
+    end_index: int
+    start_day: date
+    end_day: date
+    low: float
+    high: float
+
+
+@dataclass(frozen=True)
+class ChanStructureOverlay:
+    fractal_count: int
+    stroke_count: int
+    pivot_count: int
+    latest_signal_kind: str | None
+    latest_signal_title: str | None
+    fractals: list[ChanFractalOverlay] = field(default_factory=list)
+    strokes: list[ChanStrokeOverlay] = field(default_factory=list)
+    pivots: list[ChanPivotOverlay] = field(default_factory=list)
+    signals: list[ResearchSignal] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ResearchSignalPreview:
     symbol: str
     exchange: str
@@ -45,6 +91,7 @@ class ResearchSignalPreview:
     signals: list[ResearchSignal]
     score: ResearchSignalScore
     blockers: list[ResearchSignalBlocker] = field(default_factory=list)
+    chan_structure: ChanStructureOverlay | None = None
 
 
 @dataclass(frozen=True)

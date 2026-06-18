@@ -1,6 +1,6 @@
-import type { BacktestResponse, Bar, SignalRow } from "../types";
+import type { BacktestResponse, Bar, ChanFractalOverlay, ResearchSignal, ResearchSignalChanStructure, SignalRow } from "../types";
 
-export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
+export function priceOption(bars: Bar[], signals: SignalRow[] = [], chanStructure: ResearchSignalChanStructure | null = null) {
   const start = visibleRangeStart(bars.length);
   const barsByDay = new Map(bars.map((bar) => [bar.trading_day, bar]));
   const markerOffset = signalMarkerOffset(bars);
@@ -59,8 +59,120 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = []) {
         symbolSize: 13,
         z: 5,
         itemStyle: { color: "#a855f7", borderColor: "#581c87", borderWidth: 1 }
-      }
+      },
+      ...chanStructureSeries(chanStructure, barsByDay, markerOffset)
     ]
+  };
+}
+
+function chanStructureSeries(chanStructure: ResearchSignalChanStructure | null, barsByDay: Map<string, Bar>, markerOffset: number) {
+  if (!chanStructure) return [];
+  const fractals = chanStructure.fractals ?? [];
+  const strokes = chanStructure.strokes ?? [];
+  const pivots = chanStructure.pivots ?? [];
+  const structureSignals = chanStructure.signals ?? [];
+  return [
+    {
+      type: "scatter",
+      name: "顶分型",
+      data: fractals.filter((fractal) => fractal.kind === "top").map((fractal) => fractalMarker(fractal, "顶分型")),
+      symbol: "triangle",
+      symbolRotate: 180,
+      symbolSize: 10,
+      z: 6,
+      itemStyle: { color: "#f97316", borderColor: "#9a3412", borderWidth: 1 }
+    },
+    {
+      type: "scatter",
+      name: "底分型",
+      data: fractals.filter((fractal) => fractal.kind === "bottom").map((fractal) => fractalMarker(fractal, "底分型")),
+      symbol: "triangle",
+      symbolSize: 10,
+      z: 6,
+      itemStyle: { color: "#0ea5e9", borderColor: "#075985", borderWidth: 1 }
+    },
+    {
+      type: "line",
+      name: "缠论笔",
+      data: strokes.flatMap((stroke) => [
+        [stroke.start_day, stroke.start_price],
+        [stroke.end_day, stroke.end_price],
+        null
+      ]),
+      showSymbol: false,
+      connectNulls: false,
+      z: 4,
+      lineStyle: { width: 1.4, color: "#475467", type: "dashed" }
+    },
+    {
+      type: "line",
+      name: "缠论中枢",
+      data: [],
+      showSymbol: false,
+      markArea: {
+        silent: true,
+        itemStyle: { color: "rgba(22, 119, 255, 0.1)", borderColor: "rgba(22, 119, 255, 0.35)", borderWidth: 1 },
+        data: pivots.map((pivot) => [
+          { name: "中枢", xAxis: pivot.start_day, yAxis: pivot.low },
+          { xAxis: pivot.end_day, yAxis: pivot.high }
+        ])
+      }
+    },
+    {
+      type: "scatter",
+      name: "结构买点",
+      data: structureSignals
+        .filter((signal) => signal.action === "buy")
+        .map((signal) => structureSignalMarker(signal, "结构买点", "buy", barsByDay.get(signal.trading_day), markerOffset)),
+      symbol: "diamond",
+      symbolSize: 13,
+      z: 7,
+      itemStyle: { color: "#22c55e", borderColor: "#166534", borderWidth: 1 }
+    },
+    {
+      type: "scatter",
+      name: "结构卖点",
+      data: structureSignals
+        .filter((signal) => signal.action === "sell")
+        .map((signal) => structureSignalMarker(signal, "结构卖点", "sell", barsByDay.get(signal.trading_day), markerOffset)),
+      symbol: "diamond",
+      symbolSize: 13,
+      z: 7,
+      itemStyle: { color: "#ef4444", borderColor: "#991b1b", borderWidth: 1 }
+    }
+  ];
+}
+
+function fractalMarker(fractal: ChanFractalOverlay, label: string) {
+  return {
+    name: `${label} ${fractal.trading_day}`,
+    value: [fractal.trading_day, fractal.price],
+    high: fractal.high,
+    low: fractal.low,
+    tooltip: {
+      formatter: [`${label}`, `日期：${fractal.trading_day}`, `价格：${fractal.price}`].join("<br/>")
+    }
+  };
+}
+
+function structureSignalMarker(signal: ResearchSignal, label: string, action: SignalRow["action"], bar: Bar | undefined, offset: number) {
+  const markerPrice = bar ? signalMarkerPrice(bar, action, offset) : signal.price;
+  return {
+    name: `${label} ${signal.title}`,
+    value: [signal.trading_day, markerPrice],
+    tradePrice: signal.price,
+    strength: signal.strength,
+    score: signal.score,
+    reason: signal.reason,
+    tooltip: {
+      formatter: [
+        `${label} ${signal.title}`,
+        `日期：${signal.trading_day}`,
+        `价格：${signal.price}`,
+        `强度：${Math.round(signal.strength * 100)}%`,
+        `原因：${signal.reason}`
+      ].join("<br/>")
+    }
   };
 }
 

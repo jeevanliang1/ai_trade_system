@@ -22,6 +22,7 @@ export function StrategyPage({ state, actions }: PageProps) {
   const [newClass, setNewClass] = useState("MyStrategy");
   const [query, setQuery] = useState("");
   const [showSignals, setShowSignals] = useState(true);
+  const [showChanStructure, setShowChanStructure] = useState(true);
   const [chartExpanded, setChartExpanded] = useState(false);
   const [sourceError, setSourceError] = useState("");
   const [sourceMessage, setSourceMessage] = useState("");
@@ -44,6 +45,7 @@ export function StrategyPage({ state, actions }: PageProps) {
   const maLegend = useMemo(() => movingAverageLegend(state.bars), [state.bars]);
   const signalRows = useMemo(() => signalPreviewRows(state.signals?.signals ?? []), [state.signals]);
   const researchRows = useMemo(() => researchSignalRows(state.researchSignals), [state.researchSignals]);
+  const chartChanStructure = showChanStructure ? state.researchSignals?.chan_structure ?? null : null;
 
   useEffect(() => {
     let mounted = true;
@@ -219,7 +221,7 @@ export function StrategyPage({ state, actions }: PageProps) {
         </div>
         <ChartPanel
           title="信号标记 · K线视图"
-          option={priceOption(state.bars, showSignals ? state.signals?.signals ?? [] : [])}
+          option={priceOption(state.bars, showSignals ? state.signals?.signals ?? [] : [], chartChanStructure)}
           height={360}
           group={PRICE_VOLUME_GROUP}
           toolbar={
@@ -227,6 +229,15 @@ export function StrategyPage({ state, actions }: PageProps) {
               <label className="chart-check">
                 <input type="checkbox" aria-label="显示信号标记" checked={showSignals} onChange={(event) => setShowSignals(event.currentTarget.checked)} />
                 信号
+              </label>
+              <label className="chart-check">
+                <input
+                  type="checkbox"
+                  aria-label="显示缠论结构"
+                  checked={showChanStructure}
+                  onChange={(event) => setShowChanStructure(event.currentTarget.checked)}
+                />
+                缠论结构
               </label>
               <span className="legend-chip">
                 <strong>MA20</strong> {maLegend.ma20}
@@ -239,6 +250,7 @@ export function StrategyPage({ state, actions }: PageProps) {
                 className="icon-button"
                 onClick={() => {
                   setShowSignals(true);
+                  setShowChanStructure(true);
                   setChartExpanded(false);
                 }}
               >
@@ -337,6 +349,7 @@ function ResearchSignalPanel({ preview, rows }: { preview: ResearchSignalPreview
     );
   }
 
+  const chanStructure = preview.chan_structure;
   return (
     <section className="panel research-signal-panel">
       <div className="panel-title between">
@@ -359,6 +372,17 @@ function ResearchSignalPanel({ preview, rows }: { preview: ResearchSignalPreview
         </div>
       ) : null}
       <p className="caption">{preview.score.summary}</p>
+      {chanStructure ? (
+        <div className="structure-summary" aria-label="缠论结构摘要">
+          <span className="legend-chip">
+            <strong>缠论结构</strong>
+          </span>
+          <span className="legend-chip">分型 {chanStructure.fractal_count}</span>
+          <span className="legend-chip">笔 {chanStructure.stroke_count}</span>
+          <span className="legend-chip">中枢 {chanStructure.pivot_count}</span>
+          {chanStructure.latest_signal_title ? <span className="legend-chip">{chanStructure.latest_signal_title}</span> : null}
+        </div>
+      ) : null}
       <DataTable rows={rows} columns={["日期", "类型", "方向", "价格", "分数", "原因"]} emptyText="暂无缠论/RSI触发信号" />
     </section>
   );

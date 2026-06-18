@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 
 from ai_trade_system.market import Bar
 from ai_trade_system.research.chan import scan_chan_patterns
+from ai_trade_system.research.chan_structure import ChanStructureResult, scan_chan_structure
 from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.research.enhanced_rsi import scan_enhanced_rsi
-from ai_trade_system.research.models import ResearchSignal, ResearchSignalBlocker, ResearchSignalPreview, ResearchSignalScore
+from ai_trade_system.research.models import (
+    ChanFractalOverlay,
+    ChanPivotOverlay,
+    ChanStrokeOverlay,
+    ChanStructureOverlay,
+    ResearchSignal,
+    ResearchSignalBlocker,
+    ResearchSignalPreview,
+    ResearchSignalScore,
+)
 
 
 def preview_research_signals(bars: Sequence[Bar], *, min_bars: int = 60, lookback: int = 120) -> ResearchSignalPreview:
@@ -26,10 +37,12 @@ def preview_research_signals(bars: Sequence[Bar], *, min_bars: int = 60, lookbac
             signals=[],
             score=ResearchSignalScore(0.0, "neutral", 0.0, 0.0, 0.0, "K线数量不足，暂不生成缠论和增强 RSI 信号"),
             blockers=[ResearchSignalBlocker("INSUFFICIENT_BARS", f"至少需要 {min_bars} 根K线，当前 {len(frame)} 根")],
+            chan_structure=_empty_chan_structure_overlay(),
         )
 
     chan = scan_chan_patterns(frame, lookback=lookback)
     rsi = scan_enhanced_rsi(frame, lookback=lookback)
+    chan_structure = scan_chan_structure(frame, min_stroke_bars=5, min_rebound_pct=0.03, lookback=lookback)
     signals = sorted([*chan.signals, *rsi.signals], key=lambda signal: (signal.trading_day, signal.kind))
     return ResearchSignalPreview(
         symbol=symbol,
@@ -40,6 +53,7 @@ def preview_research_signals(bars: Sequence[Bar], *, min_bars: int = 60, lookbac
         signals=signals,
         score=_score(chan.chan_score, rsi.rsi_score, signals),
         blockers=[],
+        chan_structure=_chan_structure_overlay(chan_structure),
     )
 
 
@@ -53,6 +67,7 @@ def _empty_preview(code: str, message: str) -> ResearchSignalPreview:
         signals=[],
         score=ResearchSignalScore(0.0, "neutral", 0.0, 0.0, 0.0, message),
         blockers=[ResearchSignalBlocker(code, message)],
+        chan_structure=_empty_chan_structure_overlay(),
     )
 
 
@@ -70,3 +85,69 @@ def _score(chan_score: float, rsi_score: float, signals: list[ResearchSignal]) -
     else:
         summary = f"发现 {len(signals)} 个研究信号，综合方向为 {direction}"
     return ResearchSignalScore(total, direction, confidence, round(chan_score, 2), round(rsi_score, 2), summary)
+
+
+def _empty_chan_structure_overlay() -> ChanStructureOverlay:
+    return ChanStructureOverlay(
+        fractal_count=0,
+        stroke_count=0,
+        pivot_count=0,
+        latest_signal_kind=None,
+        latest_signal_title=None,
+    )
+
+
+def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay:
+    latest_signal = result.signals[-1] if result.signals else None
+    days_by_index = {kline.index: kline.trading_day for kline in result.klines}
+    return ChanStructureOverlay(
+        fractal_count=len(result.fractals),
+        stroke_count=len(result.strokes),
+        pivot_count=len(result.pivots),
+        latest_signal_kind=latest_signal.kind if latest_signal else None,
+        latest_signal_title=latest_signal.title if latest_signal else None,
+        fractals=[
+            ChanFractalOverlay(
+                index=fractal.index,
+                trading_day=fractal.trading_day,
+                kind=fractal.kind,
+                price=fractal.price,
+                high=fractal.high,
+                low=fractal.low,
+            )
+            for fractal in result.fractals
+        ],
+        strokes=[
+            ChanStrokeOverlay(
+                direction=stroke.direction,
+                start_index=stroke.start.index,
+                end_index=stroke.end.index,
+                start_day=stroke.start.trading_day,
+                end_day=stroke.end.trading_day,
+                start_price=stroke.start.price,
+                end_price=stroke.end.price,
+                high=stroke.high,
+                low=stroke.low,
+            )
+            for stroke in result.strokes
+        ],
+        pivots=[
+            ChanPivotOverlay(
+                start_index=pivot.start_index,
+                end_index=pivot.end_index,
+                start_day=_chan_index_day(days_by_index, pivot.start_index),
+                end_day=_chan_index_day(days_by_index, pivot.end_index),
+                low=pivot.low,
+                high=pivot.high,
+            )
+            for pivot in result.pivots
+        ],
+        signals=result.signals,
+    )
+
+
+def _chan_index_day(days_by_index: dict[int, date], index: int) -> date:
+    if index in days_by_index:
+        return days_by_index[index]
+    closest_index = min(days_by_index, key=lambda value: abs(value - index))
+    return days_by_index[closest_index]

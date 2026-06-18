@@ -1,5 +1,5 @@
 import { drawdownOption, priceOption, volumeOption } from "./chartOptions";
-import type { BacktestResponse, Bar, SignalRow } from "../types";
+import type { BacktestResponse, Bar, ResearchSignalChanStructure, SignalRow } from "../types";
 
 const bars: Bar[] = [
   {
@@ -104,6 +104,60 @@ test("priceOption renders buy and sell markers with tooltip detail payloads", ()
     volume: 100
   });
   expect(typeof buySeries.data[0].tooltip).toBe("object");
+});
+
+test("priceOption renders Chan structure overlay series", () => {
+  const chanStructure = {
+    fractal_count: 2,
+    stroke_count: 1,
+    pivot_count: 1,
+    latest_signal_kind: "CHAN_STRUCT_BUY_T3",
+    latest_signal_title: "缠论三买",
+    fractals: [
+      { index: 0, trading_day: "2024-01-02", kind: "bottom", price: 9.8, high: 11.2, low: 9.8 },
+      { index: 1, trading_day: "2024-01-03", kind: "top", price: 11.1, high: 11.1, low: 10.2 }
+    ],
+    strokes: [
+      {
+        direction: "up",
+        start_index: 0,
+        end_index: 1,
+        start_day: "2024-01-02",
+        end_day: "2024-01-03",
+        start_price: 9.8,
+        end_price: 11.1,
+        high: 11.1,
+        low: 9.8
+      }
+    ],
+    pivots: [{ start_index: 0, end_index: 1, start_day: "2024-01-02", end_day: "2024-01-03", low: 10.1, high: 10.8 }],
+    signals: [
+      {
+        trading_day: "2024-01-03",
+        symbol: "000001",
+        exchange: "SZSE",
+        kind: "CHAN_STRUCT_BUY_T3",
+        action: "buy",
+        price: 10.8,
+        strength: 0.78,
+        score: 44,
+        title: "缠论三买",
+        reason: "向上离开中枢后的回抽未跌回中枢上沿",
+        tags: ["chan", "structure"]
+      }
+    ]
+  } as unknown as ResearchSignalChanStructure;
+
+  const option = (priceOption as (inputBars: Bar[], inputSignals: SignalRow[], structure: ResearchSignalChanStructure) => ReturnType<typeof priceOption>)(
+    bars,
+    [],
+    chanStructure
+  );
+  const series = option.series as Array<Record<string, unknown>>;
+  const pivotSeries = series.find((item) => item.name === "缠论中枢") as { markArea?: { data: unknown[] } };
+
+  expect(series.map((item) => item.name)).toEqual(expect.arrayContaining(["顶分型", "底分型", "缠论笔", "缠论中枢", "结构买点"]));
+  expect(pivotSeries.markArea?.data).toHaveLength(1);
 });
 
 test("volumeOption renders visible volume bars from zero baseline", () => {

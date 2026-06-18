@@ -190,3 +190,50 @@ def test_preview_combines_chan_and_rsi_scores_for_valid_bars():
     assert preview.blockers == []
     assert preview.score.direction in {"bullish", "bearish", "neutral"}
     assert preview.signals
+
+
+def test_preview_includes_chan_structure_overlay_payload():
+    price_ranges = [
+        (11.0, 10.0),
+        (9.5, 9.0),
+        (10.0, 9.5),
+        (10.5, 10.0),
+        (11.0, 10.5),
+        (11.5, 11.0),
+        (12.0, 11.5),
+        (13.0, 12.0),
+        (12.4, 11.6),
+        (12.0, 11.2),
+        (11.6, 10.8),
+        (11.2, 10.4),
+        (10.8, 10.2),
+        (10.5, 10.0),
+        (11.0, 10.4),
+        (11.6, 11.0),
+        (12.2, 11.6),
+        (12.8, 12.2),
+        (13.3, 12.7),
+        (14.0, 13.0),
+        (13.5, 12.8),
+        (13.2, 12.6),
+        (12.9, 12.4),
+        (12.7, 12.2),
+        (12.6, 12.1),
+        (12.5, 12.0),
+        (13.4, 12.8),
+        (13.8, 13.1),
+        (14.1, 13.4),
+        (14.5, 13.8),
+    ]
+    bars = [_bar(index, (high + low) / 2, high=high, low=low) for index, (high, low) in enumerate(price_ranges)]
+
+    preview = preview_research_signals(bars, min_bars=12, lookback=120)
+
+    assert preview.chan_structure is not None
+    assert preview.chan_structure.fractal_count > 0
+    assert preview.chan_structure.stroke_count > 0
+    assert preview.chan_structure.pivot_count > 0
+    assert preview.chan_structure.fractals[0].kind in {"top", "bottom"}
+    assert preview.chan_structure.strokes[0].start_day is not None
+    assert preview.chan_structure.pivots[0].start_day is not None
+    assert any(signal.kind.startswith("CHAN_STRUCT_") for signal in preview.chan_structure.signals)

@@ -104,12 +104,46 @@ export type ResearchSignalMomentum = {
   latest_reason: string;
 };
 
+export type ChanFractalOverlay = {
+  index: number;
+  trading_day: string;
+  kind: "top" | "bottom" | string;
+  price: number;
+  high: number;
+  low: number;
+};
+
+export type ChanStrokeOverlay = {
+  direction: "up" | "down" | string;
+  start_index: number;
+  end_index: number;
+  start_day: string;
+  end_day: string;
+  start_price: number;
+  end_price: number;
+  high: number;
+  low: number;
+};
+
+export type ChanPivotOverlay = {
+  start_index: number;
+  end_index: number;
+  start_day: string;
+  end_day: string;
+  low: number;
+  high: number;
+};
+
 export type ResearchSignalChanStructure = {
   fractal_count: number;
   stroke_count: number;
   pivot_count: number;
   latest_signal_kind: string | null;
   latest_signal_title: string | null;
+  fractals?: ChanFractalOverlay[];
+  strokes?: ChanStrokeOverlay[];
+  pivots?: ChanPivotOverlay[];
+  signals?: ResearchSignal[];
 };
 
 export type ResearchSignalPreview = {
@@ -122,6 +156,7 @@ export type ResearchSignalPreview = {
   score: ResearchSignalScore;
   blockers: ResearchSignalBlocker[];
   momentum?: ResearchSignalMomentum | null;
+  chan_structure?: ResearchSignalChanStructure | null;
 };
 
 export type ResearchSignalBatchScoreMode = "research" | "volume_momentum" | "chan_structure";

@@ -294,13 +294,59 @@ test("StrategyPage renders research blockers and populated signal rows", () => {
               reason: "回落低点抬高后向上修复",
               tags: ["chan", "second-buy"]
             }
-          ]
-        }
+          ],
+          chan_structure: {
+            fractal_count: 5,
+            stroke_count: 4,
+            pivot_count: 2,
+            latest_signal_kind: "CHAN_STRUCT_BUY_T3",
+            latest_signal_title: "缠论三买",
+            fractals: [
+              { index: 1, trading_day: "2024-02-01", kind: "bottom", price: 9.8, high: 10.2, low: 9.8 },
+              { index: 7, trading_day: "2024-02-07", kind: "top", price: 12.8, high: 12.8, low: 12.1 }
+            ],
+            strokes: [
+              {
+                direction: "up",
+                start_index: 1,
+                end_index: 7,
+                start_day: "2024-02-01",
+                end_day: "2024-02-07",
+                start_price: 9.8,
+                end_price: 12.8,
+                high: 12.8,
+                low: 9.8
+              }
+            ],
+            pivots: [{ start_index: 1, end_index: 19, start_day: "2024-02-01", end_day: "2024-02-19", low: 10.2, high: 12.4 }],
+            signals: [
+              {
+                trading_day: "2024-03-29",
+                symbol: "000001",
+                exchange: "SZSE",
+                kind: "CHAN_STRUCT_BUY_T3",
+                action: "buy",
+                price: 12.4,
+                strength: 0.78,
+                score: 44,
+                title: "缠论三买",
+                reason: "向上离开中枢后的回抽未跌回中枢上沿",
+                tags: ["chan", "structure"]
+              }
+            ]
+          }
+        } as any
       })}
     />
   );
 
+  expect(screen.getByLabelText("显示缠论结构")).toBeChecked();
   expect(screen.getAllByText("缠论/RSI研判").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("缠论结构").length).toBeGreaterThan(1);
+  expect(screen.getByText("分型 5")).toBeInTheDocument();
+  expect(screen.getByText("笔 4")).toBeInTheDocument();
+  expect(screen.getByText("中枢 2")).toBeInTheDocument();
+  expect(screen.getByText("缠论三买")).toBeInTheDocument();
   expect(screen.getByText("CHAN_BUY_T2")).toBeInTheDocument();
   expect(screen.getByText("回落低点抬高后向上修复")).toBeInTheDocument();
 });
