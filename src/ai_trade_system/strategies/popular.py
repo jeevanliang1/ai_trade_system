@@ -10,6 +10,21 @@ from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.strategy import Strategy
 
 
+CHAN_CONFIRMATION_SIGNAL_KINDS = {
+    "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+    "CHAN_STRUCT_SELL_T1_DIVERGENCE",
+    "CHAN_STRUCT_BUY_CONFIRM",
+    "CHAN_STRUCT_SELL_CONFIRM",
+}
+CHAN_STRUCTURE_SIGNAL_KINDS = {
+    "CHAN_STRUCT_BUY_T2",
+    "CHAN_STRUCT_SELL_T2",
+    "CHAN_STRUCT_BUY_T3",
+    "CHAN_STRUCT_SELL_T3",
+}
+CHAN_SIGNAL_MODES = {"confirmation", "structure", "all"}
+
+
 class RsiMeanReversionStrategy(Strategy):
     def __init__(
         self,
@@ -215,6 +230,7 @@ class ChanStructureStrategy(Strategy):
         min_stroke_bars: int = 5,
         min_rebound_pct: float = 0.03,
         min_signal_score: float = 30.0,
+        signal_mode: str = "all",
         trade_size: int = 100,
     ) -> None:
         if min_bars < 3:
@@ -227,6 +243,8 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("min_rebound_pct must be non-negative")
         if min_signal_score < 0:
             raise ValueError("min_signal_score must be non-negative")
+        if signal_mode not in CHAN_SIGNAL_MODES:
+            raise ValueError("signal_mode must be one of: all, confirmation, structure")
         if trade_size <= 0:
             raise ValueError("trade_size must be positive")
         self.symbol = symbol
@@ -235,6 +253,7 @@ class ChanStructureStrategy(Strategy):
         self.min_stroke_bars = min_stroke_bars
         self.min_rebound_pct = min_rebound_pct
         self.min_signal_score = min_signal_score
+        self.signal_mode = signal_mode
         self.trade_size = trade_size
         self.bars: deque[Bar] = deque(maxlen=lookback)
         self.in_position = False
@@ -256,7 +275,9 @@ class ChanStructureStrategy(Strategy):
         candidates = [
             signal
             for signal in result.signals
-            if signal.trading_day == bar.trading_day and abs(signal.score) >= self.min_signal_score
+            if signal.trading_day == bar.trading_day
+            and abs(signal.score) >= self.min_signal_score
+            and self._signal_mode_allows(signal.kind)
         ]
         candidates.sort(key=lambda signal: abs(signal.score), reverse=True)
         for signal in candidates:
@@ -272,6 +293,13 @@ class ChanStructureStrategy(Strategy):
                 self.in_position = False
                 return [Signal("sell", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
         return []
+
+    def _signal_mode_allows(self, kind: str) -> bool:
+        if self.signal_mode == "all":
+            return True
+        if self.signal_mode == "confirmation":
+            return kind in CHAN_CONFIRMATION_SIGNAL_KINDS
+        return kind in CHAN_STRUCTURE_SIGNAL_KINDS
 
 
 class VolumeConfirmedMomentumStrategy(Strategy):

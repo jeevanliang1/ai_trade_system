@@ -96,6 +96,25 @@ def make_deep_chan_bars() -> list[Bar]:
     return bars
 
 
+def make_low_confidence_t2_chan_bars() -> list[Bar]:
+    return [
+        make_chan_bar(0, 12.0, 12.4, 11.6),
+        make_chan_bar(1, 11.4, 11.8, 11.0),
+        make_chan_bar(2, 10.8, 11.2, 10.4),
+        make_chan_bar(3, 10.1, 10.5, 9.7),
+        make_chan_bar(4, 9.8, 10.2, 9.4),
+        make_chan_bar(5, 10.4, 10.8, 10.0),
+        make_chan_bar(6, 11.1, 11.5, 10.7),
+        make_chan_bar(7, 11.6, 12.0, 11.2),
+        make_chan_bar(8, 10.9, 11.3, 10.5),
+        make_chan_bar(9, 10.4, 10.8, 10.0),
+        make_chan_bar(10, 10.8, 11.2, 10.4),
+        make_chan_bar(11, 11.5, 11.9, 11.1),
+        make_chan_bar(12, 12.0, 12.4, 11.6),
+        make_chan_bar(13, 12.4, 12.8, 12.0),
+    ]
+
+
 def collect_volume_momentum_signals(closes: list[float], volumes: list[float], **kwargs):
     strategy = VolumeConfirmedMomentumStrategy("000001", trade_size=100, **kwargs)
     return [
@@ -188,6 +207,7 @@ def test_chan_structure_strategy_emits_buy_from_structural_buy_signal():
         min_stroke_bars=2,
         min_rebound_pct=0.03,
         min_signal_score=40,
+        signal_mode="structure",
         trade_size=100,
     )
     bars = [
@@ -220,6 +240,7 @@ def test_chan_structure_strategy_emits_sell_after_structural_sell_signal():
         min_stroke_bars=2,
         min_rebound_pct=0.03,
         min_signal_score=40,
+        signal_mode="structure",
         trade_size=100,
     )
     strategy.in_position = True
@@ -262,22 +283,7 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
 
 
 def test_chan_structure_strategy_default_filters_low_confidence_structure_signals():
-    bars = [
-        make_chan_bar(0, 12.0, 12.4, 11.6),
-        make_chan_bar(1, 11.4, 11.8, 11.0),
-        make_chan_bar(2, 10.8, 11.2, 10.4),
-        make_chan_bar(3, 10.1, 10.5, 9.7),
-        make_chan_bar(4, 9.8, 10.2, 9.4),
-        make_chan_bar(5, 10.4, 10.8, 10.0),
-        make_chan_bar(6, 11.1, 11.5, 10.7),
-        make_chan_bar(7, 11.6, 12.0, 11.2),
-        make_chan_bar(8, 10.9, 11.3, 10.5),
-        make_chan_bar(9, 10.4, 10.8, 10.0),
-        make_chan_bar(10, 10.8, 11.2, 10.4),
-        make_chan_bar(11, 11.5, 11.9, 11.1),
-        make_chan_bar(12, 12.0, 12.4, 11.6),
-        make_chan_bar(13, 12.4, 12.8, 12.0),
-    ]
+    bars = make_low_confidence_t2_chan_bars()
     tuned_default = ChanStructureStrategy("000001", min_bars=12, lookback=40, min_stroke_bars=2, min_rebound_pct=0.03)
     lower_threshold = ChanStructureStrategy(
         "000001",
@@ -286,15 +292,99 @@ def test_chan_structure_strategy_default_filters_low_confidence_structure_signal
         min_stroke_bars=2,
         min_rebound_pct=0.03,
         min_signal_score=24.0,
+        signal_mode="structure",
     )
 
     tuned_signals = [signal for bar in bars for signal in tuned_default.on_bar(bar)]
     lower_threshold_signals = [signal for bar in bars for signal in lower_threshold.on_bar(bar)]
 
     assert tuned_default.min_signal_score == 30.0
+    assert tuned_default.signal_mode == "all"
     assert tuned_signals == []
     assert [signal.action for signal in lower_threshold_signals] == ["buy"]
     assert lower_threshold_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T2")
+
+
+def test_chan_structure_strategy_signal_mode_filters_structure_family():
+    bars = make_low_confidence_t2_chan_bars()
+    confirmation = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=40,
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+        min_signal_score=24.0,
+        signal_mode="confirmation",
+    )
+    structure = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=40,
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+        min_signal_score=24.0,
+        signal_mode="structure",
+    )
+    exploratory = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=40,
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+        min_signal_score=24.0,
+        signal_mode="all",
+    )
+
+    confirmation_signals = [signal for bar in bars for signal in confirmation.on_bar(bar)]
+    structure_signals = [signal for bar in bars for signal in structure.on_bar(bar)]
+    all_signals = [signal for bar in bars for signal in exploratory.on_bar(bar)]
+
+    assert confirmation_signals == []
+    assert [signal.action for signal in structure_signals] == ["buy"]
+    assert structure_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T2")
+    assert [signal.action for signal in all_signals] == ["buy"]
+    assert all_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T2")
+
+
+def test_chan_structure_strategy_signal_mode_filters_confirmation_family():
+    confirmation = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=240,
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+        min_signal_score=50,
+        trade_size=100,
+        signal_mode="confirmation",
+    )
+    structure = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=240,
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+        min_signal_score=50,
+        trade_size=100,
+        signal_mode="structure",
+    )
+    confirmation.in_position = True
+    structure.in_position = True
+
+    confirmation_signals = [signal for bar in make_deep_chan_bars() for signal in confirmation.on_bar(bar)]
+    structure_signals = [signal for bar in make_deep_chan_bars() for signal in structure.on_bar(bar)]
+
+    assert confirmation_signals[0].action == "sell"
+    assert confirmation_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_CONFIRM")
+    assert structure_signals == []
+
+
+def test_chan_structure_strategy_rejects_unknown_signal_mode():
+    try:
+        ChanStructureStrategy("000001", signal_mode="unknown")
+    except ValueError as exc:
+        assert "signal_mode" in str(exc)
+    else:
+        raise AssertionError("unsupported signal_mode should raise ValueError")
 
 
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():
