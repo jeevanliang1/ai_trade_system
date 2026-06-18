@@ -58,6 +58,11 @@ class ApiInputError(ValueError):
 
 
 AI_WEIGHT_DELTA = 0.05
+VOLUME_MOMENTUM_MOMENTUM_WINDOW = 20
+VOLUME_MOMENTUM_MIN_MOMENTUM_PCT = 0.08
+VOLUME_MOMENTUM_VOLUME_WINDOW = 20
+VOLUME_MOMENTUM_VOLUME_MULTIPLIER = 1.5
+VOLUME_MOMENTUM_TREND_WINDOW = 60
 
 
 def default_settings(today: date | None = None) -> PlatformSettings:
@@ -253,7 +258,7 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
 
     rows: list[dict[str, Any]] = []
     for index, stock in enumerate(candidates):
-        csv_path = Path("data") / f"{stock.code}_daily.csv"
+        csv_path = _batch_stock_csv_path(stock, request.settings)
         safe_csv_path = _safe_data_path(csv_path)
         base_row = {
             "code": stock.code,
@@ -270,6 +275,7 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
                     "score": None,
                     "latest_signal": None,
                     "preview": None,
+                    "momentum": None,
                     "blockers": [{"code": "MISSING_CSV", "message": f"未找到本地行情 CSV：{csv_path.as_posix()}"}],
                     "_order": index,
                 }
@@ -277,7 +283,12 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
             continue
 
         settings = request.settings.model_copy(update={"symbol": stock.code, "exchange": stock.exchange, "csv_path": csv_path.as_posix()})
-        preview = build_research_signal_preview(_load_bars(settings), min_bars=request.min_bars, lookback=request.lookback)
+        bars = _load_bars(settings)
+        if request.score_mode == "volume_momentum":
+            rows.append(_volume_momentum_batch_row(base_row, bars, request, index))
+            continue
+
+        preview = build_research_signal_preview(bars, min_bars=request.min_bars, lookback=request.lookback)
         serialized_preview = _serialize(preview)
         rows.append(
             {
@@ -286,12 +297,16 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
                 "score": serialized_preview["score"],
                 "latest_signal": serialized_preview["signals"][-1] if serialized_preview["signals"] else None,
                 "preview": serialized_preview,
+                "momentum": None,
                 "blockers": serialized_preview["blockers"],
                 "_order": index,
             }
         )
 
-    rows.sort(key=lambda row: (0 if row["status"] == "scanned" else 1, -abs((row["score"] or {}).get("total_score", 0)), row["_order"]))
+    if request.score_mode == "volume_momentum":
+        rows.sort(key=lambda row: (0 if row["status"] == "scanned" else 1, -((row["score"] or {}).get("total_score", 0)), row["_order"]))
+    else:
+        rows.sort(key=lambda row: (0 if row["status"] == "scanned" else 1, -abs((row["score"] or {}).get("total_score", 0)), row["_order"]))
     for rank, row in enumerate(rows, start=1):
         row["rank"] = rank
         row.pop("_order", None)
@@ -301,6 +316,7 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
     return {
         "query": request.query,
         "universe": request.universe,
+        "score_mode": request.score_mode,
         "scanned": len(rows),
         "available": available,
         "missing": missing,
@@ -315,11 +331,131 @@ def _research_batch_candidates(request: ResearchSignalBatchRequest) -> list[Stoc
     catalog = load_stock_catalog()
     candidates = search_stock_catalog(catalog, request.query, request.limit)
     if request.universe == "local_csv":
-        candidates = [stock for stock in candidates if _safe_data_path(Path("data") / f"{stock.code}_daily.csv").exists()]
+        candidates = [stock for stock in candidates if _safe_data_path(_batch_stock_csv_path(stock, request.settings)).exists()]
 
     if not candidates and request.universe == "catalog":
         return [StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)]
     return candidates
+
+
+def _batch_stock_csv_path(stock: StockInfo, settings: PlatformSettings) -> Path:
+    return data_file_for_stock(stock, adjust=settings.adjust).latest_path
+
+
+def _volume_momentum_batch_row(base_row: dict[str, Any], bars: list[Bar], request: ResearchSignalBatchRequest, order: int) -> dict[str, Any]:
+    score, latest_signal, blockers, momentum = _volume_momentum_score(bars, request.min_bars)
+    preview = {
+        "symbol": base_row["code"],
+        "exchange": base_row["exchange"],
+        "bars": len(bars),
+        "score": score,
+        "signals": [latest_signal] if latest_signal else [],
+        "blockers": blockers,
+        "momentum": momentum,
+    }
+    return {
+        **base_row,
+        "status": "scanned",
+        "score": score,
+        "latest_signal": latest_signal,
+        "preview": preview,
+        "momentum": momentum,
+        "blockers": blockers,
+        "_order": order,
+    }
+
+
+def _volume_momentum_score(bars: list[Bar], min_bars: int) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, str]], dict[str, Any]]:
+    latest = bars[-1] if bars else None
+    required_previous = max(VOLUME_MOMENTUM_MOMENTUM_WINDOW, VOLUME_MOMENTUM_VOLUME_WINDOW, VOLUME_MOMENTUM_TREND_WINDOW)
+    required_total = max(min_bars, required_previous + 1)
+    if latest is None or len(bars) < required_total:
+        reason = "insufficient_bars"
+        blockers = [{"code": "INSUFFICIENT_BARS", "message": f"至少需要 {required_total} 根K线，当前 {len(bars)} 根"}]
+        momentum = {
+            "momentum_pct": None,
+            "volume_ratio": None,
+            "trend_pass": False,
+            "entry_ready": False,
+            "latest_reason": reason,
+        }
+        return _volume_momentum_score_payload(0.0, "neutral", 0.0, "量价动量样本不足", momentum), None, blockers, momentum
+
+    previous = bars[:-1]
+    previous_closes = [bar.close_price for bar in previous]
+    previous_volumes = [bar.volume for bar in previous]
+    base_close = previous_closes[-VOLUME_MOMENTUM_MOMENTUM_WINDOW]
+    volume_baseline = sum(previous_volumes[-VOLUME_MOMENTUM_VOLUME_WINDOW:]) / VOLUME_MOMENTUM_VOLUME_WINDOW
+    trend_average = sum(previous_closes[-VOLUME_MOMENTUM_TREND_WINDOW:]) / VOLUME_MOMENTUM_TREND_WINDOW
+
+    momentum_pct = (latest.close_price / base_close - 1) * 100 if base_close > 0 else 0.0
+    volume_ratio = latest.volume / volume_baseline if volume_baseline > 0 else 0.0
+    trend_pass = latest.close_price > trend_average
+    price_pass = momentum_pct >= VOLUME_MOMENTUM_MIN_MOMENTUM_PCT * 100
+    volume_pass = volume_ratio >= VOLUME_MOMENTUM_VOLUME_MULTIPLIER
+    entry_ready = price_pass and volume_pass and trend_pass
+    latest_reason = _volume_momentum_reason(price_pass, volume_pass, trend_pass)
+
+    momentum = {
+        "momentum_pct": round(momentum_pct, 4),
+        "volume_ratio": round(volume_ratio, 4),
+        "trend_pass": trend_pass,
+        "entry_ready": entry_ready,
+        "latest_reason": latest_reason,
+    }
+    momentum_component = max(0.0, min(60.0, momentum_pct * 2.5))
+    volume_component = max(0.0, min(25.0, (volume_ratio - 1) * 20.0))
+    trend_component = 15.0 if trend_pass else 0.0
+    total_score = round(momentum_component + volume_component + trend_component, 2)
+    confidence = round(min(1.0, max(0.0, 0.35 + total_score / 120.0)), 4)
+    if entry_ready:
+        direction = "bullish"
+    elif momentum_pct <= -VOLUME_MOMENTUM_MIN_MOMENTUM_PCT * 100:
+        direction = "bearish"
+    else:
+        direction = "neutral"
+
+    summary = f"动量 {momentum_pct:.2f}%，放量 {volume_ratio:.2f}倍，趋势{'通过' if trend_pass else '未通过'}"
+    score = _volume_momentum_score_payload(total_score, direction, confidence, summary, momentum)
+    latest_signal = None
+    if entry_ready:
+        latest_signal = {
+            "title": "量价动量触发",
+            "kind": "volume_momentum",
+            "symbol": latest.symbol,
+            "exchange": latest.exchange,
+            "action": "buy",
+            "reason": "volume_confirmed_momentum_entry",
+            "trading_day": latest.trading_day,
+            "price": latest.close_price,
+            "strength": confidence,
+            "score": total_score,
+            "tags": ["volume_momentum"],
+        }
+    blockers = [] if entry_ready else [{"code": latest_reason.upper(), "message": summary}]
+    return score, latest_signal, blockers, momentum
+
+
+def _volume_momentum_reason(price_pass: bool, volume_pass: bool, trend_pass: bool) -> str:
+    if price_pass and volume_pass and trend_pass:
+        return "volume_confirmed_momentum_entry"
+    if not price_pass:
+        return "momentum_not_enough"
+    if not volume_pass:
+        return "volume_not_enough"
+    return "trend_filter_failed"
+
+
+def _volume_momentum_score_payload(total_score: float, direction: str, confidence: float, summary: str, momentum: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "total_score": total_score,
+        "direction": direction,
+        "confidence": confidence,
+        "chan_score": 0,
+        "rsi_score": 0,
+        "summary": summary,
+        "momentum": momentum,
+    }
 
 
 def run_paper_request(request: PaperRunRequest) -> dict[str, Any]:

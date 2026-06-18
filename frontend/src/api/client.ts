@@ -7,6 +7,7 @@ import type {
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
+  ResearchSignalBatchScoreMode,
   ResearchSignalBatchResponse,
   ResearchSignalPreview,
   RiskStatus,
@@ -87,12 +88,20 @@ export const api = {
     }),
   batchResearchSignals: (
     settings: PlatformSettings,
-    options: { query: string; limit: number; min_bars: number; lookback: number; universe?: "catalog" | "local_csv" | "current" } = {
+    options: {
+      query: string;
+      limit: number;
+      min_bars: number;
+      lookback: number;
+      universe?: "catalog" | "local_csv" | "current";
+      score_mode?: ResearchSignalBatchScoreMode;
+    } = {
       query: "",
       limit: 20,
       min_bars: 60,
       lookback: 120,
-      universe: "catalog"
+      universe: "catalog",
+      score_mode: "research"
     }
   ) =>
     apiRequest<ResearchSignalBatchResponse>("/api/research/signals/batch", {

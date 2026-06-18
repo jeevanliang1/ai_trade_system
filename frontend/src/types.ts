@@ -92,6 +92,15 @@ export type ResearchSignalScore = {
   chan_score: number;
   rsi_score: number;
   summary: string;
+  momentum?: ResearchSignalMomentum | null;
+};
+
+export type ResearchSignalMomentum = {
+  momentum_pct: number | null;
+  volume_ratio: number | null;
+  trend_pass: boolean;
+  entry_ready: boolean;
+  latest_reason: string;
 };
 
 export type ResearchSignalPreview = {
@@ -103,7 +112,10 @@ export type ResearchSignalPreview = {
   signals: ResearchSignal[];
   score: ResearchSignalScore;
   blockers: ResearchSignalBlocker[];
+  momentum?: ResearchSignalMomentum | null;
 };
+
+export type ResearchSignalBatchScoreMode = "research" | "volume_momentum";
 
 export type ResearchSignalBatchRow = {
   rank: number;
@@ -115,12 +127,14 @@ export type ResearchSignalBatchRow = {
   score: ResearchSignalScore | null;
   latest_signal: ResearchSignal | null;
   preview: ResearchSignalPreview | null;
+  momentum?: ResearchSignalMomentum | null;
   blockers: ResearchSignalBlocker[];
 };
 
 export type ResearchSignalBatchResponse = {
   query: string;
   universe: "catalog" | "local_csv" | "current" | string;
+  score_mode: ResearchSignalBatchScoreMode | string;
   scanned: number;
   available: number;
   missing: number;

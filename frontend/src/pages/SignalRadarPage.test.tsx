@@ -76,6 +76,7 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
 	  vi.mocked(api.batchResearchSignals).mockResolvedValue({
 	    query: "",
 	    universe: "catalog",
+      score_mode: "research",
 	    scanned: 2,
     available: 1,
     missing: 1,
@@ -85,7 +86,7 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
         code: "000001",
         name: "平安银行",
         exchange: "SZSE",
-        csv_path: "data/000001_daily.csv",
+        csv_path: "data/market/a_share/SZSE/000001/000001_SZSE_daily_qfq_latest.csv",
         status: "scanned",
         score: {
           total_score: 32,
@@ -109,6 +110,7 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
           tags: ["chan"]
         },
         preview: null,
+        momentum: null,
         blockers: []
       },
       {
@@ -116,12 +118,13 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
         code: "688981",
         name: "中芯国际",
         exchange: "SSE",
-        csv_path: "data/688981_daily.csv",
+        csv_path: "data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv",
         status: "missing_data",
         score: null,
         latest_signal: null,
         preview: null,
-        blockers: [{ code: "MISSING_CSV", message: "未找到本地行情 CSV：data/688981_daily.csv" }]
+        momentum: null,
+        blockers: [{ code: "MISSING_CSV", message: "未找到本地行情 CSV：data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv" }]
       }
     ]
   });
@@ -130,7 +133,14 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
 
   await user.click(screen.getByRole("button", { name: "批量扫描" }));
 
-  expect(api.batchResearchSignals).toHaveBeenCalledWith(makeProps().state.settings, { query: "", limit: 20, min_bars: 60, lookback: 120, universe: "catalog" });
+  expect(api.batchResearchSignals).toHaveBeenCalledWith(makeProps().state.settings, {
+    query: "",
+    limit: 20,
+    min_bars: 60,
+    lookback: 120,
+    universe: "catalog",
+    score_mode: "research"
+  });
   expect((await screen.findAllByText(/全部目录 · 可扫描 1 \/ 缺数据 1/)).length).toBeGreaterThan(0);
   expect(screen.getByText("平安银行")).toBeVisible();
   expect(screen.getAllByText("看多").length).toBeGreaterThan(0);
@@ -143,6 +153,7 @@ test("SignalRadarPage submits the selected scan universe", async () => {
   vi.mocked(api.batchResearchSignals).mockResolvedValue({
     query: "",
     universe: "local_csv",
+    score_mode: "research",
     scanned: 0,
     available: 0,
     missing: 0,
@@ -163,6 +174,7 @@ test("SignalRadarPage prepares missing-data candidates in shared data settings",
   vi.mocked(api.batchResearchSignals).mockResolvedValue({
     query: "",
     universe: "catalog",
+    score_mode: "research",
     scanned: 1,
     available: 0,
     missing: 1,
@@ -172,12 +184,13 @@ test("SignalRadarPage prepares missing-data candidates in shared data settings",
         code: "688981",
         name: "中芯国际",
         exchange: "SSE",
-        csv_path: "data/688981_daily.csv",
+        csv_path: "data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv",
         status: "missing_data",
         score: null,
         latest_signal: null,
         preview: null,
-        blockers: [{ code: "MISSING_CSV", message: "未找到本地行情 CSV：data/688981_daily.csv" }]
+        momentum: null,
+        blockers: [{ code: "MISSING_CSV", message: "未找到本地行情 CSV：data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv" }]
       }
     ]
   });
@@ -191,7 +204,7 @@ test("SignalRadarPage prepares missing-data candidates in shared data settings",
     expect.objectContaining({
       symbol: "688981",
       exchange: "SSE",
-      csv_path: "data/688981_daily.csv"
+      csv_path: "data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv"
     })
   );
 });
@@ -201,6 +214,7 @@ test("SignalRadarPage keeps scan history and exposes a CSV export link", async (
   vi.mocked(api.batchResearchSignals).mockResolvedValue({
     query: "平安",
     universe: "catalog",
+    score_mode: "research",
     scanned: 1,
     available: 1,
     missing: 0,
@@ -210,7 +224,7 @@ test("SignalRadarPage keeps scan history and exposes a CSV export link", async (
         code: "000001",
         name: "平安银行",
         exchange: "SZSE",
-        csv_path: "data/000001_daily.csv",
+        csv_path: "data/market/a_share/SZSE/000001/000001_SZSE_daily_qfq_latest.csv",
         status: "scanned",
         score: {
           total_score: 32,
@@ -222,6 +236,7 @@ test("SignalRadarPage keeps scan history and exposes a CSV export link", async (
         },
         latest_signal: null,
         preview: null,
+        momentum: null,
         blockers: []
       }
     ]
@@ -238,6 +253,80 @@ test("SignalRadarPage keeps scan history and exposes a CSV export link", async (
   expect(screen.getByText(/候选 1/)).toBeVisible();
   const exportLink = screen.getByRole("link", { name: "导出CSV" });
   expect(exportLink).toHaveAttribute("download", "signal-radar-scan.csv");
-  expect(exportLink.getAttribute("href")).toContain(encodeURIComponent("rank,code,name,exchange,status,total_score,direction,confidence,latest_signal,csv_path"));
-  expect(exportLink.getAttribute("href")).toContain(encodeURIComponent("1,000001,平安银行,SZSE,scanned,32,bullish,0.44,,data/000001_daily.csv"));
+  expect(exportLink.getAttribute("href")).toContain(
+    encodeURIComponent("rank,code,name,exchange,status,total_score,direction,confidence,latest_signal,momentum_pct,volume_ratio,trend_pass,latest_reason,csv_path")
+  );
+  expect(exportLink.getAttribute("href")).toContain(
+    encodeURIComponent("1,000001,平安银行,SZSE,scanned,32,bullish,0.44,,,,,,data/market/a_share/SZSE/000001/000001_SZSE_daily_qfq_latest.csv")
+  );
+});
+
+test("SignalRadarPage submits volume momentum score mode and renders diagnostics", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.batchResearchSignals).mockResolvedValue({
+    query: "",
+    universe: "catalog",
+    score_mode: "volume_momentum",
+    scanned: 1,
+    available: 1,
+    missing: 0,
+    rows: [
+      {
+        rank: 1,
+        code: "688981",
+        name: "中芯国际",
+        exchange: "SSE",
+        csv_path: "data/market/a_share/SSE/688981/688981_SSE_daily_qfq_latest.csv",
+        status: "scanned",
+        score: {
+          total_score: 92,
+          direction: "bullish",
+          confidence: 0.86,
+          chan_score: 0,
+          rsi_score: 0,
+          summary: "动量 18.20%，放量 2.10倍，趋势通过",
+          momentum: {
+            momentum_pct: 18.2,
+            volume_ratio: 2.1,
+            trend_pass: true,
+            entry_ready: true,
+            latest_reason: "volume_confirmed_momentum_entry"
+          }
+        },
+        latest_signal: {
+          trading_day: "2026-06-18",
+          symbol: "688981",
+          exchange: "SSE",
+          kind: "volume_momentum",
+          action: "buy",
+          price: 50.2,
+          strength: 0.86,
+          score: 92,
+          title: "量价动量触发",
+          reason: "volume_confirmed_momentum_entry",
+          tags: ["volume_momentum"]
+        },
+        preview: null,
+        momentum: {
+          momentum_pct: 18.2,
+          volume_ratio: 2.1,
+          trend_pass: true,
+          entry_ready: true,
+          latest_reason: "volume_confirmed_momentum_entry"
+        },
+        blockers: []
+      }
+    ]
+  });
+
+  render(<SignalRadarPage {...makeProps()} />);
+
+  await user.selectOptions(screen.getByLabelText("评分模式"), "volume_momentum");
+  await user.click(screen.getByRole("button", { name: "批量扫描" }));
+
+  expect(api.batchResearchSignals).toHaveBeenCalledWith(makeProps().state.settings, expect.objectContaining({ score_mode: "volume_momentum" }));
+  expect(await screen.findByText("量价动量排行")).toBeVisible();
+  expect(screen.getAllByText(/动量 18.20%/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/放量 2.10倍/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/趋势通过/).length).toBeGreaterThan(0);
 });

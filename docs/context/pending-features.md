@@ -62,6 +62,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Signal Radar scan universe selection is complete for current scope: batch scans accept catalog, local-CSV-only, and current-symbol universes, the API response records the selected universe, and React submits plus displays the active scan range.
 - Signal Radar missing-data handoff is complete for current scope: missing CSV result cards expose a prepare-data action that writes the candidate symbol, exchange, and CSV path into shared Data Center settings for follow-up download/load.
 - Signal Radar scan history and export is complete for current scope: each successful scan records a compact recent-history row, and the current ranked result can be downloaded as CSV from the radar table header.
+- Signal Radar volume-momentum ranking is complete for current scope: batch scans support a `research` / `volume_momentum` scoring mode, use managed A-share CSV paths under `data/market/a_share/{exchange}/{code}/`, render momentum/volume/trend diagnostics, and export the diagnostic fields.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -102,7 +103,7 @@ No current pending items.
 
 ### Strategy Development
 
-- After the volume-confirmed momentum strategy is complete, evaluate whether Signal Radar should rank candidates by the same volume-price momentum semantics or stay on the current Chan/RSI research score.
+- Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
 
@@ -110,7 +111,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Evaluate whether Signal Radar should rank candidates by the same volume-price momentum semantics or stay on the current Chan/RSI research score". The previous engineering-hygiene commit split remains pending, but strategy development is the active user-confirmed direction.
+Start with "Strategy Development - Tune VolumeConfirmedMomentumStrategy thresholds and exit rules against the fixed 中芯国际 and 五粮液 three-year benchmark fixtures". The previous engineering-hygiene commit split remains pending, but strategy development is the active user-confirmed direction.
 
 ## Update Rules
 

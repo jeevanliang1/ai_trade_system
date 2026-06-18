@@ -6,7 +6,7 @@ import { DataTable } from "../components/DataTable";
 import { MetricStrip } from "../components/MetricStrip";
 import { ToolbarButton } from "../components/ToolbarButton";
 import type { PageProps } from "./pageTypes";
-import type { ResearchSignalBatchResponse, ResearchSignalBatchRow } from "../types";
+import type { ResearchSignalBatchResponse, ResearchSignalBatchRow, ResearchSignalBatchScoreMode } from "../types";
 
 const DEFAULT_LIMIT = 20;
 const DEFAULT_MIN_BARS = 60;
@@ -16,6 +16,7 @@ type ScanHistoryEntry = {
   id: number;
   query: string;
   universe: string;
+  scoreMode: string;
   available: number;
   missing: number;
   scanned: number;
@@ -24,6 +25,7 @@ type ScanHistoryEntry = {
 export function SignalRadarPage({ state, actions }: PageProps) {
   const [query, setQuery] = useState("");
   const [universe, setUniverse] = useState<ScanUniverse>("catalog");
+  const [scoreMode, setScoreMode] = useState<ResearchSignalBatchScoreMode>("research");
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [minBars, setMinBars] = useState(DEFAULT_MIN_BARS);
   const [lookback, setLookback] = useState(DEFAULT_LOOKBACK);
@@ -39,7 +41,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
     setBusy(true);
     setError("");
     try {
-      const payload = await api.batchResearchSignals(state.settings, { query: query.trim(), limit, min_bars: minBars, lookback, universe });
+      const payload = await api.batchResearchSignals(state.settings, { query: query.trim(), limit, min_bars: minBars, lookback, universe, score_mode: scoreMode });
       setResult(payload);
       setHistory((items) =>
         [
@@ -47,6 +49,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
             id: Date.now(),
             query: payload.query || "全部候选",
             universe: payload.universe,
+            scoreMode: payload.score_mode,
             available: payload.available,
             missing: payload.missing,
             scanned: payload.scanned
@@ -91,6 +94,13 @@ export function SignalRadarPage({ state, actions }: PageProps) {
           </select>
         </label>
         <label className="field">
+          评分模式
+          <select aria-label="评分模式" value={scoreMode} onChange={(event) => setScoreMode(event.currentTarget.value as ResearchSignalBatchScoreMode)}>
+            <option value="research">Chan/RSI研究分</option>
+            <option value="volume_momentum">量价动量</option>
+          </select>
+        </label>
+        <label className="field">
           扫描数量
           <input aria-label="扫描数量" type="number" min={1} max={50} value={limit} onChange={(event) => setLimit(clampNumber(event.currentTarget.value, 1, 50, DEFAULT_LIMIT))} />
         </label>
@@ -119,7 +129,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
         <ToolbarButton disabled={busy} icon={<Activity size={16} />} variant="primary" onClick={runScan}>
           {busy ? "扫描中..." : "批量扫描"}
         </ToolbarButton>
-        <p className="caption">扫描只读取本地 `data/&lt;代码&gt;_daily.csv`，不会自动联网下载或发出交易指令。</p>
+        <p className="caption">扫描只读取托管本地行情 CSV，不会自动联网下载或发出交易指令。</p>
         {error ? <p className="inline-alert">批量扫描失败：{error}</p> : null}
       </section>
 
@@ -147,7 +157,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
 
         <section className="panel radar-results">
           <div className="panel-title between">
-            <span>研究评分排行</span>
+            <span>{scoreModeTitle(result?.score_mode ?? scoreMode)}排行</span>
             {result ? (
               <a className="toolbar-button ghost compact" href={csvHref} download="signal-radar-scan.csv" aria-label="导出CSV">
                 <Download size={14} />
@@ -166,7 +176,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
                 <div className="history-row" key={item.id}>
                   <strong>{item.query}</strong>
                   <span>
-                    {universeLabel(item.universe)} · 可扫描 {item.available} / 缺数据 {item.missing}
+                    {scoreModeTitle(item.scoreMode)} · {universeLabel(item.universe)} · 可扫描 {item.available} / 缺数据 {item.missing}
                   </span>
                   <small>候选 {item.scanned}</small>
                 </div>
@@ -184,7 +194,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
               ))}
             </div>
           ) : (
-            <div className="empty-table">点击批量扫描后展示本地 CSV 候选的研究信号。</div>
+            <div className="empty-table">点击批量扫描后展示本地托管行情候选的研究信号。</div>
           )}
         </section>
       </main>
@@ -207,6 +217,13 @@ function RadarResultCard({ row, onPrepareData }: { row: ResearchSignalBatchRow; 
         <span>置信 {row.score ? `${Math.round(row.score.confidence * 100)}%` : "-"}</span>
         <span>{row.exchange}</span>
       </div>
+      {row.momentum ? (
+        <div className="radar-score-line">
+          <span>动量 {formatPercent(row.momentum.momentum_pct)}</span>
+          <span>放量 {formatRatio(row.momentum.volume_ratio)}</span>
+          <span>{row.momentum.trend_pass ? "趋势通过" : "趋势未过"}</span>
+        </div>
+      ) : null}
       <p>{row.latest_signal?.title ?? row.blockers[0]?.message ?? row.score?.summary ?? "暂无触发信号"}</p>
       {row.blockers.length ? (
         <div className="radar-blockers">
@@ -225,20 +242,45 @@ function RadarResultCard({ row, onPrepareData }: { row: ResearchSignalBatchRow; 
 }
 
 function radarTableRows(rows: ResearchSignalBatchRow[]): Record<string, unknown>[] {
-  return rows.map((row) => ({
-    排名: row.rank,
-    代码: row.code,
-    名称: row.name,
-    状态: row.status === "scanned" ? "已扫描" : "缺少CSV",
-    方向: directionLabel(row.score?.direction),
-    综合分: row.score?.total_score ?? null,
-    置信度: row.score ? `${Math.round(row.score.confidence * 100)}%` : null,
-    最新信号: row.latest_signal?.title ?? row.blockers[0]?.code ?? "-"
-  }));
+  const showMomentum = rows.some((row) => row.momentum);
+  return rows.map((row) => {
+    const base = {
+      排名: row.rank,
+      代码: row.code,
+      名称: row.name,
+      状态: row.status === "scanned" ? "已扫描" : "缺少CSV",
+      方向: directionLabel(row.score?.direction),
+      综合分: row.score?.total_score ?? null,
+      置信度: row.score ? `${Math.round(row.score.confidence * 100)}%` : null,
+      最新信号: row.latest_signal?.title ?? row.blockers[0]?.code ?? "-"
+    };
+    if (!showMomentum) return base;
+    return {
+      ...base,
+      动量: formatPercent(row.momentum?.momentum_pct),
+      放量: formatRatio(row.momentum?.volume_ratio),
+      趋势: row.momentum ? (row.momentum.trend_pass ? "通过" : "未过") : "-"
+    };
+  });
 }
 
 function radarCsv(result: ResearchSignalBatchResponse): string {
-  const headers = ["rank", "code", "name", "exchange", "status", "total_score", "direction", "confidence", "latest_signal", "csv_path"];
+  const headers = [
+    "rank",
+    "code",
+    "name",
+    "exchange",
+    "status",
+    "total_score",
+    "direction",
+    "confidence",
+    "latest_signal",
+    "momentum_pct",
+    "volume_ratio",
+    "trend_pass",
+    "latest_reason",
+    "csv_path"
+  ];
   const rows = result.rows.map((row) =>
     [
       row.rank,
@@ -250,6 +292,10 @@ function radarCsv(result: ResearchSignalBatchResponse): string {
       row.score?.direction ?? "",
       row.score?.confidence ?? "",
       row.latest_signal?.title ?? "",
+      row.momentum?.momentum_pct ?? "",
+      row.momentum?.volume_ratio ?? "",
+      row.momentum ? row.momentum.trend_pass : "",
+      row.momentum?.latest_reason ?? "",
       row.csv_path
     ]
       .map(csvCell)
@@ -276,8 +322,21 @@ function universeLabel(universe: string): string {
   return "全部目录";
 }
 
+function scoreModeTitle(mode: string | null | undefined): string {
+  if (mode === "volume_momentum") return "量价动量";
+  return "研究评分";
+}
+
 function formatNumber(value: number | null | undefined): string {
   return typeof value === "number" ? value.toFixed(2) : "-";
+}
+
+function formatPercent(value: number | null | undefined): string {
+  return typeof value === "number" ? `${value.toFixed(2)}%` : "-";
+}
+
+function formatRatio(value: number | null | undefined): string {
+  return typeof value === "number" ? `${value.toFixed(2)}倍` : "-";
 }
 
 function clampNumber(raw: string, min: number, max: number, fallback: number): number {

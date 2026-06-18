@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from ai_trade_system.api import service
 from ai_trade_system.api.app import create_app
+from ai_trade_system.data import write_bars_csv
+from ai_trade_system.data_manager import data_file_for_stock
 from ai_trade_system.market import Bar
 from ai_trade_system.stock_catalog import StockInfo, write_stock_catalog
 
@@ -42,7 +44,7 @@ def _settings_payload() -> dict:
     }
 
 
-def _bar(symbol: str, exchange: str, day: date, close: float) -> Bar:
+def _bar(symbol: str, exchange: str, day: date, close: float, volume: float = 1000) -> Bar:
     return Bar(
         symbol=symbol,
         exchange=exchange,
@@ -51,9 +53,28 @@ def _bar(symbol: str, exchange: str, day: date, close: float) -> Bar:
         high_price=close + 0.4,
         low_price=close - 0.5,
         close_price=close,
-        volume=1000,
-        turnover=close * 1000,
+        volume=volume,
+        turnover=close * volume,
     )
+
+
+def _write_managed_bars(stock: StockInfo, closes: list[float], volumes: list[float] | None = None) -> Path:
+    data_file = data_file_for_stock(stock, adjust="qfq")
+    start = date(2026, 1, 1)
+    bar_volumes = volumes or [1000.0] * len(closes)
+    write_bars_csv(
+        [
+            _bar(stock.code, stock.exchange, start + timedelta(days=index), close, bar_volumes[index])
+            for index, close in enumerate(closes)
+        ],
+        data_file.latest_path,
+    )
+    return data_file.latest_path
+
+
+def _momentum_closes(start: float, end: float, count: int = 80) -> list[float]:
+    step = (end - start) / (count - 1)
+    return [round(start + step * index, 2) for index in range(count)]
 
 
 def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch):
@@ -428,18 +449,15 @@ def test_research_signals_preview_route_returns_blocker_for_short_demo_data(tmp_
 def test_research_signals_batch_route_scans_local_csv_catalog(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     data_dir = tmp_path / "data"
+    ping_an = StockInfo("000001", "平安银行", "SZSE")
+    insurer = StockInfo("601318", "中国平安", "SSE")
+    smic = StockInfo("688981", "中芯国际", "SSE")
     write_stock_catalog(
-        [
-            StockInfo("000001", "平安银行", "SZSE"),
-            StockInfo("601318", "中国平安", "SSE"),
-            StockInfo("688981", "中芯国际", "SSE"),
-        ],
+        [ping_an, insurer, smic],
         data_dir / "a_share_stocks.csv",
     )
-    for code, exchange in [("000001", "SZSE"), ("601318", "SSE")]:
-        settings = {**_settings_payload(), "symbol": code, "exchange": exchange, "csv_path": f"data/{code}_daily.csv"}
-        demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
-        assert demo_response.status_code == 200
+    ping_an_path = _write_managed_bars(ping_an, _momentum_closes(10.0, 12.0))
+    insurer_path = _write_managed_bars(insurer, _momentum_closes(20.0, 18.0))
 
     response = client.post(
         "/api/research/signals/batch",
@@ -448,32 +466,32 @@ def test_research_signals_batch_route_scans_local_csv_catalog(tmp_path, monkeypa
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["score_mode"] == "research"
     assert payload["scanned"] == 3
     assert payload["available"] == 2
     assert payload["missing"] == 1
-    assert [row["code"] for row in payload["rows"]] == ["000001", "601318", "688981"]
+    assert {row["code"] for row in payload["rows"][:2]} == {"000001", "601318"}
     assert payload["rows"][0]["status"] == "scanned"
-    assert payload["rows"][0]["preview"]["symbol"] == "000001"
+    assert payload["rows"][0]["csv_path"] in {ping_an_path.as_posix(), insurer_path.as_posix()}
+    assert payload["rows"][0]["preview"]["symbol"] in {"000001", "601318"}
     assert payload["rows"][0]["score"]["direction"] in {"bullish", "bearish", "neutral"}
     assert payload["rows"][2]["status"] == "missing_data"
+    assert payload["rows"][2]["csv_path"] == data_file_for_stock(smic, adjust="qfq").latest_path.as_posix()
     assert payload["rows"][2]["blockers"][0]["code"] == "MISSING_CSV"
 
 
 def test_research_signals_batch_route_can_scan_only_local_csv_universe(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     data_dir = tmp_path / "data"
+    ping_an = StockInfo("000001", "平安银行", "SZSE")
+    insurer = StockInfo("601318", "中国平安", "SSE")
+    smic = StockInfo("688981", "中芯国际", "SSE")
     write_stock_catalog(
-        [
-            StockInfo("000001", "平安银行", "SZSE"),
-            StockInfo("601318", "中国平安", "SSE"),
-            StockInfo("688981", "中芯国际", "SSE"),
-        ],
+        [ping_an, insurer, smic],
         data_dir / "a_share_stocks.csv",
     )
-    for code, exchange in [("000001", "SZSE"), ("601318", "SSE")]:
-        settings = {**_settings_payload(), "symbol": code, "exchange": exchange, "csv_path": f"data/{code}_daily.csv"}
-        demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
-        assert demo_response.status_code == 200
+    ping_an_path = _write_managed_bars(ping_an, _momentum_closes(10.0, 12.0))
+    insurer_path = _write_managed_bars(insurer, _momentum_closes(20.0, 18.0))
 
     response = client.post(
         "/api/research/signals/batch",
@@ -487,6 +505,44 @@ def test_research_signals_batch_route_can_scan_only_local_csv_universe(tmp_path,
     assert payload["available"] == 2
     assert payload["missing"] == 0
     assert {row["code"] for row in payload["rows"]} == {"000001", "601318"}
+    assert {row["csv_path"] for row in payload["rows"]} == {ping_an_path.as_posix(), insurer_path.as_posix()}
+
+
+def test_research_signals_batch_route_ranks_volume_momentum_from_managed_csv(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    data_dir = tmp_path / "data"
+    strong = StockInfo("688981", "中芯国际", "SSE")
+    weak = StockInfo("000858", "五粮液", "SZSE")
+    write_stock_catalog([weak, strong], data_dir / "a_share_stocks.csv")
+    strong_path = _write_managed_bars(strong, _momentum_closes(10.0, 16.0), [1000.0] * 79 + [2600.0])
+    weak_path = _write_managed_bars(weak, _momentum_closes(20.0, 20.8), [1000.0] * 79 + [1050.0])
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "",
+            "limit": 2,
+            "min_bars": 60,
+            "lookback": 80,
+            "universe": "catalog",
+            "score_mode": "volume_momentum",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["score_mode"] == "volume_momentum"
+    assert payload["available"] == 2
+    assert [row["code"] for row in payload["rows"]] == ["688981", "000858"]
+    assert payload["rows"][0]["csv_path"] == strong_path.as_posix()
+    assert payload["rows"][1]["csv_path"] == weak_path.as_posix()
+    assert payload["rows"][0]["score"]["direction"] == "bullish"
+    assert payload["rows"][0]["score"]["total_score"] > payload["rows"][1]["score"]["total_score"]
+    assert payload["rows"][0]["momentum"]["entry_ready"] is True
+    assert payload["rows"][0]["momentum"]["latest_reason"] == "volume_confirmed_momentum_entry"
+    assert payload["rows"][0]["latest_signal"]["title"] == "量价动量触发"
+    assert payload["rows"][1]["momentum"]["entry_ready"] is False
 
 
 def test_research_signals_preview_route_returns_signals_for_demo_data(tmp_path, monkeypatch):
