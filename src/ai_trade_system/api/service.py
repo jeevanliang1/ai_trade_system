@@ -840,7 +840,7 @@ def _serialize(value: Any) -> Any:
         return {key: _serialize(item) for key, item in asdict(value).items()}
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_serialize(item) for item in value]
     if pd.isna(value):
         return None

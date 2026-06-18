@@ -198,6 +198,29 @@ function renderControl(
   const annotation = control.annotation.toLowerCase();
   const error = errors[control.name];
 
+  if (control.options?.length && control.multiple) {
+    const selected = selectedOptions(control, value);
+    return (
+      <div className="field" key={control.name}>
+        <span className="field-label">{label}</span>
+        <div className="multi-option-grid" role="group" aria-label={label}>
+          {control.options.map((option) => (
+            <label className="option-chip" key={option}>
+              <input
+                aria-label={`${label} ${option}`}
+                type="checkbox"
+                checked={selected.includes(option)}
+                onChange={(event) => update(control, nextMultiValue(control, value, option, event.currentTarget.checked))}
+              />
+              <span>{option}</span>
+            </label>
+          ))}
+        </div>
+        {renderGuidance(control)}
+      </div>
+    );
+  }
+
   if (control.options?.length) {
     return (
       <div className="field" key={control.name}>
@@ -257,6 +280,35 @@ function renderControl(
       {renderGuidance(control)}
     </div>
   );
+}
+
+function selectedOptions(control: Control, value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  const raw = String(value || control.default || "").trim();
+  if (!raw) return control.options?.includes("all") ? ["all"] : [];
+  return raw
+    .split(",")
+    .map((option) => option.trim())
+    .filter((option) => option.length > 0);
+}
+
+function nextMultiValue(control: Control, currentValue: unknown, option: string, checked: boolean): string {
+  const options = control.options ?? [];
+  let selected = new Set(selectedOptions(control, currentValue));
+  if (option === "all") {
+    selected = checked ? new Set(["all"]) : new Set(options.includes("all") ? ["all"] : []);
+  } else {
+    selected.delete("all");
+    if (checked) {
+      selected.add(option);
+    } else {
+      selected.delete(option);
+    }
+    if (selected.size === 0 && options.includes("all")) {
+      selected.add("all");
+    }
+  }
+  return options.filter((candidate) => selected.has(candidate)).join(",");
 }
 
 function renderGuidance(control: Control) {

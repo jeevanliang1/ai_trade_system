@@ -130,6 +130,8 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert params["signal_mode"].display_name == "信号模式"
     assert "confirmation" in params["signal_mode"].description
     assert "structure" in params["signal_mode"].description
+    assert params["signal_mode"].options == ("all", "confirmation", "structure")
+    assert params["signal_mode"].multiple is False
     assert "0" in params["max_holding_bars"].description
     assert params["watch_confirm_bars"].display_name == "背驰观察有效期"
     assert "背驰" in params["watch_confirm_bars"].description
@@ -137,9 +139,21 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert "all" in params["allowed_point_types"].description
     assert "first-buy" in params["allowed_point_types"].description
     assert "third-sell" in params["allowed_point_types"].description
+    assert params["allowed_point_types"].options == (
+        "all",
+        "first-buy",
+        "first-sell",
+        "second-buy",
+        "second-sell",
+        "third-buy",
+        "third-sell",
+    )
+    assert params["allowed_point_types"].multiple is True
     assert params["allowed_levels"].display_name == "结构层级过滤"
     assert "segment" in params["allowed_levels"].description
     assert "fractal" in params["allowed_levels"].description
+    assert params["allowed_levels"].options == ("all", "segment", "stroke", "fractal")
+    assert params["allowed_levels"].multiple is True
 
 
 def test_chan_structure_strategy_registry_exposes_tuned_default_score():

@@ -25,6 +25,8 @@ export type StrategyParameter = {
   description?: string;
   increase_effect?: string;
   decrease_effect?: string;
+  options?: string[];
+  multiple?: boolean;
 };
 
 export type StrategySpec = {

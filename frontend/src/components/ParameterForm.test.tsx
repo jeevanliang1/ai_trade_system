@@ -74,6 +74,66 @@ test("groups screenshot strategy controls into collapsible sections", async () =
   expect(changes.at(-1)).toMatchObject({ ma_type: "EMA", ai_score_threshold: 72, ai_enabled: true });
 });
 
+
+test("renders metadata-backed single-select strategy parameters", async () => {
+  const user = userEvent.setup();
+  const changes: Record<string, unknown>[] = [];
+  const parameters: StrategyParameter[] = [
+    {
+      name: "signal_mode",
+      annotation: "str",
+      default: "all",
+      display_name: "信号模式",
+      options: ["all", "confirmation", "structure"]
+    }
+  ];
+
+  render(<ParameterForm parameters={parameters} values={{ signal_mode: "all" }} onChange={(next) => changes.push(next)} />);
+
+  await user.selectOptions(screen.getByLabelText("信号模式"), "confirmation");
+
+  expect(changes.at(-1)).toMatchObject({ signal_mode: "confirmation" });
+});
+
+
+test("renders metadata-backed multi-select strategy parameters as comma strings", async () => {
+  const user = userEvent.setup();
+  const changes: Record<string, unknown>[] = [];
+  const parameters: StrategyParameter[] = [
+    {
+      name: "allowed_point_types",
+      annotation: "str",
+      default: "all",
+      display_name: "买卖点类型过滤",
+      options: ["all", "first-buy", "second-buy", "third-buy"],
+      multiple: true
+    }
+  ];
+
+  render(
+    <ParameterForm
+      parameters={parameters}
+      values={{ allowed_point_types: "all" }}
+      onChange={(next) => changes.push(next)}
+    />
+  );
+
+  await user.click(screen.getByLabelText("买卖点类型过滤 second-buy"));
+  await user.click(screen.getByLabelText("买卖点类型过滤 third-buy"));
+
+  expect(changes.at(-1)).toMatchObject({ allowed_point_types: "second-buy,third-buy" });
+  expect(screen.getByLabelText("买卖点类型过滤 all")).not.toBeChecked();
+  expect(screen.getByLabelText("买卖点类型过滤 second-buy")).toBeChecked();
+  expect(screen.getByLabelText("买卖点类型过滤 third-buy")).toBeChecked();
+
+  await user.click(screen.getByLabelText("买卖点类型过滤 all"));
+
+  expect(changes.at(-1)).toMatchObject({ allowed_point_types: "all" });
+  expect(screen.getByLabelText("买卖点类型过滤 all")).toBeChecked();
+  expect(screen.getByLabelText("买卖点类型过滤 second-buy")).not.toBeChecked();
+  expect(screen.getByLabelText("买卖点类型过滤 third-buy")).not.toBeChecked();
+});
+
 test("renders Chinese parameter guidance and tuning impact", () => {
   const parameters = [
     {

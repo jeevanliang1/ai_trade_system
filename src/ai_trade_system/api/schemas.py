@@ -32,6 +32,8 @@ class StrategyParameterView(BaseModel):
     description: str = ""
     increase_effect: str = ""
     decrease_effect: str = ""
+    options: list[str] = Field(default_factory=list)
+    multiple: bool = False
 
 
 class StrategySpecView(BaseModel):

@@ -1006,6 +1006,37 @@ button {
   padding: 8px;
 }
 
+.field-label {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.multi-option-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.option-chip {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #fff;
+  color: #344054;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+.option-chip input {
+  width: 13px;
+  height: 13px;
+}
+
 .strategy-items {
   display: grid;
   gap: 3px;

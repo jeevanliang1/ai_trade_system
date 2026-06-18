@@ -306,6 +306,32 @@ def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
     assert risk_response.json()["ok"] is False
 
 
+def test_strategies_route_exposes_enum_parameter_options(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.get("/api/strategies")
+
+    assert response.status_code == 200
+    payload = response.json()
+    chan = next(strategy for strategy in payload if strategy["class_name"] == "ChanStructureStrategy")
+    params = {param["name"]: param for param in chan["parameters"]}
+
+    assert params["signal_mode"]["options"] == ["all", "confirmation", "structure"]
+    assert params["signal_mode"]["multiple"] is False
+    assert params["allowed_point_types"]["options"] == [
+        "all",
+        "first-buy",
+        "first-sell",
+        "second-buy",
+        "second-sell",
+        "third-buy",
+        "third-sell",
+    ]
+    assert params["allowed_point_types"]["multiple"] is True
+    assert params["allowed_levels"]["options"] == ["all", "segment", "stroke", "fractal"]
+    assert params["allowed_levels"]["multiple"] is True
+
+
 def test_paper_run_and_events_routes_round_trip_log(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     settings = _settings_payload()
