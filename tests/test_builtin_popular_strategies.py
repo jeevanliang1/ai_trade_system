@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 
 from ai_trade_system.market import Bar
 from ai_trade_system.backtest import run_backtest
 from ai_trade_system.strategies.popular import (
     BollingerMeanReversionStrategy,
+    ChanStructureStrategy,
     ChanRsiResearchStrategy,
     DonchianBreakoutStrategy,
     PriceMomentumStrategy,
@@ -38,6 +39,20 @@ def make_volume_bar(day: int, close: float, volume: float) -> Bar:
         close_price=close,
         volume=volume,
         turnover=close * volume,
+    )
+
+
+def make_chan_bar(index: int, close: float, high: float, low: float) -> Bar:
+    return Bar(
+        symbol="000001",
+        exchange="SZSE",
+        trading_day=date(2024, 1, 1) + timedelta(days=index),
+        open_price=close,
+        high_price=high,
+        low_price=low,
+        close_price=close,
+        volume=1000,
+        turnover=close * 1000,
     )
 
 
@@ -123,6 +138,69 @@ def test_chan_rsi_research_strategy_is_backtestable():
 
     assert len(result.trades) == 1
     assert result.trades[0].side == "buy"
+
+
+def test_chan_structure_strategy_emits_buy_from_structural_buy_signal():
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=8,
+        lookback=40,
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+        min_signal_score=40,
+        trade_size=100,
+    )
+    bars = [
+        make_chan_bar(0, 10.0, 10.4, 9.8),
+        make_chan_bar(1, 9.4, 9.8, 9.1),
+        make_chan_bar(2, 10.4, 10.9, 10.0),
+        make_chan_bar(3, 11.6, 12.0, 11.1),
+        make_chan_bar(4, 10.8, 11.0, 10.2),
+        make_chan_bar(5, 10.1, 10.5, 9.7),
+        make_chan_bar(6, 11.5, 12.0, 11.0),
+        make_chan_bar(7, 12.8, 13.2, 12.2),
+        make_chan_bar(8, 12.6, 12.8, 12.4),
+        make_chan_bar(9, 12.5, 12.6, 12.3),
+        make_chan_bar(10, 12.3, 12.4, 12.1),
+        make_chan_bar(11, 12.8, 13.0, 12.5),
+    ]
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].volume == 100
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T3")
+
+
+def test_chan_structure_strategy_emits_sell_after_structural_sell_signal():
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=8,
+        lookback=40,
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+        min_signal_score=40,
+        trade_size=100,
+    )
+    strategy.in_position = True
+    bars = [
+        make_chan_bar(0, 12.0, 12.4, 11.7),
+        make_chan_bar(1, 12.8, 13.2, 12.2),
+        make_chan_bar(2, 11.8, 12.1, 11.4),
+        make_chan_bar(3, 10.7, 11.1, 10.2),
+        make_chan_bar(4, 11.3, 11.7, 10.9),
+        make_chan_bar(5, 12.0, 12.4, 11.6),
+        make_chan_bar(6, 10.9, 11.3, 10.5),
+        make_chan_bar(7, 9.6, 9.7, 9.4),
+        make_chan_bar(8, 9.7, 9.8, 9.6),
+        make_chan_bar(9, 9.9, 10.0, 9.7),
+        make_chan_bar(10, 9.5, 9.8, 9.1),
+    ]
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_T3")
 
 
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():

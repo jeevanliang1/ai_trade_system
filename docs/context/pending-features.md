@@ -57,6 +57,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Watchlist Data Management is complete for current scope: `data_manager` owns canonical local market-data paths under `data/market/a_share/{exchange}/{code}/`, writes latest CSV plus dated increment CSV snapshots and manifest files, exposes API/CLI batch watchlist updates, and the React stock configuration center shows status plus update controls.
 - Market Analysis Strategy Fusion first slice is complete for current scope: backend `ai_trade_system.research` modules generate lightweight Chan plus enhanced RSI previews, FastAPI exposes `/api/research/signals/preview`, and Strategy Workshop can request and render score, blockers, and signal rows.
 - Market Analysis Strategy Fusion backtest wrapper is complete for current scope: `ChanRsiResearchStrategy` is a built-in `Strategy` that reuses the research preview semantics, appears in strategy discovery, emits backtestable `Signal` objects, and can run through the existing local backtest engine.
+- Chan Structure Strategy first slice is complete for current scope: `research.chan_structure` normalizes contained K-lines, identifies fractals, strokes, simplified pivots, and T2/T3 signals, and `ChanStructureStrategy` exposes those signals as a built-in backtestable strategy with Chinese registry metadata and parameter guidance.
 - One-shot React + FastAPI startup preflight is complete for current scope: `scripts/run_all.sh` checks Python/API dependencies, Node/npm/frontend dependencies, installs missing frontend packages, validates ports, reports clear `原因/建议` failures, and `scripts/run_app.sh` remains a compatibility wrapper.
 - Signal Radar first slice is complete for current scope: FastAPI exposes `/api/research/signals/batch`, batch scanning ranks local CSV-backed catalog candidates with Chan/RSI research scores, marks missing CSV blockers, and React adds a dedicated `信号雷达` workspace with scan controls, summary metrics, score table, and detail cards.
 - Signal Radar scan universe selection is complete for current scope: batch scans accept catalog, local-CSV-only, and current-symbol universes, the API response records the selected universe, and React submits plus displays the active scan range.
@@ -103,6 +104,7 @@ No current pending items.
 
 ### Strategy Development
 
+- Add Chan structure visualization or Signal Radar scoring-mode integration so `ChanStructureStrategy` can be inspected beyond single-strategy backtests.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
@@ -111,7 +113,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Tune VolumeConfirmedMomentumStrategy thresholds and exit rules against the fixed 中芯国际 and 五粮液 three-year benchmark fixtures". The previous engineering-hygiene commit split remains pending, but strategy development is the active user-confirmed direction.
+Start with "Strategy Development - Add Chan structure visualization or Signal Radar scoring-mode integration so ChanStructureStrategy can be inspected beyond single-strategy backtests". The previous engineering-hygiene commit split and volume-momentum tuning remain pending, but the active user-confirmed direction is continuing strategy implementation rather than tuning.
 
 ## Update Rules
 

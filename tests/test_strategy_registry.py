@@ -114,6 +114,21 @@ def test_volume_confirmed_momentum_strategy_metadata_and_parameter_guidance():
     assert "持仓" in params["max_holding_bars"].description
 
 
+def test_chan_structure_strategy_metadata_and_parameter_guidance():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    spec = next(item for item in specs if item.name == "ChanStructureStrategy")
+
+    assert spec.display_name == "缠论结构策略"
+    assert "分型" in spec.description
+    assert "中枢" in spec.description
+
+    params = {param.name: param for param in inspect_strategy_parameters(spec)}
+    assert params["min_stroke_bars"].display_name == "成笔最小间隔"
+    assert "分型" in params["min_stroke_bars"].description
+    assert "反弹" in params["min_rebound_pct"].description
+    assert "交易更少" in params["min_signal_score"].increase_effect
+
+
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):
     path = save_strategy_source(tmp_path, "../bad name", create_strategy_template("ExampleStrategy"))
 

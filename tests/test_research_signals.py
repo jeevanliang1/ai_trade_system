@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from ai_trade_system.market import Bar
 from ai_trade_system.research.chan import scan_chan_patterns
+from ai_trade_system.research.chan_structure import normalize_containment, scan_chan_structure
 from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.research.enhanced_rsi import relative_strength_index, scan_enhanced_rsi
 from ai_trade_system.research.service import preview_research_signals
@@ -94,6 +95,80 @@ def test_chan_scanner_marks_second_sell_after_lower_high_breakdown():
 
     assert any(signal.kind == "CHAN_SELL_T2" for signal in result.signals)
     assert result.chan_score < 0
+
+
+def test_chan_structure_normalizes_contained_klines():
+    bars = [
+        _bar(0, 10.0, high=10.0, low=9.0),
+        _bar(1, 10.4, high=11.0, low=10.0),
+        _bar(2, 10.5, high=10.8, low=10.2),
+        _bar(3, 11.0, high=12.0, low=10.8),
+    ]
+
+    normalized = normalize_containment(bars_to_frame(bars))
+
+    assert len(normalized) == 3
+    assert normalized[1].high == 11.0
+    assert normalized[1].low == 10.2
+
+
+def test_chan_structure_builds_fractals_strokes_and_pivots():
+    bars = [
+        _bar(0, 10.0, high=10.4, low=9.8),
+        _bar(1, 9.4, high=9.8, low=9.1),
+        _bar(2, 10.2, high=10.7, low=9.9),
+        _bar(3, 11.2, high=11.8, low=10.8),
+        _bar(4, 10.4, high=10.9, low=10.0),
+        _bar(5, 9.8, high=10.1, low=9.4),
+        _bar(6, 10.8, high=11.2, low=10.2),
+        _bar(7, 11.6, high=12.0, low=11.0),
+        _bar(8, 10.8, high=11.2, low=10.2),
+        _bar(9, 10.1, high=10.4, low=9.7),
+        _bar(10, 11.1, high=11.5, low=10.7),
+        _bar(11, 11.8, high=12.3, low=11.3),
+    ]
+
+    result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=2, min_rebound_pct=0.03)
+
+    assert [fractal.kind for fractal in result.fractals] == ["bottom", "top", "bottom", "top", "bottom"]
+    assert [stroke.direction for stroke in result.strokes[:4]] == ["up", "down", "up", "down"]
+    assert result.pivots
+
+
+def test_chan_structure_marks_third_buy_and_sell_points():
+    buy_bars = [
+        _bar(0, 10.0, high=10.4, low=9.8),
+        _bar(1, 9.4, high=9.8, low=9.1),
+        _bar(2, 10.4, high=10.9, low=10.0),
+        _bar(3, 11.6, high=12.0, low=11.1),
+        _bar(4, 10.8, high=11.0, low=10.2),
+        _bar(5, 10.1, high=10.5, low=9.7),
+        _bar(6, 11.5, high=12.0, low=11.0),
+        _bar(7, 12.8, high=13.2, low=12.2),
+        _bar(8, 12.6, high=12.8, low=12.4),
+        _bar(9, 12.5, high=12.6, low=12.3),
+        _bar(10, 12.3, high=12.4, low=12.1),
+        _bar(11, 12.8, high=13.0, low=12.5),
+    ]
+    sell_bars = [
+        _bar(0, 12.0, high=12.4, low=11.7),
+        _bar(1, 12.8, high=13.2, low=12.2),
+        _bar(2, 11.8, high=12.1, low=11.4),
+        _bar(3, 10.7, high=11.1, low=10.2),
+        _bar(4, 11.3, high=11.7, low=10.9),
+        _bar(5, 12.0, high=12.4, low=11.6),
+        _bar(6, 10.9, high=11.3, low=10.5),
+        _bar(7, 9.6, high=9.7, low=9.4),
+        _bar(8, 9.7, high=9.8, low=9.6),
+        _bar(9, 9.9, high=10.0, low=9.7),
+        _bar(10, 9.5, high=9.8, low=9.1),
+    ]
+
+    buy_result = scan_chan_structure(bars_to_frame(buy_bars), min_stroke_bars=2, min_rebound_pct=0.03)
+    sell_result = scan_chan_structure(bars_to_frame(sell_bars), min_stroke_bars=2, min_rebound_pct=0.03)
+
+    assert any(signal.kind == "CHAN_STRUCT_BUY_T3" for signal in buy_result.signals)
+    assert any(signal.kind == "CHAN_STRUCT_SELL_T3" for signal in sell_result.signals)
 
 
 def test_preview_returns_insufficient_bars_blocker_before_running_detectors():

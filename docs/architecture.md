@@ -11,7 +11,7 @@
 - `indicators`: 计算均线、RSI、布林带、动量、回撤和最新技术指标快照。
 - `analytics`: 将回测资金曲线和交易记录转换为收益、基准收益、超额收益、波动、夏普比率、回撤、胜率、盈亏比和持仓暴露等指标。
 - `portfolio`: 将多个 `Strategy` 按加权投票、等权投票或优先级合成为一个可回测的组合策略。
-- `research`: 研究信号层，当前将本地 K线转换为分析帧，并生成轻量缠论二买/二卖、增强 RSI 超买/超卖/修复/背离和综合评分预览。
+- `research`: 研究信号层，当前将本地 K线转换为分析帧，并生成轻量缠论二买/二卖、缠论结构分型/笔/中枢、增强 RSI 超买/超卖/修复/背离和综合评分预览。
 - `risk`: 汇总确定性风控阈值和回测风险状态。
 - `llm`: Mock LLM 研究员接口，基于技术指标、信息面摘要和风控上下文输出结构化研究观点。
 - `strategies`: 示例策略和后续自定义策略目录。
@@ -31,7 +31,7 @@ AKShare/public data -> normalize_bars -> CSV/local storage
 watchlist -> data_manager -> data/market/a_share/{exchange}/{code}/{code}_{exchange}_daily_{adjust}_latest.csv + increments/ + manifest.json
 CSV/local storage -> Strategy.on_bar -> Signal -> PaperBroker -> equity/trades/logs
 CSV/local storage -> indicators/analytics -> FastAPI -> React charts/tables
-CSV/local storage -> research Chan/RSI preview -> FastAPI -> React Strategy Workshop
+CSV/local storage -> research Chan/RSI/Chan structure preview -> FastAPI -> React Strategy Workshop
 stock_catalog + local CSV files -> research batch scan -> FastAPI -> React Signal Radar
 strategies/*.py -> strategy registry -> selected Strategy -> backtest/paper service
 selected Strategy[] -> portfolio aggregation -> backtest/paper service
@@ -82,7 +82,7 @@ EventEngine + MainEngine + Gateway + CtaStrategyApp/CtaBacktesterApp
 
 - 趋势跟随：双均线。
 - 均值回归：RSI、布林带。
-- 研究信号策略：缠论 + 增强 RSI 预览包装策略。
+- 研究信号策略：缠论 + 增强 RSI 预览包装策略、缠论结构策略。
 - 突破：Donchian/Turtle 通道突破。
 - 动量：固定回看窗口价格动量。
 

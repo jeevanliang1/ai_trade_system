@@ -115,6 +115,16 @@ BUILTIN_STRATEGIES = [
         display_name="缠论RSI研究",
         description="结合缠论二买/二卖和增强 RSI 信号，输出可回测的研究信号。",
     ),
+    StrategySpec(
+        id="builtin:popular:ChanStructureStrategy",
+        name="ChanStructureStrategy",
+        class_name="ChanStructureStrategy",
+        source="builtin",
+        path=None,
+        module_name="ai_trade_system.strategies.popular",
+        display_name="缠论结构策略",
+        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖，并转换为可回测交易信号。",
+    ),
 ]
 
 
@@ -389,6 +399,18 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         description="研究信号分数达到该值后，才允许转换为交易信号。",
         increase_effect="调大后信号更严格，交易更少。",
         decrease_effect="调小后信号更宽松，交易更多但质量可能下降。",
+    ),
+    "min_stroke_bars": ParameterGuidance(
+        display_name="成笔最小间隔",
+        description="相邻顶/底分型之间至少间隔多少根K线，才允许构成缠论笔。",
+        increase_effect="调大后成笔更严格，过滤更多短噪音，信号更少。",
+        decrease_effect="调小后更容易成笔，结构信号更多但稳定性下降。",
+    ),
+    "min_rebound_pct": ParameterGuidance(
+        display_name="二买二卖确认幅度",
+        description="二买需要从底分型反弹、二卖需要从顶分型回落的最小确认比例。",
+        increase_effect="调大后确认更严格，信号更少但反弹或回落更充分。",
+        decrease_effect="调小后更早触发二买/二卖，信号更多但假突破风险更高。",
     ),
 }
 
