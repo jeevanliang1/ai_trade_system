@@ -15,6 +15,7 @@
 - `docs/auto-sedimentation-skill.md`: required task close-out documentation workflow.
 - `docs/rules/auto-sedimentation-closeout.md`: mandatory sedimentation close-out rule.
 - `docs/rules/feature-backlog-continuation.md`: mandatory feature decomposition and continuation backlog rule.
+- `docs/rules/strategy-benchmark-backtest.md`: mandatory fixed-stock benchmark backtest rule for strategy changes.
 - `docs/context/pending-features.md`: durable pending feature list and next recommended feature.
 - `docs/qa/headless-chrome-screenshots.md`: required headless Chrome screenshot acceptance workflow.
 
@@ -30,7 +31,7 @@
 - User-facing strategy parameters should include a Chinese label, plain-language purpose, and simple tuning impact for increasing or decreasing the value when the parameter semantics allow it.
 - Stock-aware React controls should use the shared watchlist selector and `selectStock` action so `symbol`, `exchange`, `csv_path`, strategy params, portfolio params, and stale market-derived results stay synchronized.
 - Watchlist market-data workflows should use `src/ai_trade_system/data_manager.py` and canonical paths under `data/market/a_share/{exchange}/{code}/`; do not reintroduce ad hoc `data/{code}_daily.csv` defaults for stock-aware flows. Product code may expose CLI/API update hooks, but committing machine-local scheduling such as launchd still requires owner confirmation.
-- Strategy effect comparisons should reuse the fixed local benchmark fixtures for 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` over `20230619` to `20260619` with `qfq` adjustment, persisted under `data/market/a_share/{exchange}/{code}/`; record comparable results under `docs/qa/`.
+- Every strategy modification or new strategy must run fixed-stock benchmark backtests before final delivery, using local qfq fixtures for 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` over `20230619` to `20260619` under `data/market/a_share/{exchange}/{code}/`; record comparable results under `docs/qa/`.
 - Global shell controls should summarize current context or navigate to the next workflow step; page-owned execution actions such as running backtests, scans, AI research, risk checks, or paper trading should live inside their responsible workspace.
 
 ## Required Context Before Development

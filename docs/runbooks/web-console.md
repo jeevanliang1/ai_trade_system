@@ -210,5 +210,6 @@ PYTHONPATH=src python -m ai_trade_system.cli stocks search 000001
 - 前端行为：涉及 React、TypeScript 或样式时在 `frontend/` 运行相关 `npm test`，并在累积 UI 变更后运行 `npm run build`。
 - API 契约：涉及请求/响应形状时同步更新 `tests/test_api_routes.py`、`frontend/src/api/client.test.ts` 或调用方测试。
 - 文档和待办：广义功能推进后更新 `docs/context/pending-features.md`，保持一个 `Next Recommended Feature`。
+- 策略基准回测：每次修改策略或新增策略，必须用本地固定的中芯国际 `688981/SSE` 和 五粮液 `000858/SZSE` 三年 qfq 数据跑回测，并把可比结果记录到 `docs/qa/`；跳过时说明原因。
 - 浏览器验收：浏览器可见变更需运行 headless Chrome 截图流程，并在收尾说明截图路径；无可截图界面时说明原因。
 - 风控边界：确认没有新增默认实盘交易入口，AI 观点、回测、纸面交易和风险控制边界仍然清晰。
