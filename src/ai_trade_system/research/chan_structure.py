@@ -56,6 +56,9 @@ class ChanSegment:
     stroke_count: int
     energy: float
     broken_by_next: bool = False
+    start_stroke_index: int = 0
+    end_stroke_index: int = 0
+    break_stroke_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -237,51 +240,89 @@ def _build_pivots(strokes: list[ChanStroke]) -> list[ChanPivot]:
 
 def _build_segments(strokes: list[ChanStroke]) -> list[ChanSegment]:
     segments: list[ChanSegment] = []
-    for first, second, third in zip(strokes, strokes[1:], strokes[2:]):
-        if first.direction != third.direction:
+    cursor = 0
+    while cursor + 2 < len(strokes):
+        segment = _candidate_segment(strokes, cursor)
+        if segment is None:
+            cursor += 1
             continue
-        start = first.start
-        end = third.end
-        index_span = max(1, end.index - start.index)
-        segments.append(
-            ChanSegment(
-                start=start,
-                end=end,
-                direction=first.direction,
-                high=max(first.high, second.high, third.high),
-                low=min(first.low, second.low, third.low),
-                stroke_count=3,
-                energy=round(abs(end.price - start.price) / index_span, 6),
-            )
-        )
-    return _mark_broken_segments(segments)
+
+        start_stroke_index = cursor
+        end_stroke_index = cursor + 2
+        break_stroke_index: int | None = None
+        scan_index = end_stroke_index + 1
+        while scan_index < len(strokes):
+            stroke = strokes[scan_index]
+            if stroke.direction == segment.direction:
+                if _stroke_extends_segment(stroke, segment):
+                    end_stroke_index = scan_index
+                    segment = _segment_from_strokes(strokes[start_stroke_index : end_stroke_index + 1], start_stroke_index, end_stroke_index)
+            elif _stroke_breaks_segment(stroke, segment):
+                break_stroke_index = scan_index
+                segment = _segment_from_strokes(
+                    strokes[start_stroke_index : end_stroke_index + 1],
+                    start_stroke_index,
+                    end_stroke_index,
+                    broken_by_next=True,
+                    break_stroke_index=break_stroke_index,
+                )
+                break
+            scan_index += 1
+
+        segments.append(segment)
+        if break_stroke_index is None:
+            cursor = end_stroke_index + 1
+        else:
+            cursor = break_stroke_index
+    return segments
 
 
-def _mark_broken_segments(segments: list[ChanSegment]) -> list[ChanSegment]:
-    if not segments:
-        return []
-    marked: list[ChanSegment] = []
-    for index, segment in enumerate(segments):
-        following = segments[index + 1] if index + 1 < len(segments) else None
-        broken = False
-        if following is not None and following.direction != segment.direction:
-            if segment.direction == "up":
-                broken = following.low < segment.low
-            else:
-                broken = following.high > segment.high
-        marked.append(
-            ChanSegment(
-                start=segment.start,
-                end=segment.end,
-                direction=segment.direction,
-                high=segment.high,
-                low=segment.low,
-                stroke_count=segment.stroke_count,
-                energy=segment.energy,
-                broken_by_next=broken,
-            )
-        )
-    return marked
+def _candidate_segment(strokes: list[ChanStroke], start_index: int) -> ChanSegment | None:
+    window = strokes[start_index : start_index + 3]
+    if len(window) < 3:
+        return None
+    first, _, third = window
+    if first.direction != third.direction:
+        return None
+    return _segment_from_strokes(window, start_index, start_index + 2)
+
+
+def _segment_from_strokes(
+    strokes: list[ChanStroke],
+    start_stroke_index: int,
+    end_stroke_index: int,
+    *,
+    broken_by_next: bool = False,
+    break_stroke_index: int | None = None,
+) -> ChanSegment:
+    start = strokes[0].start
+    end = strokes[-1].end
+    index_span = max(1, end.index - start.index)
+    return ChanSegment(
+        start=start,
+        end=end,
+        direction=strokes[0].direction,
+        high=max(stroke.high for stroke in strokes),
+        low=min(stroke.low for stroke in strokes),
+        stroke_count=len(strokes),
+        energy=round(abs(end.price - start.price) / index_span, 6),
+        broken_by_next=broken_by_next,
+        start_stroke_index=start_stroke_index,
+        end_stroke_index=end_stroke_index,
+        break_stroke_index=break_stroke_index,
+    )
+
+
+def _stroke_extends_segment(stroke: ChanStroke, segment: ChanSegment) -> bool:
+    if segment.direction == "up":
+        return stroke.end.price > segment.end.price or stroke.high > segment.high
+    return stroke.end.price < segment.end.price or stroke.low < segment.low
+
+
+def _stroke_breaks_segment(stroke: ChanStroke, segment: ChanSegment) -> bool:
+    if segment.direction == "up":
+        return stroke.low < segment.low
+    return stroke.high > segment.high
 
 
 def _build_recursive_pivots(strokes: list[ChanStroke], segments: list[ChanSegment]) -> list[ChanRecursivePivot]:

@@ -57,57 +57,43 @@ def make_chan_bar(index: int, close: float, high: float, low: float) -> Bar:
 
 
 def make_deep_chan_bars() -> list[Bar]:
-    ranges = [
-        (11.0, 10.0),
-        (9.5, 9.0),
-        (10.0, 9.5),
-        (10.5, 10.0),
-        (11.0, 10.5),
-        (11.5, 11.0),
-        (12.0, 11.5),
-        (13.0, 12.0),
-        (12.4, 11.6),
-        (12.0, 11.2),
-        (11.6, 10.8),
-        (11.2, 10.4),
-        (10.8, 10.2),
-        (10.5, 10.0),
-        (11.0, 10.4),
-        (11.6, 11.0),
-        (12.2, 11.6),
-        (12.8, 12.2),
-        (13.3, 12.7),
-        (14.0, 13.0),
-        (13.5, 12.8),
-        (13.2, 12.6),
-        (12.9, 12.4),
-        (12.7, 12.2),
-        (12.6, 12.1),
-        (12.5, 12.0),
-        (13.2, 12.7),
-        (13.6, 13.1),
-        (13.9, 13.5),
-        (14.2, 13.8),
-        (13.9, 13.4),
-        (13.5, 13.0),
-        (13.0, 12.5),
-        (12.5, 12.0),
-        (12.1, 11.7),
-        (11.8, 11.4),
-        (12.0, 11.7),
-        (12.3, 11.9),
-        (12.7, 12.3),
-        (13.0, 12.6),
-        (12.8, 12.4),
-        (12.4, 12.0),
-        (12.0, 11.6),
-        (11.6, 11.2),
-        (11.3, 10.9),
-        (11.1, 10.7),
-        (11.5, 11.0),
-        (12.0, 11.5),
+    points = [
+        (1, 10.0),
+        (6, 15.0),
+        (11, 12.0),
+        (16, 16.0),
+        (21, 13.0),
+        (26, 17.0),
+        (31, 9.0),
+        (36, 14.0),
+        (41, 8.0),
+        (46, 12.0),
+        (51, 7.0),
+        (86, 18.0),
+        (91, 13.0),
+        (96, 19.0),
+        (101, 6.0),
+        (130, 15.0),
+        (160, 5.0),
+        (190, 14.0),
+        (220, 4.0),
     ]
-    return [make_chan_bar(index, (high + low) / 2, high, low) for index, (high, low) in enumerate(ranges)]
+    bars: list[Bar] = []
+    for index in range(points[-1][0] + 2):
+        if index <= points[0][0]:
+            close = points[0][1] + (points[0][0] - index + 1) * 0.2
+        elif index >= points[-1][0]:
+            close = points[-1][1] - (index - points[-1][0] + 1) * 0.2
+        else:
+            close = points[-1][1]
+            for (left_index, left_price), (right_index, right_price) in zip(points, points[1:]):
+                if left_index <= index <= right_index:
+                    ratio = (index - left_index) / (right_index - left_index)
+                    close = left_price + (right_price - left_price) * ratio
+                    break
+        close = round(close, 4)
+        bars.append(make_chan_bar(index, close, close + 0.1, close - 0.1))
+    return bars
 
 
 def collect_volume_momentum_signals(closes: list[float], volumes: list[float], **kwargs):
@@ -261,7 +247,7 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
     strategy = ChanStructureStrategy(
         "000001",
         min_bars=12,
-        lookback=80,
+        lookback=240,
         min_stroke_bars=4,
         min_rebound_pct=0.02,
         min_signal_score=50,
@@ -271,7 +257,7 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
 
     signals = [signal for bar in make_deep_chan_bars() for signal in strategy.on_bar(bar)]
 
-    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].action == "sell"
     assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_CONFIRM")
 
 

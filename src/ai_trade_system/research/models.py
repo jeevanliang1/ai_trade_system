@@ -73,6 +73,9 @@ class ChanSegmentOverlay:
     direction: str
     start_index: int
     end_index: int
+    start_stroke_index: int
+    end_stroke_index: int
+    break_stroke_index: int | None
     start_day: date
     end_day: date
     start_price: float

@@ -117,6 +117,9 @@ export type ChanStrokeOverlay = {
   direction: "up" | "down" | string;
   start_index: number;
   end_index: number;
+  start_stroke_index: number;
+  end_stroke_index: number;
+  break_stroke_index: number | null;
   start_day: string;
   end_day: string;
   start_price: number;
