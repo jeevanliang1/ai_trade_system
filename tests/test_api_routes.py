@@ -623,6 +623,9 @@ def test_research_signals_batch_route_ranks_chan_structure_from_managed_csv(tmp_
     assert payload["rows"][0]["score"]["chan_structure"]["fractal_count"] > 0
     assert payload["rows"][0]["score"]["chan_structure"]["stroke_count"] > 0
     assert payload["rows"][0]["score"]["chan_structure"]["pivot_count"] > 0
+    assert payload["rows"][0]["score"]["chan_structure"]["segment_count"] > 0
+    assert payload["rows"][0]["score"]["chan_structure"]["recursive_pivot_count"] > 0
+    assert payload["rows"][0]["score"]["chan_structure"]["divergence_count"] >= 0
     assert payload["rows"][0]["latest_signal"]["kind"].startswith("CHAN_STRUCT_")
     assert payload["rows"][0]["score"]["total_score"] > abs(payload["rows"][1]["score"]["total_score"])
 

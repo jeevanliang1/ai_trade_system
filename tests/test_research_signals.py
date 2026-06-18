@@ -8,6 +8,7 @@ from ai_trade_system.research.chan_structure import normalize_containment, scan_
 from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.research.enhanced_rsi import relative_strength_index, scan_enhanced_rsi
 from ai_trade_system.research.service import preview_research_signals
+from ai_trade_system.research.service import _chan_structure_overlay
 
 
 def _bar(index: int, close: float, *, high: float | None = None, low: float | None = None, volume: float = 1000.0) -> Bar:
@@ -29,6 +30,59 @@ def _bar(index: int, close: float, *, high: float | None = None, low: float | No
 
 def _bars(closes: list[float]) -> list[Bar]:
     return [_bar(index, close) for index, close in enumerate(closes)]
+
+
+def _deep_chan_price_ranges() -> list[tuple[float, float]]:
+    return [
+        (11.0, 10.0),
+        (9.5, 9.0),
+        (10.0, 9.5),
+        (10.5, 10.0),
+        (11.0, 10.5),
+        (11.5, 11.0),
+        (12.0, 11.5),
+        (13.0, 12.0),
+        (12.4, 11.6),
+        (12.0, 11.2),
+        (11.6, 10.8),
+        (11.2, 10.4),
+        (10.8, 10.2),
+        (10.5, 10.0),
+        (11.0, 10.4),
+        (11.6, 11.0),
+        (12.2, 11.6),
+        (12.8, 12.2),
+        (13.3, 12.7),
+        (14.0, 13.0),
+        (13.5, 12.8),
+        (13.2, 12.6),
+        (12.9, 12.4),
+        (12.7, 12.2),
+        (12.6, 12.1),
+        (12.5, 12.0),
+        (13.2, 12.7),
+        (13.6, 13.1),
+        (13.9, 13.5),
+        (14.2, 13.8),
+        (13.9, 13.4),
+        (13.5, 13.0),
+        (13.0, 12.5),
+        (12.5, 12.0),
+        (12.1, 11.7),
+        (11.8, 11.4),
+        (12.0, 11.7),
+        (12.3, 11.9),
+        (12.7, 12.3),
+        (13.0, 12.6),
+        (12.8, 12.4),
+        (12.4, 12.0),
+        (12.0, 11.6),
+        (11.6, 11.2),
+        (11.3, 10.9),
+        (11.1, 10.7),
+        (11.5, 11.0),
+        (12.0, 11.5),
+    ]
 
 
 def test_bars_to_frame_sorts_and_maps_market_bars():
@@ -169,6 +223,41 @@ def test_chan_structure_marks_third_buy_and_sell_points():
 
     assert any(signal.kind == "CHAN_STRUCT_BUY_T3" for signal in buy_result.signals)
     assert any(signal.kind == "CHAN_STRUCT_SELL_T3" for signal in sell_result.signals)
+
+
+def test_chan_structure_builds_segments_recursive_pivots_and_divergence():
+    bars = [_bar(index, (high + low) / 2, high=high, low=low) for index, (high, low) in enumerate(_deep_chan_price_ranges())]
+
+    result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=4, min_rebound_pct=0.02)
+
+    assert result.segments
+    assert result.recursive_pivots
+    assert any(pivot.level == "segment" for pivot in result.recursive_pivots)
+    assert result.divergences
+    assert any(
+        signal.kind
+        in {
+            "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+            "CHAN_STRUCT_BUY_CONFIRM",
+            "CHAN_STRUCT_SELL_T1_DIVERGENCE",
+            "CHAN_STRUCT_SELL_CONFIRM",
+        }
+        for signal in result.signals
+    )
+
+
+def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergences():
+    bars = [_bar(index, (high + low) / 2, high=high, low=low) for index, (high, low) in enumerate(_deep_chan_price_ranges())]
+    result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=4, min_rebound_pct=0.02)
+
+    overlay = _chan_structure_overlay(result)
+
+    assert overlay.segment_count == len(result.segments)
+    assert overlay.recursive_pivot_count == len(result.recursive_pivots)
+    assert overlay.divergence_count == len(result.divergences)
+    assert overlay.segments[0].stroke_count == 3
+    assert any(pivot.level == "segment" for pivot in overlay.recursive_pivots)
+    assert overlay.divergences[0].kind == "top"
 
 
 def test_preview_returns_insufficient_bars_blocker_before_running_detectors():

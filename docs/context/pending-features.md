@@ -66,6 +66,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Signal Radar volume-momentum ranking is complete for current scope: batch scans support a `research` / `volume_momentum` scoring mode, use managed A-share CSV paths under `data/market/a_share/{exchange}/{code}/`, render momentum/volume/trend diagnostics, and export the diagnostic fields.
 - Signal Radar Chan-structure ranking is complete for current scope: batch scans support `chan_structure` scoring mode, reuse `research.chan_structure`, render fractal/stroke/pivot diagnostics, export structure fields, and preserve local managed CSV-only scanning.
 - Strategy Workshop Chan-structure overlays are complete for current scope: `/api/research/signals/preview` returns chart-ready structure payloads, the K-line chart renders fractals, strokes, pivots, and T2/T3 structure markers, and the toolbar can hide or restore the overlay.
+- Chan core deepening first slice is complete for current scope: `research.chan_structure` now builds simplified line segments, stroke/segment recursive pivots, segment-energy divergence records, and divergence/confirmation signals, while preview, batch diagnostics, chart overlays, and `ChanStructureStrategy` consume the expanded structure.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -106,7 +107,8 @@ No current pending items.
 
 ### Strategy Development
 
-- Deepen the Chan core analyzer with segment-level structure, recursive pivots, and divergence-style confirmation after the Radar and visualization workflows are observable.
+- Refine Chan segment splitting from the current simplified sliding-window builder to stricter split/break/rebuild rules, then link segment-level pivots across recursive levels.
+- Add MACD/volume divergence strength and confirmation scoring to the Chan analyzer after segment rules are stricter.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
@@ -115,7 +117,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Deepen the Chan core analyzer with segment-level structure, recursive pivots, and divergence-style confirmation". After the deeper structure is available, compare whether the new confirmation data improves `ChanStructureStrategy` entries on the fixed 中芯国际 and 五粮液 benchmark fixtures before tuning thresholds.
+Start with "Strategy Development - Refine Chan segment splitting from the current simplified sliding-window builder to stricter split/break/rebuild rules, then link segment-level pivots across recursive levels". After stricter segment semantics are stable, add MACD/volume divergence strength before tuning parameters against the fixed 中芯国际 and 五粮液 benchmark fixtures.
 
 ## Update Rules
 

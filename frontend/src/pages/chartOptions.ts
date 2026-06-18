@@ -70,6 +70,9 @@ function chanStructureSeries(chanStructure: ResearchSignalChanStructure | null, 
   const fractals = chanStructure.fractals ?? [];
   const strokes = chanStructure.strokes ?? [];
   const pivots = chanStructure.pivots ?? [];
+  const segments = chanStructure.segments ?? [];
+  const recursivePivots = chanStructure.recursive_pivots ?? [];
+  const segmentLevelPivots = recursivePivots.filter((pivot) => pivot.level === "segment");
   const structureSignals = chanStructure.signals ?? [];
   return [
     {
@@ -106,6 +109,19 @@ function chanStructureSeries(chanStructure: ResearchSignalChanStructure | null, 
     },
     {
       type: "line",
+      name: "缠论线段",
+      data: segments.flatMap((segment) => [
+        [segment.start_day, segment.start_price],
+        [segment.end_day, segment.end_price],
+        null
+      ]),
+      showSymbol: false,
+      connectNulls: false,
+      z: 5,
+      lineStyle: { width: 2, color: "#0f766e" }
+    },
+    {
+      type: "line",
       name: "缠论中枢",
       data: [],
       showSymbol: false,
@@ -114,6 +130,20 @@ function chanStructureSeries(chanStructure: ResearchSignalChanStructure | null, 
         itemStyle: { color: "rgba(22, 119, 255, 0.1)", borderColor: "rgba(22, 119, 255, 0.35)", borderWidth: 1 },
         data: pivots.map((pivot) => [
           { name: "中枢", xAxis: pivot.start_day, yAxis: pivot.low },
+          { xAxis: pivot.end_day, yAxis: pivot.high }
+        ])
+      }
+    },
+    {
+      type: "line",
+      name: "递归中枢",
+      data: [],
+      showSymbol: false,
+      markArea: {
+        silent: true,
+        itemStyle: { color: "rgba(15, 118, 110, 0.12)", borderColor: "rgba(15, 118, 110, 0.42)", borderWidth: 1 },
+        data: (segmentLevelPivots.length > 0 ? segmentLevelPivots : recursivePivots).map((pivot) => [
+          { name: "递归中枢", xAxis: pivot.start_day, yAxis: pivot.low },
           { xAxis: pivot.end_day, yAxis: pivot.high }
         ])
       }

@@ -9,8 +9,11 @@ from ai_trade_system.research.chan_structure import ChanStructureResult, scan_ch
 from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.research.enhanced_rsi import scan_enhanced_rsi
 from ai_trade_system.research.models import (
+    ChanDivergenceOverlay,
     ChanFractalOverlay,
     ChanPivotOverlay,
+    ChanRecursivePivotOverlay,
+    ChanSegmentOverlay,
     ChanStrokeOverlay,
     ChanStructureOverlay,
     ResearchSignal,
@@ -92,6 +95,9 @@ def _empty_chan_structure_overlay() -> ChanStructureOverlay:
         fractal_count=0,
         stroke_count=0,
         pivot_count=0,
+        segment_count=0,
+        recursive_pivot_count=0,
+        divergence_count=0,
         latest_signal_kind=None,
         latest_signal_title=None,
     )
@@ -104,6 +110,9 @@ def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay
         fractal_count=len(result.fractals),
         stroke_count=len(result.strokes),
         pivot_count=len(result.pivots),
+        segment_count=len(result.segments),
+        recursive_pivot_count=len(result.recursive_pivots),
+        divergence_count=len(result.divergences),
         latest_signal_kind=latest_signal.kind if latest_signal else None,
         latest_signal_title=latest_signal.title if latest_signal else None,
         fractals=[
@@ -141,6 +150,51 @@ def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay
                 high=pivot.high,
             )
             for pivot in result.pivots
+        ],
+        segments=[
+            ChanSegmentOverlay(
+                direction=segment.direction,
+                start_index=segment.start.index,
+                end_index=segment.end.index,
+                start_day=segment.start.trading_day,
+                end_day=segment.end.trading_day,
+                start_price=segment.start.price,
+                end_price=segment.end.price,
+                high=segment.high,
+                low=segment.low,
+                stroke_count=segment.stroke_count,
+                energy=segment.energy,
+                broken_by_next=segment.broken_by_next,
+            )
+            for segment in result.segments
+        ],
+        recursive_pivots=[
+            ChanRecursivePivotOverlay(
+                level=pivot.level,
+                start_index=pivot.start_index,
+                end_index=pivot.end_index,
+                start_day=pivot.start_day,
+                end_day=pivot.end_day,
+                low=pivot.low,
+                high=pivot.high,
+                direction=pivot.direction,
+                component_count=pivot.component_count,
+            )
+            for pivot in result.recursive_pivots
+        ],
+        divergences=[
+            ChanDivergenceOverlay(
+                kind=divergence.kind,
+                action=divergence.action,
+                start_index=divergence.segment.start.index,
+                end_index=divergence.segment.end.index,
+                reference_start_index=divergence.reference_segment.start.index,
+                reference_end_index=divergence.reference_segment.end.index,
+                reference_energy=divergence.reference_energy,
+                current_energy=divergence.current_energy,
+                price_extreme=divergence.price_extreme,
+            )
+            for divergence in result.divergences
         ],
         signals=result.signals,
     )

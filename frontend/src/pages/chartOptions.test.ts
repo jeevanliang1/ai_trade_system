@@ -130,7 +130,49 @@ test("priceOption renders Chan structure overlay series", () => {
         low: 9.8
       }
     ],
+    segments: [
+      {
+        direction: "up",
+        start_index: 0,
+        end_index: 1,
+        start_day: "2024-01-02",
+        end_day: "2024-01-03",
+        start_price: 9.8,
+        end_price: 11.1,
+        high: 11.1,
+        low: 9.8,
+        stroke_count: 3,
+        energy: 0.65,
+        broken_by_next: false
+      }
+    ],
     pivots: [{ start_index: 0, end_index: 1, start_day: "2024-01-02", end_day: "2024-01-03", low: 10.1, high: 10.8 }],
+    recursive_pivots: [
+      {
+        level: "segment",
+        start_index: 0,
+        end_index: 1,
+        start_day: "2024-01-02",
+        end_day: "2024-01-03",
+        low: 10.2,
+        high: 10.7,
+        direction: "up",
+        component_count: 3
+      }
+    ],
+    divergences: [
+      {
+        kind: "top",
+        action: "sell",
+        start_index: 0,
+        end_index: 1,
+        reference_start_index: 0,
+        reference_end_index: 1,
+        reference_energy: 0.8,
+        current_energy: 0.65,
+        price_extreme: 11.1
+      }
+    ],
     signals: [
       {
         trading_day: "2024-01-03",
@@ -155,9 +197,11 @@ test("priceOption renders Chan structure overlay series", () => {
   );
   const series = option.series as Array<Record<string, unknown>>;
   const pivotSeries = series.find((item) => item.name === "缠论中枢") as { markArea?: { data: unknown[] } };
+  const recursivePivotSeries = series.find((item) => item.name === "递归中枢") as { markArea?: { data: unknown[] } };
 
-  expect(series.map((item) => item.name)).toEqual(expect.arrayContaining(["顶分型", "底分型", "缠论笔", "缠论中枢", "结构买点"]));
+  expect(series.map((item) => item.name)).toEqual(expect.arrayContaining(["顶分型", "底分型", "缠论笔", "缠论线段", "缠论中枢", "递归中枢", "结构买点"]));
   expect(pivotSeries.markArea?.data).toHaveLength(1);
+  expect(recursivePivotSeries.markArea?.data).toHaveLength(1);
 });
 
 test("volumeOption renders visible volume bars from zero baseline", () => {

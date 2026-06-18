@@ -56,6 +56,60 @@ def make_chan_bar(index: int, close: float, high: float, low: float) -> Bar:
     )
 
 
+def make_deep_chan_bars() -> list[Bar]:
+    ranges = [
+        (11.0, 10.0),
+        (9.5, 9.0),
+        (10.0, 9.5),
+        (10.5, 10.0),
+        (11.0, 10.5),
+        (11.5, 11.0),
+        (12.0, 11.5),
+        (13.0, 12.0),
+        (12.4, 11.6),
+        (12.0, 11.2),
+        (11.6, 10.8),
+        (11.2, 10.4),
+        (10.8, 10.2),
+        (10.5, 10.0),
+        (11.0, 10.4),
+        (11.6, 11.0),
+        (12.2, 11.6),
+        (12.8, 12.2),
+        (13.3, 12.7),
+        (14.0, 13.0),
+        (13.5, 12.8),
+        (13.2, 12.6),
+        (12.9, 12.4),
+        (12.7, 12.2),
+        (12.6, 12.1),
+        (12.5, 12.0),
+        (13.2, 12.7),
+        (13.6, 13.1),
+        (13.9, 13.5),
+        (14.2, 13.8),
+        (13.9, 13.4),
+        (13.5, 13.0),
+        (13.0, 12.5),
+        (12.5, 12.0),
+        (12.1, 11.7),
+        (11.8, 11.4),
+        (12.0, 11.7),
+        (12.3, 11.9),
+        (12.7, 12.3),
+        (13.0, 12.6),
+        (12.8, 12.4),
+        (12.4, 12.0),
+        (12.0, 11.6),
+        (11.6, 11.2),
+        (11.3, 10.9),
+        (11.1, 10.7),
+        (11.5, 11.0),
+        (12.0, 11.5),
+    ]
+    return [make_chan_bar(index, (high + low) / 2, high, low) for index, (high, low) in enumerate(ranges)]
+
+
 def collect_volume_momentum_signals(closes: list[float], volumes: list[float], **kwargs):
     strategy = VolumeConfirmedMomentumStrategy("000001", trade_size=100, **kwargs)
     return [
@@ -201,6 +255,24 @@ def test_chan_structure_strategy_emits_sell_after_structural_sell_signal():
 
     assert [signal.action for signal in signals] == ["sell"]
     assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_T3")
+
+
+def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=12,
+        lookback=80,
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+        min_signal_score=50,
+        trade_size=100,
+    )
+    strategy.in_position = True
+
+    signals = [signal for bar in make_deep_chan_bars() for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_CONFIRM")
 
 
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():

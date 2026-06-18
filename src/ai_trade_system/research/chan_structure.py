@@ -47,11 +47,50 @@ class ChanPivot:
 
 
 @dataclass(frozen=True)
+class ChanSegment:
+    start: ChanFractal
+    end: ChanFractal
+    direction: str
+    high: float
+    low: float
+    stroke_count: int
+    energy: float
+    broken_by_next: bool = False
+
+
+@dataclass(frozen=True)
+class ChanRecursivePivot:
+    level: str
+    start_index: int
+    end_index: int
+    start_day: date
+    end_day: date
+    low: float
+    high: float
+    direction: str
+    component_count: int
+
+
+@dataclass(frozen=True)
+class ChanDivergence:
+    kind: str
+    action: str
+    segment: ChanSegment
+    reference_segment: ChanSegment
+    reference_energy: float
+    current_energy: float
+    price_extreme: float
+
+
+@dataclass(frozen=True)
 class ChanStructureResult:
     klines: list[ChanKLine]
     fractals: list[ChanFractal]
     strokes: list[ChanStroke]
     pivots: list[ChanPivot]
+    segments: list[ChanSegment]
+    recursive_pivots: list[ChanRecursivePivot]
+    divergences: list[ChanDivergence]
     signals: list[ResearchSignal]
     chan_score: float
 
@@ -68,9 +107,29 @@ def scan_chan_structure(
     fractals = _clean_fractals(_detect_fractals(klines))
     strokes = _build_strokes(fractals, min_stroke_bars=max(1, int(min_stroke_bars)))
     pivots = _build_pivots(strokes)
-    signals = _structure_signals(klines, fractals, strokes, pivots, min_rebound_pct=max(0.0, float(min_rebound_pct)))
+    segments = _build_segments(strokes)
+    recursive_pivots = _build_recursive_pivots(strokes, segments)
+    divergences = _detect_divergences(segments)
+    signals = _structure_signals(
+        klines,
+        fractals,
+        strokes,
+        pivots,
+        divergences,
+        min_rebound_pct=max(0.0, float(min_rebound_pct)),
+    )
     chan_score = round(max(-100.0, min(100.0, sum(signal.score for signal in signals[-4:]))), 2)
-    return ChanStructureResult(klines, fractals, strokes, pivots, signals, chan_score)
+    return ChanStructureResult(
+        klines=klines,
+        fractals=fractals,
+        strokes=strokes,
+        pivots=pivots,
+        segments=segments,
+        recursive_pivots=recursive_pivots,
+        divergences=divergences,
+        signals=signals,
+        chan_score=chan_score,
+    )
 
 
 def normalize_containment(frame: pd.DataFrame) -> list[ChanKLine]:
@@ -176,11 +235,126 @@ def _build_pivots(strokes: list[ChanStroke]) -> list[ChanPivot]:
     return pivots
 
 
+def _build_segments(strokes: list[ChanStroke]) -> list[ChanSegment]:
+    segments: list[ChanSegment] = []
+    for first, second, third in zip(strokes, strokes[1:], strokes[2:]):
+        if first.direction != third.direction:
+            continue
+        start = first.start
+        end = third.end
+        index_span = max(1, end.index - start.index)
+        segments.append(
+            ChanSegment(
+                start=start,
+                end=end,
+                direction=first.direction,
+                high=max(first.high, second.high, third.high),
+                low=min(first.low, second.low, third.low),
+                stroke_count=3,
+                energy=round(abs(end.price - start.price) / index_span, 6),
+            )
+        )
+    return _mark_broken_segments(segments)
+
+
+def _mark_broken_segments(segments: list[ChanSegment]) -> list[ChanSegment]:
+    if not segments:
+        return []
+    marked: list[ChanSegment] = []
+    for index, segment in enumerate(segments):
+        following = segments[index + 1] if index + 1 < len(segments) else None
+        broken = False
+        if following is not None and following.direction != segment.direction:
+            if segment.direction == "up":
+                broken = following.low < segment.low
+            else:
+                broken = following.high > segment.high
+        marked.append(
+            ChanSegment(
+                start=segment.start,
+                end=segment.end,
+                direction=segment.direction,
+                high=segment.high,
+                low=segment.low,
+                stroke_count=segment.stroke_count,
+                energy=segment.energy,
+                broken_by_next=broken,
+            )
+        )
+    return marked
+
+
+def _build_recursive_pivots(strokes: list[ChanStroke], segments: list[ChanSegment]) -> list[ChanRecursivePivot]:
+    pivots: list[ChanRecursivePivot] = []
+    for first, second, third in zip(strokes, strokes[1:], strokes[2:]):
+        pivot = _recursive_pivot_from_components("stroke", first, second, third)
+        if pivot is not None:
+            pivots.append(pivot)
+    for first, second, third in zip(segments, segments[1:], segments[2:]):
+        pivot = _recursive_pivot_from_components("segment", first, second, third)
+        if pivot is not None:
+            pivots.append(pivot)
+    return pivots
+
+
+def _recursive_pivot_from_components(level: str, first: ChanStroke | ChanSegment, second: ChanStroke | ChanSegment, third: ChanStroke | ChanSegment) -> ChanRecursivePivot | None:
+    pivot_low = max(first.low, second.low, third.low)
+    pivot_high = min(first.high, second.high, third.high)
+    if pivot_low > pivot_high:
+        return None
+    return ChanRecursivePivot(
+        level=level,
+        start_index=first.start.index,
+        end_index=third.end.index,
+        start_day=first.start.trading_day,
+        end_day=third.end.trading_day,
+        low=round(pivot_low, 4),
+        high=round(pivot_high, 4),
+        direction=first.direction,
+        component_count=3,
+    )
+
+
+def _detect_divergences(segments: list[ChanSegment]) -> list[ChanDivergence]:
+    divergences: list[ChanDivergence] = []
+    latest_by_direction: dict[str, ChanSegment] = {}
+    for segment in segments:
+        reference = latest_by_direction.get(segment.direction)
+        if reference is not None and segment.energy < reference.energy:
+            if segment.direction == "down" and segment.low < reference.low:
+                divergences.append(
+                    ChanDivergence(
+                        kind="bottom",
+                        action="buy",
+                        segment=segment,
+                        reference_segment=reference,
+                        reference_energy=reference.energy,
+                        current_energy=segment.energy,
+                        price_extreme=segment.low,
+                    )
+                )
+            elif segment.direction == "up" and segment.high > reference.high:
+                divergences.append(
+                    ChanDivergence(
+                        kind="top",
+                        action="sell",
+                        segment=segment,
+                        reference_segment=reference,
+                        reference_energy=reference.energy,
+                        current_energy=segment.energy,
+                        price_extreme=segment.high,
+                    )
+                )
+        latest_by_direction[segment.direction] = segment
+    return divergences
+
+
 def _structure_signals(
     klines: list[ChanKLine],
     fractals: list[ChanFractal],
     strokes: list[ChanStroke],
     pivots: list[ChanPivot],
+    divergences: list[ChanDivergence],
     *,
     min_rebound_pct: float,
 ) -> list[ResearchSignal]:
@@ -190,6 +364,8 @@ def _structure_signals(
     symbol = latest.symbol
     exchange = latest.exchange
     signals: list[ResearchSignal] = []
+
+    signals.extend(_divergence_signals(divergences, latest, symbol, exchange, min_rebound_pct))
 
     third_buy = _third_buy_signal(strokes, pivots, latest, symbol, exchange)
     if third_buy is not None:
@@ -206,6 +382,100 @@ def _structure_signals(
         signals.append(second_sell)
 
     return sorted(signals, key=lambda signal: (signal.trading_day, -abs(signal.score), signal.kind))
+
+
+def _divergence_signals(
+    divergences: list[ChanDivergence],
+    latest: ChanKLine,
+    symbol: str,
+    exchange: str,
+    min_rebound_pct: float,
+) -> list[ResearchSignal]:
+    signals: list[ResearchSignal] = []
+    latest_by_action: dict[str, ChanDivergence] = {}
+    for divergence in divergences:
+        latest_by_action[divergence.action] = divergence
+
+    buy_divergence = latest_by_action.get("buy")
+    if buy_divergence is not None:
+        signals.append(
+            ResearchSignal(
+                trading_day=latest.trading_day,
+                symbol=symbol,
+                exchange=exchange,
+                kind="CHAN_STRUCT_BUY_T1_DIVERGENCE",
+                action="buy",
+                price=round(latest.close, 3),
+                strength=0.68,
+                score=36.0,
+                title="缠论底背驰",
+                reason=_divergence_reason(buy_divergence),
+                tags=("chan", "structure", "divergence", "first-buy"),
+            )
+        )
+        if latest.close >= buy_divergence.segment.end.price * (1 + min_rebound_pct):
+            signals.append(
+                ResearchSignal(
+                    trading_day=latest.trading_day,
+                    symbol=symbol,
+                    exchange=exchange,
+                    kind="CHAN_STRUCT_BUY_CONFIRM",
+                    action="buy",
+                    price=round(latest.close, 3),
+                    strength=0.82,
+                    score=52.0,
+                    title="缠论底背驰确认",
+                    reason=f"{_divergence_reason(buy_divergence)}，并向上修复超过 {min_rebound_pct:.2%}",
+                    tags=("chan", "structure", "divergence", "confirmation", "first-buy"),
+                )
+            )
+
+    sell_divergence = latest_by_action.get("sell")
+    if sell_divergence is not None:
+        signals.append(
+            ResearchSignal(
+                trading_day=latest.trading_day,
+                symbol=symbol,
+                exchange=exchange,
+                kind="CHAN_STRUCT_SELL_T1_DIVERGENCE",
+                action="sell",
+                price=round(latest.close, 3),
+                strength=0.68,
+                score=-36.0,
+                title="缠论顶背驰",
+                reason=_divergence_reason(sell_divergence),
+                tags=("chan", "structure", "divergence", "first-sell"),
+            )
+        )
+        if latest.close <= sell_divergence.segment.end.price * (1 - min_rebound_pct):
+            signals.append(
+                ResearchSignal(
+                    trading_day=latest.trading_day,
+                    symbol=symbol,
+                    exchange=exchange,
+                    kind="CHAN_STRUCT_SELL_CONFIRM",
+                    action="sell",
+                    price=round(latest.close, 3),
+                    strength=0.82,
+                    score=-52.0,
+                    title="缠论顶背驰确认",
+                    reason=f"{_divergence_reason(sell_divergence)}，并向下破位超过 {min_rebound_pct:.2%}",
+                    tags=("chan", "structure", "divergence", "confirmation", "first-sell"),
+                )
+            )
+    return signals
+
+
+def _divergence_reason(divergence: ChanDivergence) -> str:
+    if divergence.action == "buy":
+        return (
+            "下跌线段创新低但单位推进力度减弱："
+            f"{divergence.current_energy:.4f} < {divergence.reference_energy:.4f}"
+        )
+    return (
+        "上涨线段创新高但单位推进力度减弱："
+        f"{divergence.current_energy:.4f} < {divergence.reference_energy:.4f}"
+    )
 
 
 def _third_buy_signal(strokes: list[ChanStroke], pivots: list[ChanPivot], latest: ChanKLine, symbol: str, exchange: str) -> ResearchSignal | None:

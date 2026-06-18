@@ -69,15 +69,63 @@ class ChanPivotOverlay:
 
 
 @dataclass(frozen=True)
+class ChanSegmentOverlay:
+    direction: str
+    start_index: int
+    end_index: int
+    start_day: date
+    end_day: date
+    start_price: float
+    end_price: float
+    high: float
+    low: float
+    stroke_count: int
+    energy: float
+    broken_by_next: bool
+
+
+@dataclass(frozen=True)
+class ChanRecursivePivotOverlay:
+    level: str
+    start_index: int
+    end_index: int
+    start_day: date
+    end_day: date
+    low: float
+    high: float
+    direction: str
+    component_count: int
+
+
+@dataclass(frozen=True)
+class ChanDivergenceOverlay:
+    kind: str
+    action: str
+    start_index: int
+    end_index: int
+    reference_start_index: int
+    reference_end_index: int
+    reference_energy: float
+    current_energy: float
+    price_extreme: float
+
+
+@dataclass(frozen=True)
 class ChanStructureOverlay:
     fractal_count: int
     stroke_count: int
     pivot_count: int
+    segment_count: int
+    recursive_pivot_count: int
+    divergence_count: int
     latest_signal_kind: str | None
     latest_signal_title: str | None
     fractals: list[ChanFractalOverlay] = field(default_factory=list)
     strokes: list[ChanStrokeOverlay] = field(default_factory=list)
     pivots: list[ChanPivotOverlay] = field(default_factory=list)
+    segments: list[ChanSegmentOverlay] = field(default_factory=list)
+    recursive_pivots: list[ChanRecursivePivotOverlay] = field(default_factory=list)
+    divergences: list[ChanDivergenceOverlay] = field(default_factory=list)
     signals: list[ResearchSignal] = field(default_factory=list)
 
 

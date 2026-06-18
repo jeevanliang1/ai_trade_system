@@ -134,15 +134,60 @@ export type ChanPivotOverlay = {
   high: number;
 };
 
+export type ChanSegmentOverlay = {
+  direction: "up" | "down" | string;
+  start_index: number;
+  end_index: number;
+  start_day: string;
+  end_day: string;
+  start_price: number;
+  end_price: number;
+  high: number;
+  low: number;
+  stroke_count: number;
+  energy: number;
+  broken_by_next: boolean;
+};
+
+export type ChanRecursivePivotOverlay = {
+  level: "stroke" | "segment" | string;
+  start_index: number;
+  end_index: number;
+  start_day: string;
+  end_day: string;
+  low: number;
+  high: number;
+  direction: "up" | "down" | string;
+  component_count: number;
+};
+
+export type ChanDivergenceOverlay = {
+  kind: "top" | "bottom" | string;
+  action: "buy" | "sell" | string;
+  start_index: number;
+  end_index: number;
+  reference_start_index: number;
+  reference_end_index: number;
+  reference_energy: number;
+  current_energy: number;
+  price_extreme: number;
+};
+
 export type ResearchSignalChanStructure = {
   fractal_count: number;
   stroke_count: number;
   pivot_count: number;
+  segment_count?: number;
+  recursive_pivot_count?: number;
+  divergence_count?: number;
   latest_signal_kind: string | null;
   latest_signal_title: string | null;
   fractals?: ChanFractalOverlay[];
   strokes?: ChanStrokeOverlay[];
   pivots?: ChanPivotOverlay[];
+  segments?: ChanSegmentOverlay[];
+  recursive_pivots?: ChanRecursivePivotOverlay[];
+  divergences?: ChanDivergenceOverlay[];
   signals?: ResearchSignal[];
 };
 

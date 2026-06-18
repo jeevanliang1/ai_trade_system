@@ -390,7 +390,7 @@ def _chan_structure_score(
     lookback: int,
 ) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, str]], dict[str, Any]]:
     if len(bars) < min_bars:
-        diagnostics = _chan_structure_diagnostics(0, 0, 0, None)
+        diagnostics = _chan_structure_diagnostics(0, 0, 0, 0, 0, 0, None)
         blockers = [{"code": "INSUFFICIENT_BARS", "message": f"至少需要 {min_bars} 根K线，当前 {len(bars)} 根"}]
         score = _chan_structure_score_payload(0.0, "neutral", 0.0, "缠论结构样本不足", diagnostics)
         preview = {
@@ -409,10 +409,20 @@ def _chan_structure_score(
     total_score = result.chan_score
     direction = "bullish" if total_score > 0 else "bearish" if total_score < 0 else "neutral"
     confidence = round(min(1.0, max(0.0, 0.35 + abs(total_score) / 100.0)), 4)
-    diagnostics = _chan_structure_diagnostics(len(result.fractals), len(result.strokes), len(result.pivots), latest_signal)
+    diagnostics = _chan_structure_diagnostics(
+        len(result.fractals),
+        len(result.strokes),
+        len(result.pivots),
+        len(result.segments),
+        len(result.recursive_pivots),
+        len(result.divergences),
+        latest_signal,
+    )
     summary = (
         f"分型 {diagnostics['fractal_count']} 个，笔 {diagnostics['stroke_count']} 条，"
-        f"中枢 {diagnostics['pivot_count']} 个，{diagnostics['latest_signal_title'] or '暂无结构触发'}"
+        f"中枢 {diagnostics['pivot_count']} 个，线段 {diagnostics['segment_count']} 条，"
+        f"递归中枢 {diagnostics['recursive_pivot_count']} 个，背驰 {diagnostics['divergence_count']} 个，"
+        f"{diagnostics['latest_signal_title'] or '暂无结构触发'}"
     )
     score = _chan_structure_score_payload(total_score, direction, confidence, summary, diagnostics)
     blockers = [] if latest_signal else [{"code": "NO_CHAN_STRUCTURE_SIGNAL", "message": summary}]
@@ -432,12 +442,18 @@ def _chan_structure_diagnostics(
     fractal_count: int,
     stroke_count: int,
     pivot_count: int,
+    segment_count: int,
+    recursive_pivot_count: int,
+    divergence_count: int,
     latest_signal: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return {
         "fractal_count": fractal_count,
         "stroke_count": stroke_count,
         "pivot_count": pivot_count,
+        "segment_count": segment_count,
+        "recursive_pivot_count": recursive_pivot_count,
+        "divergence_count": divergence_count,
         "latest_signal_kind": latest_signal["kind"] if latest_signal else None,
         "latest_signal_title": latest_signal["title"] if latest_signal else None,
     }
