@@ -123,7 +123,7 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
         display_name="缠论结构策略",
-        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖；确认模式包含背驰确认和三买/三卖回抽确认，支持可选最大持仓退出。",
+        description="从包含关系、分型、笔和中枢结构中识别二买/二卖、三买/三卖；确认模式包含背驰观察、背驰确认和三买/三卖回抽确认，支持可选最大持仓退出。",
     ),
 ]
 
@@ -387,6 +387,12 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         description="买入后最大持仓多少根日线，超过后即使未触发其他退出条件也会离场；支持该约定的策略可用 0 表示禁用时间退出。",
         increase_effect="调大后允许趋势运行更久，但可能承受更大回撤。",
         decrease_effect="调小后退出更快，资金周转更快但可能错过后续趋势。",
+    ),
+    "watch_confirm_bars": ParameterGuidance(
+        display_name="背驰观察有效期",
+        description="T1 底/顶背驰观察信号在多少根日线内等待同向确认、二买/二卖或三买/三卖后再交易；0 表示禁用背驰观察态。",
+        increase_effect="调大后背驰观察保留更久，更容易等到后续确认，但可能接收较晚的确认。",
+        decrease_effect="调小后背驰观察更快失效，交易更克制，但可能错过慢确认结构。",
     ),
     "min_bars": ParameterGuidance(
         display_name="最少行情数",

@@ -118,7 +118,14 @@ def make_low_confidence_t2_chan_bars() -> list[Bar]:
     ]
 
 
-def make_research_signal(day: date, kind: str, action: str, score: float, price: float) -> ResearchSignal:
+def make_research_signal(
+    day: date,
+    kind: str,
+    action: str,
+    score: float,
+    price: float,
+    tags: tuple[str, ...] = ("chan", "structure", "confirmation"),
+) -> ResearchSignal:
     return ResearchSignal(
         trading_day=day,
         symbol="000001",
@@ -130,7 +137,7 @@ def make_research_signal(day: date, kind: str, action: str, score: float, price:
         score=score,
         title=kind,
         reason=f"test {kind}",
-        tags=("chan", "structure", "confirmation"),
+        tags=tags,
     )
 
 
@@ -473,6 +480,163 @@ def test_chan_structure_strategy_confirmation_mode_trades_third_buy_and_sell(mon
     assert signals[1].reason.startswith("chan_structure:CHAN_STRUCT_SELL_T3")
 
 
+def test_chan_structure_strategy_arms_bottom_divergence_watch_and_confirms_with_t2(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+                "buy",
+                62.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "divergence", "watch"),
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                28.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "second-buy"),
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=6,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        watch_confirm_bars=5,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].price == bars[4].close_price
+    assert signals[0].reason.startswith(
+        "chan_structure:ARMED_CONFIRM:CHAN_STRUCT_BUY_T1_DIVERGENCE->CHAN_STRUCT_BUY_T2"
+    )
+
+
+def test_chan_structure_strategy_arms_top_divergence_watch_and_confirms_with_t3(monkeypatch):
+    bars = [make_chan_bar(index, 14 - index, 14.5 - index, 13.5 - index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_SELL_T1_DIVERGENCE",
+                "sell",
+                -62.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "divergence", "watch"),
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_SELL_T3",
+                "sell",
+                -44.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "third-sell"),
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=6,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        watch_confirm_bars=5,
+    )
+    strategy.in_position = True
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].price == bars[4].close_price
+    assert signals[0].reason.startswith(
+        "chan_structure:ARMED_CONFIRM:CHAN_STRUCT_SELL_T1_DIVERGENCE->CHAN_STRUCT_SELL_T3"
+    )
+
+
+def test_chan_structure_strategy_expires_armed_divergence_watch(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(7)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+                "buy",
+                62.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "divergence", "watch"),
+            ),
+            make_research_signal(
+                bars[5].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                28.0,
+                bars[5].close_price,
+                tags=("chan", "structure", "second-buy"),
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=7,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        watch_confirm_bars=2,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert signals == []
+
+
+def test_chan_structure_strategy_can_disable_divergence_watch_arming(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+                "buy",
+                62.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "divergence", "watch"),
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                28.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "second-buy"),
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=6,
+        min_signal_score=30.0,
+        signal_mode="confirmation",
+        watch_confirm_bars=0,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert signals == []
+
+
 def test_chan_structure_strategy_rejects_unknown_signal_mode():
     try:
         ChanStructureStrategy("000001", signal_mode="unknown")
@@ -489,6 +653,15 @@ def test_chan_structure_strategy_rejects_negative_max_holding_bars():
         assert "max_holding_bars" in str(exc)
     else:
         raise AssertionError("negative max_holding_bars should raise ValueError")
+
+
+def test_chan_structure_strategy_rejects_negative_watch_confirm_bars():
+    try:
+        ChanStructureStrategy("000001", watch_confirm_bars=-1)
+    except ValueError as exc:
+        assert "watch_confirm_bars" in str(exc)
+    else:
+        raise AssertionError("negative watch_confirm_bars should raise ValueError")
 
 
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():

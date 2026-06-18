@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass
 from statistics import mean, pstdev
 
 from ai_trade_system.market import Bar, Signal
@@ -25,6 +26,29 @@ CHAN_STRUCTURE_SIGNAL_KINDS = {
     "CHAN_STRUCT_SELL_T3",
 }
 CHAN_SIGNAL_MODES = {"confirmation", "structure", "all"}
+CHAN_WATCH_SIGNAL_KINDS = {
+    "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+    "CHAN_STRUCT_SELL_T1_DIVERGENCE",
+}
+CHAN_ARMED_CONFIRMATION_SIGNAL_KINDS = {
+    "CHAN_STRUCT_BUY_CONFIRM",
+    "CHAN_STRUCT_SELL_CONFIRM",
+    "CHAN_STRUCT_BUY_T2",
+    "CHAN_STRUCT_SELL_T2",
+    "CHAN_STRUCT_BUY_T3",
+    "CHAN_STRUCT_SELL_T3",
+}
+
+
+@dataclass(frozen=True)
+class ArmedChanWatch:
+    action: str
+    kind: str
+    score: float
+    price: float
+    reason: str
+    trading_day: object
+    bar_index: int
 
 
 class RsiMeanReversionStrategy(Strategy):
@@ -234,6 +258,7 @@ class ChanStructureStrategy(Strategy):
         min_signal_score: float = 30.0,
         signal_mode: str = "all",
         max_holding_bars: int = 0,
+        watch_confirm_bars: int = 20,
         trade_size: int = 100,
     ) -> None:
         if min_bars < 3:
@@ -250,6 +275,8 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("signal_mode must be one of: all, confirmation, structure")
         if max_holding_bars < 0:
             raise ValueError("max_holding_bars must be non-negative")
+        if watch_confirm_bars < 0:
+            raise ValueError("watch_confirm_bars must be non-negative")
         if trade_size <= 0:
             raise ValueError("trade_size must be positive")
         self.symbol = symbol
@@ -260,15 +287,19 @@ class ChanStructureStrategy(Strategy):
         self.min_signal_score = min_signal_score
         self.signal_mode = signal_mode
         self.max_holding_bars = max_holding_bars
+        self.watch_confirm_bars = watch_confirm_bars
         self.trade_size = trade_size
         self.bars: deque[Bar] = deque(maxlen=lookback)
         self.in_position = False
         self.holding_bars = 0
+        self.bar_index = 0
+        self.armed_watch: ArmedChanWatch | None = None
         self.emitted: set[tuple[object, str, str]] = set()
 
     def on_bar(self, bar: Bar) -> list[Signal]:
         if bar.symbol != self.symbol:
             return []
+        self.bar_index += 1
         self.bars.append(bar)
         if self.in_position:
             self.holding_bars += 1
@@ -281,31 +312,58 @@ class ChanStructureStrategy(Strategy):
             min_rebound_pct=self.min_rebound_pct,
             lookback=self.lookback,
         )
-        candidates = [
-            signal
-            for signal in result.signals
-            if signal.trading_day == bar.trading_day
-            and abs(signal.score) >= self.min_signal_score
-            and self._signal_mode_allows(signal.kind)
-        ]
+        self._expire_armed_watch()
+        candidates = [signal for signal in result.signals if signal.trading_day == bar.trading_day]
         candidates.sort(key=lambda signal: abs(signal.score), reverse=True)
         for signal in candidates:
+            if self._is_watch_signal(signal):
+                self._arm_watch(signal)
+                continue
+            if self._armed_watch_confirms(signal):
+                armed_watch = self.armed_watch
+                if armed_watch is None:
+                    continue
+                key = (signal.trading_day, f"ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}", signal.action)
+                if key in self.emitted:
+                    continue
+                if self._can_emit_action(signal.action):
+                    self.emitted.add(key)
+                    self.armed_watch = None
+                    if signal.action == "buy":
+                        self.in_position = True
+                    else:
+                        self.in_position = False
+                    self.holding_bars = 0
+                    return [
+                        Signal(
+                            signal.action,
+                            bar.symbol,
+                            signal.price,
+                            self.trade_size,
+                            f"chan_structure:ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}:{signal.reason}",
+                        )
+                    ]
+            if abs(signal.score) < self.min_signal_score or not self._signal_mode_allows(signal.kind):
+                continue
             key = (signal.trading_day, signal.kind, signal.action)
             if key in self.emitted:
                 continue
             if signal.action == "buy" and not self.in_position:
                 self.emitted.add(key)
+                self.armed_watch = None
                 self.in_position = True
                 self.holding_bars = 0
                 return [Signal("buy", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
             if signal.action == "sell" and self.in_position:
                 self.emitted.add(key)
+                self.armed_watch = None
                 self.in_position = False
                 self.holding_bars = 0
                 return [Signal("sell", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
         if self.in_position and self.max_holding_bars > 0 and self.holding_bars >= self.max_holding_bars:
             self.in_position = False
             self.holding_bars = 0
+            self.armed_watch = None
             return [
                 Signal(
                     "sell",
@@ -323,6 +381,48 @@ class ChanStructureStrategy(Strategy):
         if self.signal_mode == "confirmation":
             return kind in CHAN_CONFIRMATION_SIGNAL_KINDS
         return kind in CHAN_STRUCTURE_SIGNAL_KINDS
+
+    def _is_watch_signal(self, signal) -> bool:
+        return signal.kind in CHAN_WATCH_SIGNAL_KINDS and "watch" in signal.tags
+
+    def _arm_watch(self, signal) -> None:
+        if self.watch_confirm_bars == 0:
+            return
+        if self.signal_mode == "structure":
+            return
+        if abs(signal.score) < self.min_signal_score:
+            return
+        if not self._can_emit_action(signal.action):
+            return
+        self.armed_watch = ArmedChanWatch(
+            action=signal.action,
+            kind=signal.kind,
+            score=signal.score,
+            price=signal.price,
+            reason=signal.reason,
+            trading_day=signal.trading_day,
+            bar_index=self.bar_index,
+        )
+
+    def _expire_armed_watch(self) -> None:
+        if self.armed_watch is None:
+            return
+        if self.bar_index - self.armed_watch.bar_index > self.watch_confirm_bars:
+            self.armed_watch = None
+
+    def _armed_watch_confirms(self, signal) -> bool:
+        if self.armed_watch is None:
+            return False
+        if self.bar_index <= self.armed_watch.bar_index:
+            return False
+        return signal.action == self.armed_watch.action and signal.kind in CHAN_ARMED_CONFIRMATION_SIGNAL_KINDS
+
+    def _can_emit_action(self, action: str) -> bool:
+        if action == "buy":
+            return not self.in_position
+        if action == "sell":
+            return self.in_position
+        return False
 
 
 class VolumeConfirmedMomentumStrategy(Strategy):

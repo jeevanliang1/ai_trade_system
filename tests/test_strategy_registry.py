@@ -131,6 +131,8 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert "confirmation" in params["signal_mode"].description
     assert "structure" in params["signal_mode"].description
     assert "0" in params["max_holding_bars"].description
+    assert params["watch_confirm_bars"].display_name == "背驰观察有效期"
+    assert "背驰" in params["watch_confirm_bars"].description
 
 
 def test_chan_structure_strategy_registry_exposes_tuned_default_score():
@@ -142,6 +144,7 @@ def test_chan_structure_strategy_registry_exposes_tuned_default_score():
     assert defaults["min_signal_score"] == 30.0
     assert defaults["signal_mode"] == "all"
     assert defaults["max_holding_bars"] == 0
+    assert defaults["watch_confirm_bars"] == 20
 
 
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):
