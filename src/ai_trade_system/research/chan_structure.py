@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pandas as pd
@@ -59,6 +59,9 @@ class ChanSegment:
     start_stroke_index: int = 0
     end_stroke_index: int = 0
     break_stroke_index: int | None = None
+    level: str = "segment"
+    sequence_index: int = 0
+    lineage_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,7 @@ def scan_chan_structure(
         fractals,
         strokes,
         pivots,
+        recursive_pivots,
         divergences,
         min_rebound_pct=max(0.0, float(min_rebound_pct)),
     )
@@ -305,12 +309,20 @@ def _build_segments(strokes: list[ChanStroke]) -> list[ChanSegment]:
                 break
             scan_index += 1
 
-        segments.append(segment)
+        segments.append(_with_segment_identity(segment, len(segments)))
         if break_stroke_index is None:
             cursor = end_stroke_index + 1
         else:
             cursor = break_stroke_index
     return segments
+
+
+def _with_segment_identity(segment: ChanSegment, sequence_index: int) -> ChanSegment:
+    return replace(
+        segment,
+        sequence_index=sequence_index,
+        lineage_id=_segment_lineage_id(segment),
+    )
 
 
 def _candidate_segment(strokes: list[ChanStroke], start_index: int) -> ChanSegment | None:
@@ -347,6 +359,10 @@ def _segment_from_strokes(
         end_stroke_index=end_stroke_index,
         break_stroke_index=break_stroke_index,
     )
+
+
+def _segment_lineage_id(segment: ChanSegment) -> str:
+    return f"segment:{segment.start_stroke_index}-{segment.end_stroke_index}"
 
 
 def _stroke_extends_segment(stroke: ChanStroke, segment: ChanSegment) -> bool:
@@ -570,6 +586,7 @@ def _structure_signals(
     fractals: list[ChanFractal],
     strokes: list[ChanStroke],
     pivots: list[ChanPivot],
+    recursive_pivots: list[ChanRecursivePivot],
     divergences: list[ChanDivergence],
     *,
     min_rebound_pct: float,
@@ -590,10 +607,10 @@ def _structure_signals(
     if third_sell is not None:
         signals.append(third_sell)
 
-    second_buy = _second_buy_signal(fractals, latest, symbol, exchange, min_rebound_pct)
+    second_buy = _second_buy_signal(fractals, recursive_pivots, latest, symbol, exchange, min_rebound_pct)
     if second_buy is not None:
         signals.append(second_buy)
-    second_sell = _second_sell_signal(fractals, latest, symbol, exchange, min_rebound_pct)
+    second_sell = _second_sell_signal(fractals, recursive_pivots, latest, symbol, exchange, min_rebound_pct)
     if second_sell is not None:
         signals.append(second_sell)
 
@@ -616,6 +633,7 @@ def _divergence_signals(
     if buy_divergence is not None:
         confirmed, confirmation_reason = _divergence_confirmation(buy_divergence, latest, min_rebound_pct)
         base_score = buy_divergence.base_score
+        metadata = _divergence_signal_metadata(buy_divergence, confirmed=confirmed)
         signals.append(
             ResearchSignal(
                 trading_day=latest.trading_day,
@@ -627,12 +645,14 @@ def _divergence_signals(
                 strength=_signal_strength(base_score),
                 score=base_score,
                 title="缠论底背驰",
-                reason=_divergence_watch_reason(buy_divergence, confirmation_reason, confirmed),
-                tags=_divergence_tags(("chan", "structure", "divergence", "first-buy"), confirmed),
+                reason=f"{_divergence_watch_reason(buy_divergence, confirmation_reason, confirmed)}，{_metadata_reason(metadata)}",
+                tags=_tags_with_level(_divergence_tags(("chan", "structure", "divergence", "first-buy"), confirmed), metadata),
+                metadata=metadata,
             )
         )
         if confirmed:
             confirmation_score = buy_divergence.confirmation_score
+            confirmation_metadata = {**metadata, "signal_role": "confirmation"}
             signals.append(
                 ResearchSignal(
                     trading_day=latest.trading_day,
@@ -644,8 +664,9 @@ def _divergence_signals(
                     strength=_signal_strength(confirmation_score),
                     score=confirmation_score,
                     title="缠论底背驰确认",
-                    reason=f"{_divergence_reason(buy_divergence)}，{confirmation_reason}",
-                    tags=("chan", "structure", "divergence", "confirmation", "first-buy"),
+                    reason=f"{_divergence_reason(buy_divergence)}，{confirmation_reason}，{_metadata_reason(confirmation_metadata)}",
+                    tags=_tags_with_level(("chan", "structure", "divergence", "confirmation", "first-buy"), confirmation_metadata),
+                    metadata=confirmation_metadata,
                 )
             )
 
@@ -653,6 +674,7 @@ def _divergence_signals(
     if sell_divergence is not None:
         confirmed, confirmation_reason = _divergence_confirmation(sell_divergence, latest, min_rebound_pct)
         base_score = -sell_divergence.base_score
+        metadata = _divergence_signal_metadata(sell_divergence, confirmed=confirmed)
         signals.append(
             ResearchSignal(
                 trading_day=latest.trading_day,
@@ -664,12 +686,14 @@ def _divergence_signals(
                 strength=_signal_strength(base_score),
                 score=base_score,
                 title="缠论顶背驰",
-                reason=_divergence_watch_reason(sell_divergence, confirmation_reason, confirmed),
-                tags=_divergence_tags(("chan", "structure", "divergence", "first-sell"), confirmed),
+                reason=f"{_divergence_watch_reason(sell_divergence, confirmation_reason, confirmed)}，{_metadata_reason(metadata)}",
+                tags=_tags_with_level(_divergence_tags(("chan", "structure", "divergence", "first-sell"), confirmed), metadata),
+                metadata=metadata,
             )
         )
         if confirmed:
             confirmation_score = -sell_divergence.confirmation_score
+            confirmation_metadata = {**metadata, "signal_role": "confirmation"}
             signals.append(
                 ResearchSignal(
                     trading_day=latest.trading_day,
@@ -681,8 +705,9 @@ def _divergence_signals(
                     strength=_signal_strength(confirmation_score),
                     score=confirmation_score,
                     title="缠论顶背驰确认",
-                    reason=f"{_divergence_reason(sell_divergence)}，{confirmation_reason}",
-                    tags=("chan", "structure", "divergence", "confirmation", "first-sell"),
+                    reason=f"{_divergence_reason(sell_divergence)}，{confirmation_reason}，{_metadata_reason(confirmation_metadata)}",
+                    tags=_tags_with_level(("chan", "structure", "divergence", "confirmation", "first-sell"), confirmation_metadata),
+                    metadata=confirmation_metadata,
                 )
             )
     return signals
@@ -717,6 +742,103 @@ def _divergence_tags(base_tags: tuple[str, ...], confirmed: bool) -> tuple[str, 
     return (*base_tags, "watch")
 
 
+def _divergence_signal_metadata(divergence: ChanDivergence, *, confirmed: bool) -> dict[str, object]:
+    level = divergence.pivot_level or "segment"
+    point_type = "first-buy" if divergence.action == "buy" else "first-sell"
+    pivot_relation = f"inside-{level}-pivot" if divergence.pivot_level else "same-direction-divergence"
+    segment_lineage = _segment_identity(divergence.segment)
+    reference_lineage = _segment_identity(divergence.reference_segment)
+    return {
+        "level": level,
+        "point_type": point_type,
+        "pivot_relation": pivot_relation,
+        "lineage": f"{reference_lineage}->{segment_lineage}",
+        "lineage_phase": "confirmed" if confirmed else "watch",
+        "signal_role": "setup",
+        "segment_lineage_id": segment_lineage,
+        "reference_segment_lineage_id": reference_lineage,
+        "segment_start_index": divergence.segment.start.index,
+        "segment_end_index": divergence.segment.end.index,
+        "reference_start_index": divergence.reference_segment.start.index,
+        "reference_end_index": divergence.reference_segment.end.index,
+        "pivot_level": divergence.pivot_level,
+        "pivot_start_index": divergence.pivot_start_index,
+        "pivot_end_index": divergence.pivot_end_index,
+        "pivot_low": divergence.pivot_low,
+        "pivot_high": divergence.pivot_high,
+    }
+
+
+def _second_point_metadata(
+    point_type: str,
+    previous: ChanFractal,
+    current: ChanFractal,
+    recursive_pivots: list[ChanRecursivePivot],
+    pivot_relation: str,
+) -> dict[str, object]:
+    pivot = _nearest_recursive_pivot_for_index(current.index, recursive_pivots)
+    level = pivot.level if pivot is not None else "fractal"
+    return {
+        "level": level,
+        "point_type": point_type,
+        "pivot_relation": pivot_relation,
+        "lineage": f"fractal:{previous.index}->{current.index}:{point_type}",
+        "previous_fractal_index": previous.index,
+        "current_fractal_index": current.index,
+        "pivot_level": pivot.level if pivot is not None else None,
+        "pivot_start_index": pivot.start_index if pivot is not None else None,
+        "pivot_end_index": pivot.end_index if pivot is not None else None,
+        "pivot_low": pivot.low if pivot is not None else None,
+        "pivot_high": pivot.high if pivot is not None else None,
+    }
+
+
+def _third_point_metadata(point_type: str, pivot: ChanPivot, pivot_relation: str) -> dict[str, object]:
+    return {
+        "level": "stroke",
+        "point_type": point_type,
+        "pivot_relation": pivot_relation,
+        "lineage": f"pivot:{pivot.start_index}-{pivot.end_index}:leave-retest",
+        "pivot_level": "stroke",
+        "pivot_start_index": pivot.start_index,
+        "pivot_end_index": pivot.end_index,
+        "pivot_low": pivot.low,
+        "pivot_high": pivot.high,
+    }
+
+
+def _nearest_recursive_pivot_for_index(index: int, pivots: list[ChanRecursivePivot]) -> ChanRecursivePivot | None:
+    candidates = [pivot for pivot in pivots if pivot.start_index <= index <= pivot.end_index]
+    if not candidates:
+        return None
+
+    def sort_key(pivot: ChanRecursivePivot) -> tuple[int, int, int]:
+        level_rank = 0 if pivot.level == "segment" else 1
+        span = pivot.end_index - pivot.start_index
+        edge_distance = min(abs(index - pivot.start_index), abs(index - pivot.end_index))
+        return (level_rank, edge_distance, span)
+
+    return sorted(candidates, key=sort_key)[0]
+
+
+def _segment_identity(segment: ChanSegment) -> str:
+    return segment.lineage_id or _segment_lineage_id(segment)
+
+
+def _tags_with_level(tags: tuple[str, ...], metadata: dict[str, object]) -> tuple[str, ...]:
+    level = metadata.get("level")
+    if not isinstance(level, str):
+        return tags
+    level_tag = f"level:{level}"
+    if level_tag in tags:
+        return tags
+    return (*tags, level_tag)
+
+
+def _metadata_reason(metadata: dict[str, object]) -> str:
+    return f"层级 {metadata['level']}，关系 {metadata['pivot_relation']}，链路 {metadata['lineage']}"
+
+
 def _signal_strength(score: float) -> float:
     return round(min(0.95, max(0.1, abs(score) / 100.0)), 2)
 
@@ -746,6 +868,7 @@ def _third_buy_signal(strokes: list[ChanStroke], pivots: list[ChanPivot], latest
         return None
     if prior.high <= pivot.high or pullback.low <= pivot.high:
         return None
+    metadata = _third_point_metadata("third-buy", pivot, "pullback-above-pivot-high")
     return ResearchSignal(
         trading_day=latest.trading_day,
         symbol=symbol,
@@ -756,8 +879,9 @@ def _third_buy_signal(strokes: list[ChanStroke], pivots: list[ChanPivot], latest
         strength=0.78,
         score=44.0,
         title="缠论三买",
-        reason="向上离开中枢后的回抽未跌回中枢上沿",
-        tags=("chan", "structure", "third-buy"),
+        reason=f"向上离开中枢后的回抽未跌回中枢上沿，{_metadata_reason(metadata)}",
+        tags=_tags_with_level(("chan", "structure", "third-buy"), metadata),
+        metadata=metadata,
     )
 
 
@@ -770,6 +894,7 @@ def _third_sell_signal(strokes: list[ChanStroke], pivots: list[ChanPivot], lates
         return None
     if prior.low >= pivot.low or pullback.high >= pivot.low:
         return None
+    metadata = _third_point_metadata("third-sell", pivot, "pullback-below-pivot-low")
     return ResearchSignal(
         trading_day=latest.trading_day,
         symbol=symbol,
@@ -780,13 +905,15 @@ def _third_sell_signal(strokes: list[ChanStroke], pivots: list[ChanPivot], lates
         strength=0.78,
         score=-44.0,
         title="缠论三卖",
-        reason="向下离开中枢后的回抽未重新站回中枢下沿",
-        tags=("chan", "structure", "third-sell"),
+        reason=f"向下离开中枢后的回抽未重新站回中枢下沿，{_metadata_reason(metadata)}",
+        tags=_tags_with_level(("chan", "structure", "third-sell"), metadata),
+        metadata=metadata,
     )
 
 
 def _second_buy_signal(
     fractals: list[ChanFractal],
+    recursive_pivots: list[ChanRecursivePivot],
     latest: ChanKLine,
     symbol: str,
     exchange: str,
@@ -798,6 +925,7 @@ def _second_buy_signal(
     previous, current = lows[-2], lows[-1]
     if current.price <= previous.price or latest.close < current.price * (1 + min_rebound_pct):
         return None
+    metadata = _second_point_metadata("second-buy", previous, current, recursive_pivots, "higher-low-repair")
     return ResearchSignal(
         trading_day=latest.trading_day,
         symbol=symbol,
@@ -808,13 +936,15 @@ def _second_buy_signal(
         strength=0.62,
         score=28.0,
         title="缠论二买",
-        reason="回落低点抬高后重新向上修复",
-        tags=("chan", "structure", "second-buy"),
+        reason=f"回落低点抬高后重新向上修复，{_metadata_reason(metadata)}",
+        tags=_tags_with_level(("chan", "structure", "second-buy"), metadata),
+        metadata=metadata,
     )
 
 
 def _second_sell_signal(
     fractals: list[ChanFractal],
+    recursive_pivots: list[ChanRecursivePivot],
     latest: ChanKLine,
     symbol: str,
     exchange: str,
@@ -826,6 +956,7 @@ def _second_sell_signal(
     previous, current = highs[-2], highs[-1]
     if current.price >= previous.price or latest.close > current.price * (1 - min_rebound_pct):
         return None
+    metadata = _second_point_metadata("second-sell", previous, current, recursive_pivots, "lower-high-breakdown")
     return ResearchSignal(
         trading_day=latest.trading_day,
         symbol=symbol,
@@ -836,8 +967,9 @@ def _second_sell_signal(
         strength=0.62,
         score=-28.0,
         title="缠论二卖",
-        reason="反弹高点降低后重新向下破位",
-        tags=("chan", "structure", "second-sell"),
+        reason=f"反弹高点降低后重新向下破位，{_metadata_reason(metadata)}",
+        tags=_tags_with_level(("chan", "structure", "second-sell"), metadata),
+        metadata=metadata,
     )
 
 

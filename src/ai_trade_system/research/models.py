@@ -17,6 +17,7 @@ class ResearchSignal:
     title: str
     reason: str
     tags: tuple[str, ...] = field(default_factory=tuple)
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,9 @@ class ChanPivotOverlay:
 
 @dataclass(frozen=True)
 class ChanSegmentOverlay:
+    level: str
+    sequence_index: int
+    lineage_id: str
     direction: str
     start_index: int
     end_index: int

@@ -351,6 +351,14 @@ def test_chan_structure_builds_non_overlapping_segments_from_breaks():
     assert segment_pivots
 
 
+def test_chan_structure_segments_carry_same_level_sequence_and_lineage():
+    segments = _build_segments(_strict_segment_strokes())
+
+    assert [segment.level for segment in segments] == ["segment", "segment", "segment"]
+    assert [segment.sequence_index for segment in segments] == [0, 1, 2]
+    assert [segment.lineage_id for segment in segments] == ["segment:0-4", "segment:5-9", "segment:10-12"]
+
+
 def test_chan_structure_extends_recursive_pivots_beyond_three_components():
     pivots = _build_recursive_pivots(_extended_pivot_strokes(), [])
 
@@ -428,6 +436,71 @@ def test_chan_structure_keeps_divergence_watchable_until_later_confirmation():
     assert any(signal.kind == "CHAN_STRUCT_BUY_CONFIRM" for signal in confirmed.signals)
 
 
+def test_chan_structure_divergence_signals_carry_hierarchy_metadata():
+    result = scan_chan_structure(
+        bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=True)),
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+    )
+
+    buy_watch = next(signal for signal in result.signals if signal.kind == "CHAN_STRUCT_BUY_T1_DIVERGENCE")
+    buy_confirm = next(signal for signal in result.signals if signal.kind == "CHAN_STRUCT_BUY_CONFIRM")
+
+    assert buy_watch.metadata["point_type"] == "first-buy"
+    assert buy_watch.metadata["level"] == "segment"
+    assert buy_watch.metadata["pivot_relation"] == "inside-segment-pivot"
+    assert buy_watch.metadata["lineage"].startswith("segment:")
+    assert buy_watch.metadata["lineage_phase"] == "confirmed"
+    assert "level:segment" in buy_watch.tags
+    assert "层级 segment" in buy_watch.reason
+    assert "链路 segment:" in buy_watch.reason
+
+    assert buy_confirm.metadata["point_type"] == "first-buy"
+    assert buy_confirm.metadata["lineage"] == buy_watch.metadata["lineage"]
+    assert buy_confirm.metadata["lineage_phase"] == "confirmed"
+    assert "confirmation" in buy_confirm.tags
+
+
+def test_chan_structure_second_and_third_points_carry_pivot_lineage():
+    second_buy_result = scan_chan_structure(
+        bars_to_frame(_bars([12.0, 11.4, 10.8, 10.1, 9.8, 10.4, 11.1, 11.6, 10.9, 10.4, 10.8, 11.5, 12.0, 12.4, 12.8])),
+        min_stroke_bars=2,
+        min_rebound_pct=0.03,
+    )
+    third_buy_bars = [
+        _bar(0, 10.0, high=10.4, low=9.8),
+        _bar(1, 9.4, high=9.8, low=9.1),
+        _bar(2, 10.4, high=10.9, low=10.0),
+        _bar(3, 11.6, high=12.0, low=11.1),
+        _bar(4, 10.8, high=11.0, low=10.2),
+        _bar(5, 10.1, high=10.5, low=9.7),
+        _bar(6, 11.5, high=12.0, low=11.0),
+        _bar(7, 12.8, high=13.2, low=12.2),
+        _bar(8, 12.6, high=12.8, low=12.4),
+        _bar(9, 12.5, high=12.6, low=12.3),
+        _bar(10, 12.3, high=12.4, low=12.1),
+        _bar(11, 12.8, high=13.0, low=12.5),
+    ]
+    third_buy_result = scan_chan_structure(bars_to_frame(third_buy_bars), min_stroke_bars=2, min_rebound_pct=0.03)
+
+    second_buy = next(signal for signal in second_buy_result.signals if signal.kind == "CHAN_STRUCT_BUY_T2")
+    third_buy = next(signal for signal in third_buy_result.signals if signal.kind == "CHAN_STRUCT_BUY_T3")
+
+    assert second_buy.metadata["point_type"] == "second-buy"
+    assert second_buy.metadata["level"] in {"fractal", "stroke", "segment"}
+    assert second_buy.metadata["pivot_relation"] == "higher-low-repair"
+    assert second_buy.metadata["lineage"].startswith("fractal:")
+    assert "level:" in "|".join(second_buy.tags)
+    assert "链路 fractal:" in second_buy.reason
+
+    assert third_buy.metadata["point_type"] == "third-buy"
+    assert third_buy.metadata["level"] == "stroke"
+    assert third_buy.metadata["pivot_relation"] == "pullback-above-pivot-high"
+    assert third_buy.metadata["lineage"].startswith("pivot:")
+    assert "level:stroke" in third_buy.tags
+    assert "链路 pivot:" in third_buy.reason
+
+
 def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergences():
     bars = _strict_chan_bars()
     result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=4, min_rebound_pct=0.02)
@@ -440,6 +513,9 @@ def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergence
     assert overlay.segments[0].stroke_count >= 3
     assert overlay.segments[0].start_stroke_index == result.segments[0].start_stroke_index
     assert overlay.segments[0].end_stroke_index == result.segments[0].end_stroke_index
+    assert overlay.segments[0].level == "segment"
+    assert overlay.segments[0].sequence_index == result.segments[0].sequence_index
+    assert overlay.segments[0].lineage_id == result.segments[0].lineage_id
     assert any(pivot.level == "segment" for pivot in overlay.recursive_pivots)
     assert overlay.divergences[0].kind == "top"
     assert overlay.divergences[0].pivot_level in {"stroke", "segment"}

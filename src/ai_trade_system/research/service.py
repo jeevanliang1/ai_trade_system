@@ -153,6 +153,9 @@ def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay
         ],
         segments=[
             ChanSegmentOverlay(
+                level=segment.level,
+                sequence_index=segment.sequence_index,
+                lineage_id=segment.lineage_id,
                 direction=segment.direction,
                 start_index=segment.start.index,
                 end_index=segment.end.index,

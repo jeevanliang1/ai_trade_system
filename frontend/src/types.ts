@@ -78,6 +78,7 @@ export type ResearchSignal = {
   title: string;
   reason: string;
   tags: string[];
+  metadata?: Record<string, string | number | boolean | null>;
 };
 
 export type ResearchSignalBlocker = {
@@ -135,6 +136,9 @@ export type ChanPivotOverlay = {
 };
 
 export type ChanSegmentOverlay = {
+  level: "segment" | string;
+  sequence_index: number;
+  lineage_id: string;
   direction: "up" | "down" | string;
   start_index: number;
   end_index: number;
