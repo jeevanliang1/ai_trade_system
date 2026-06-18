@@ -104,7 +104,9 @@ No current pending items.
 
 ### Strategy Development
 
-- Add Chan structure visualization or Signal Radar scoring-mode integration so `ChanStructureStrategy` can be inspected beyond single-strategy backtests.
+- Add Signal Radar `chan_structure` scoring-mode integration so `ChanStructureStrategy` can be inspected beyond single-strategy backtests.
+- Add Chan structure visualization overlays in Strategy Workshop so fractals, strokes, pivots, and T2/T3 signals can be inspected on the K-line chart.
+- Deepen the Chan core analyzer with segment-level structure, recursive pivots, and divergence-style confirmation after the Radar and visualization workflows are observable.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
@@ -113,7 +115,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Add Chan structure visualization or Signal Radar scoring-mode integration so ChanStructureStrategy can be inspected beyond single-strategy backtests". The previous engineering-hygiene commit split and volume-momentum tuning remain pending, but the active user-confirmed direction is continuing strategy implementation rather than tuning.
+Start with "Strategy Development - Add Signal Radar chan_structure scoring-mode integration so ChanStructureStrategy can be inspected beyond single-strategy backtests". The next Chan follow-ups are Strategy Workshop structure visualization and then deeper segment/recursive Chan core analysis.
 
 ## Update Rules
 
