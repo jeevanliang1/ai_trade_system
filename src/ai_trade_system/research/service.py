@@ -204,6 +204,11 @@ def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay
                 macd_current=divergence.macd_current,
                 volume_reference=divergence.volume_reference,
                 volume_current=divergence.volume_current,
+                pivot_level=divergence.pivot_level,
+                pivot_start_index=divergence.pivot_start_index,
+                pivot_end_index=divergence.pivot_end_index,
+                pivot_low=divergence.pivot_low,
+                pivot_high=divergence.pivot_high,
             )
             for divergence in result.divergences
         ],

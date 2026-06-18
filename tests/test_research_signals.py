@@ -66,6 +66,17 @@ def _strict_segment_strokes() -> list[ChanStroke]:
     ]
 
 
+def _extended_pivot_strokes() -> list[ChanStroke]:
+    return [
+        _stroke(0, 5, "up", 10.0, 16.0),
+        _stroke(5, 10, "down", 16.0, 12.0),
+        _stroke(10, 15, "up", 11.0, 17.0),
+        _stroke(15, 20, "down", 18.0, 13.0),
+        _stroke(20, 25, "up", 14.0, 19.0),
+        _stroke(25, 30, "down", 10.0, 6.0),
+    ]
+
+
 def _bars_from_extrema(points: list[tuple[int, float]]) -> list[Bar]:
     bars: list[Bar] = []
     for index in range(points[-1][0] + 2):
@@ -340,6 +351,18 @@ def test_chan_structure_builds_non_overlapping_segments_from_breaks():
     assert segment_pivots
 
 
+def test_chan_structure_extends_recursive_pivots_beyond_three_components():
+    pivots = _build_recursive_pivots(_extended_pivot_strokes(), [])
+
+    extended = next(pivot for pivot in pivots if pivot.level == "stroke" and pivot.component_count > 3)
+
+    assert extended.component_count == 5
+    assert extended.start_index == 0
+    assert extended.end_index == 25
+    assert extended.low == 14.0
+    assert extended.high == 16.0
+
+
 def test_chan_structure_scores_divergence_with_macd_and_volume_evidence():
     result = scan_chan_structure(
         bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=True)),
@@ -371,6 +394,40 @@ def test_chan_structure_scores_divergence_with_macd_and_volume_evidence():
     assert "成交量" in sell_confirm.reason
 
 
+def test_chan_structure_divergence_carries_recursive_pivot_context():
+    result = scan_chan_structure(bars_to_frame(_strict_chan_bars()), min_stroke_bars=4, min_rebound_pct=0.02)
+
+    divergence = next(divergence for divergence in result.divergences if divergence.action == "buy")
+
+    assert divergence.pivot_level == "segment"
+    assert divergence.pivot_start_index is not None
+    assert divergence.pivot_end_index is not None
+    assert divergence.pivot_low is not None
+    assert divergence.pivot_high is not None
+    assert divergence.pivot_start_index <= divergence.segment.start.index
+    assert divergence.pivot_end_index >= divergence.segment.end.index
+
+
+def test_chan_structure_keeps_divergence_watchable_until_later_confirmation():
+    pending = scan_chan_structure(
+        bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=False)),
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+    )
+    confirmed = scan_chan_structure(
+        bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=True)),
+        min_stroke_bars=4,
+        min_rebound_pct=0.02,
+    )
+
+    pending_buy = next(signal for signal in pending.signals if signal.kind == "CHAN_STRUCT_BUY_T1_DIVERGENCE")
+
+    assert "watch" in pending_buy.tags
+    assert "等待" in pending_buy.reason
+    assert not any(signal.kind == "CHAN_STRUCT_BUY_CONFIRM" for signal in pending.signals)
+    assert any(signal.kind == "CHAN_STRUCT_BUY_CONFIRM" for signal in confirmed.signals)
+
+
 def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergences():
     bars = _strict_chan_bars()
     result = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=4, min_rebound_pct=0.02)
@@ -385,6 +442,9 @@ def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergence
     assert overlay.segments[0].end_stroke_index == result.segments[0].end_stroke_index
     assert any(pivot.level == "segment" for pivot in overlay.recursive_pivots)
     assert overlay.divergences[0].kind == "top"
+    assert overlay.divergences[0].pivot_level in {"stroke", "segment"}
+    assert overlay.divergences[0].pivot_start_index is not None
+    assert overlay.divergences[0].pivot_end_index is not None
 
     strict_segments = _build_segments(_strict_segment_strokes())
     strict_overlay = _chan_structure_overlay(

@@ -72,6 +72,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Chan structure default threshold tuning is complete for current scope: `ChanStructureStrategy` now defaults `min_signal_score` to `30.0`, filtering lower-confidence 28-point T2/T3 churn while retaining higher-score structure/confirmation signals; fixed 中芯国际 and 五粮液 benchmarks are recorded in QA.
 - Chan signal mode controls are complete for current scope: `ChanStructureStrategy` now accepts `signal_mode` values `all`, `confirmation`, and `structure`, exposes Chinese parameter guidance, preserves the default `all`/`30.0` benchmark behavior, and records fixed 中芯国际/五粮液 mode comparisons in QA.
 - Chan confirmation lifecycle exits are complete for current scope: `ChanStructureStrategy` now accepts `max_holding_bars`, defaults it to `0` to preserve existing behavior, exits long positions on opposite confirmation signals or optional max-holding time exits, and records fixed 中芯国际/五粮液 benchmarks in QA.
+- Chan core deepening second slice is complete for current scope: `research.chan_structure` now extends recursive stroke/segment pivots beyond fixed three-component windows, attaches nearest recursive-pivot context to divergence records and overlays, and marks unconfirmed bottom/top divergence signals as watchable until later repair or structural-break confirmation.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -112,7 +113,7 @@ No current pending items.
 
 ### Strategy Development
 
-- Deepen `research.chan_structure` confirmation signal generation or persistence so bottom/top divergence can remain watchable and confirm after later repair or break bars, then benchmark `ChanStructureStrategy` confirmation mode against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` fixtures.
+- Tune `ChanStructureStrategy` confirmation-mode scoring or signal-consumption rules now that watchable divergence persistence exists; fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` benchmarks still produce zero confirmation-mode trades at `min_signal_score=30`, so the next slice should target usable confirmation entries without overfitting.
 - Upgrade enum-like strategy parameters such as `signal_mode` to expose allowed options through the registry/API and render as select controls instead of free-text inputs in React.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
 
@@ -122,7 +123,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Deepen `research.chan_structure` confirmation signal generation or persistence so bottom/top divergence can remain watchable and confirm after later repair or break bars, then benchmark `ChanStructureStrategy` confirmation mode against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` fixtures".
+Start with "Strategy Development - Tune `ChanStructureStrategy` confirmation-mode scoring or signal-consumption rules now that watchable divergence persistence exists; fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` benchmarks still produce zero confirmation-mode trades at `min_signal_score=30`, so target usable confirmation entries without overfitting".
 
 ## Update Rules
 

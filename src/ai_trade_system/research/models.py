@@ -119,6 +119,11 @@ class ChanDivergenceOverlay:
     macd_current: float
     volume_reference: float
     volume_current: float
+    pivot_level: str | None
+    pivot_start_index: int | None
+    pivot_end_index: int | None
+    pivot_low: float | None
+    pivot_high: float | None
 
 
 @dataclass(frozen=True)

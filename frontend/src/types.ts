@@ -182,6 +182,11 @@ export type ChanDivergenceOverlay = {
   macd_current: number;
   volume_reference: number;
   volume_current: number;
+  pivot_level: "stroke" | "segment" | string | null;
+  pivot_start_index: number | null;
+  pivot_end_index: number | null;
+  pivot_low: number | null;
+  pivot_high: number | null;
 };
 
 export type ResearchSignalChanStructure = {
