@@ -5,6 +5,7 @@ from datetime import date
 
 import pandas as pd
 
+from ai_trade_system.research.chan_core_v2 import ChanCoreV2Snapshot, build_chan_core_v2_snapshot
 from ai_trade_system.research.models import ResearchSignal
 
 
@@ -118,6 +119,7 @@ class ChanStructureResult:
     divergences: list[ChanDivergence]
     signals: list[ResearchSignal]
     chan_score: float
+    core_v2: ChanCoreV2Snapshot | None = None
 
 
 def scan_chan_structure(
@@ -136,6 +138,7 @@ def scan_chan_structure(
     segments = _build_segments(strokes)
     recursive_pivots = _build_recursive_pivots(strokes, segments)
     divergences = _detect_divergences(segments, indicator_context, recursive_pivots)
+    core_v2 = build_chan_core_v2_snapshot(strokes=strokes, segments=segments, recursive_pivots=recursive_pivots)
     signals = _structure_signals(
         klines,
         fractals,
@@ -156,6 +159,7 @@ def scan_chan_structure(
         divergences=divergences,
         signals=signals,
         chan_score=chan_score,
+        core_v2=core_v2,
     )
 
 

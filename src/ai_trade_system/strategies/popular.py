@@ -6,8 +6,7 @@ from statistics import mean, pstdev
 
 from ai_trade_system.market import Bar, Signal
 from ai_trade_system.research import preview_research_signals
-from ai_trade_system.research.chan_structure import scan_chan_structure
-from ai_trade_system.research.dataframe import bars_to_frame
+from ai_trade_system.research.chan_core_v2 import ChanCoreV2Analyzer
 from ai_trade_system.strategy import Strategy
 
 
@@ -309,6 +308,11 @@ class ChanStructureStrategy(Strategy):
         self.watch_confirm_bars = watch_confirm_bars
         self.trade_size = trade_size
         self.bars: deque[Bar] = deque(maxlen=lookback)
+        self.chan_analyzer = ChanCoreV2Analyzer(
+            min_stroke_bars=self.min_stroke_bars,
+            min_rebound_pct=self.min_rebound_pct,
+            lookback=self.lookback,
+        )
         self.in_position = False
         self.holding_bars = 0
         self.bar_index = 0
@@ -320,17 +324,12 @@ class ChanStructureStrategy(Strategy):
             return []
         self.bar_index += 1
         self.bars.append(bar)
+        result = self.chan_analyzer.update_bar(bar)
         if self.in_position:
             self.holding_bars += 1
         if len(self.bars) < self.min_bars:
             return []
 
-        result = scan_chan_structure(
-            bars_to_frame(list(self.bars)),
-            min_stroke_bars=self.min_stroke_bars,
-            min_rebound_pct=self.min_rebound_pct,
-            lookback=self.lookback,
-        )
         self._expire_armed_watch()
         candidates = [signal for signal in result.signals if signal.trading_day == bar.trading_day]
         candidates.sort(key=lambda signal: abs(signal.score), reverse=True)

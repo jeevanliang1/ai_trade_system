@@ -147,6 +147,11 @@ class ChanStructureOverlay:
     recursive_pivots: list[ChanRecursivePivotOverlay] = field(default_factory=list)
     divergences: list[ChanDivergenceOverlay] = field(default_factory=list)
     signals: list[ResearchSignal] = field(default_factory=list)
+    core_v2_trend_count: int = 0
+    core_v2_pivot_lifecycle_count: int = 0
+    core_v2_cache: dict[str, object] = field(default_factory=dict)
+    core_v2_latest_trend: str | None = None
+    core_v2_pivot_states: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

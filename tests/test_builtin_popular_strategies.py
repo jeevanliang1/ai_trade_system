@@ -144,7 +144,20 @@ def make_research_signal(
 
 
 def patch_chan_structure_scan(monkeypatch, signals: list[ResearchSignal]) -> None:
-    monkeypatch.setattr(popular_strategies, "scan_chan_structure", lambda *args, **kwargs: SimpleNamespace(signals=signals))
+    class FakeAnalyzer:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def update_bar(self, bar):
+            return SimpleNamespace(signals=signals)
+
+    monkeypatch.setattr(popular_strategies, "ChanCoreV2Analyzer", FakeAnalyzer, raising=False)
+    monkeypatch.setattr(
+        popular_strategies,
+        "scan_chan_structure",
+        lambda *args, **kwargs: SimpleNamespace(signals=signals),
+        raising=False,
+    )
 
 
 def collect_volume_momentum_signals(closes: list[float], volumes: list[float], **kwargs):
@@ -314,6 +327,39 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
 
     assert signals[0].action == "sell"
     assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_SELL_CONFIRM")
+
+
+def test_chan_structure_strategy_uses_incremental_chan_core_v2_analyzer(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    calls = []
+
+    class FakeAnalyzer:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def update_bar(self, bar):
+            calls.append(bar.trading_day)
+            return SimpleNamespace(
+                signals=[
+                    make_research_signal(
+                        bars[2].trading_day,
+                        "CHAN_STRUCT_BUY_T3",
+                        "buy",
+                        44.0,
+                        bars[2].close_price,
+                        tags=("chan", "structure", "third-buy"),
+                        metadata={"point_type": "third-buy", "level": "stroke"},
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(popular_strategies, "ChanCoreV2Analyzer", FakeAnalyzer)
+    strategy = ChanStructureStrategy("000001", min_bars=3, lookback=5, min_signal_score=30.0, allowed_point_types="all")
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert len(calls) == len(bars)
+    assert [signal.action for signal in signals] == ["buy"]
 
 
 def test_chan_structure_strategy_default_filters_low_confidence_structure_signals():

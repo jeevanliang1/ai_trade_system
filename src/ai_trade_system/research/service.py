@@ -106,6 +106,11 @@ def _empty_chan_structure_overlay() -> ChanStructureOverlay:
 def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay:
     latest_signal = result.signals[-1] if result.signals else None
     days_by_index = {kline.index: kline.trading_day for kline in result.klines}
+    core_v2 = result.core_v2
+    core_v2_pivot_states: dict[str, int] = {}
+    if core_v2 is not None:
+        for pivot in core_v2.pivot_lifecycles:
+            core_v2_pivot_states[pivot.state] = core_v2_pivot_states.get(pivot.state, 0) + 1
     return ChanStructureOverlay(
         fractal_count=len(result.fractals),
         stroke_count=len(result.strokes),
@@ -115,6 +120,20 @@ def _chan_structure_overlay(result: ChanStructureResult) -> ChanStructureOverlay
         divergence_count=len(result.divergences),
         latest_signal_kind=latest_signal.kind if latest_signal else None,
         latest_signal_title=latest_signal.title if latest_signal else None,
+        core_v2_trend_count=len(core_v2.trends) if core_v2 else 0,
+        core_v2_pivot_lifecycle_count=len(core_v2.pivot_lifecycles) if core_v2 else 0,
+        core_v2_cache={
+            "total_bars": core_v2.cache.total_bars,
+            "effective_bars": core_v2.cache.effective_bars,
+            "update_count": core_v2.cache.update_count,
+            "recompute_count": core_v2.cache.recompute_count,
+            "dirty_start_index": core_v2.cache.dirty_start_index,
+            "source": core_v2.cache.source,
+        }
+        if core_v2
+        else {},
+        core_v2_latest_trend=core_v2.trends[-1].trend_type if core_v2 and core_v2.trends else None,
+        core_v2_pivot_states=core_v2_pivot_states,
         fractals=[
             ChanFractalOverlay(
                 index=fractal.index,

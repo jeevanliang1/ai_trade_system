@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from ai_trade_system.market import Bar
 from ai_trade_system.research.chan import scan_chan_patterns
+from ai_trade_system.research.chan_core_v2 import ChanCoreV2Analyzer, build_chan_core_v2_snapshot
 from ai_trade_system.research.chan_structure import ChanFractal, ChanStructureResult, ChanStroke, _build_recursive_pivots, _build_segments, normalize_containment, scan_chan_structure
 from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.research.enhanced_rsi import relative_strength_index, scan_enhanced_rsi
@@ -371,6 +372,31 @@ def test_chan_structure_extends_recursive_pivots_beyond_three_components():
     assert extended.high == 16.0
 
 
+def test_chan_core_v2_classifies_multilevel_trends_and_lifecycle_states():
+    strokes = _strict_segment_strokes()
+    segments = _build_segments(strokes)
+    recursive_pivots = _build_recursive_pivots(strokes, segments)
+
+    snapshot = build_chan_core_v2_snapshot(
+        strokes=strokes,
+        segments=segments,
+        recursive_pivots=recursive_pivots,
+        source="unit-test",
+    )
+
+    trend_levels = {trend.level for trend in snapshot.trends}
+    assert {"stroke", "segment"}.issubset(trend_levels)
+    assert {trend.trend_type for trend in snapshot.trends}.issubset({"up", "down", "range", "transition"})
+    assert any(trend.trend_type in {"up", "down", "range"} for trend in snapshot.trends)
+
+    states = {pivot.state for pivot in snapshot.pivot_lifecycles}
+    assert "confirmed" in states
+    assert "extended" in states
+    assert "broken" in states
+    assert "completed" in states
+    assert all(pivot.lineage_id.startswith("core-v2:") for pivot in snapshot.pivot_lifecycles)
+
+
 def test_chan_structure_scores_divergence_with_macd_and_volume_evidence():
     result = scan_chan_structure(
         bars_to_frame(_indicator_divergence_bars(rebound_after_bottom=True)),
@@ -537,6 +563,42 @@ def test_chan_structure_overlay_exposes_segments_recursive_pivots_and_divergence
         )
     )
     assert any(segment.break_stroke_index is not None for segment in strict_overlay.segments)
+
+
+def test_chan_structure_result_and_overlay_expose_chan_core_v2_summary():
+    result = scan_chan_structure(bars_to_frame(_strict_chan_bars()), min_stroke_bars=4, min_rebound_pct=0.02)
+
+    assert result.core_v2 is not None
+    assert result.core_v2.trends
+    assert result.core_v2.pivot_lifecycles
+    assert result.core_v2.cache.update_count == 0
+
+    overlay = _chan_structure_overlay(result)
+
+    assert overlay.core_v2_trend_count == len(result.core_v2.trends)
+    assert overlay.core_v2_pivot_lifecycle_count == len(result.core_v2.pivot_lifecycles)
+    assert overlay.core_v2_latest_trend in {"up", "down", "range", "transition", None}
+    assert overlay.core_v2_pivot_states["confirmed"] >= 1
+
+
+def test_chan_core_v2_incremental_analyzer_matches_full_scan_for_strategy_fields():
+    bars = _strict_chan_bars()
+    analyzer = ChanCoreV2Analyzer(min_stroke_bars=4, min_rebound_pct=0.02, lookback=240)
+    result = None
+    for bar in bars:
+        result = analyzer.update_bar(bar)
+
+    full = scan_chan_structure(bars_to_frame(bars), min_stroke_bars=4, min_rebound_pct=0.02, lookback=240)
+
+    assert result is not None
+    assert [signal.kind for signal in result.signals] == [signal.kind for signal in full.signals]
+    assert [segment.lineage_id for segment in result.segments] == [segment.lineage_id for segment in full.segments]
+    assert len(result.recursive_pivots) == len(full.recursive_pivots)
+    assert len(result.divergences) == len(full.divergences)
+    assert result.chan_score == full.chan_score
+    assert result.core_v2.cache.update_count == len(bars)
+    assert result.core_v2.cache.recompute_count == len(bars)
+    assert result.core_v2.cache.effective_bars <= 240
 
 
 def test_chan_structure_overlay_exposes_indicator_divergence_evidence():
