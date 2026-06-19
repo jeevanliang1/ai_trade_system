@@ -430,7 +430,7 @@ export type PortfolioAllocation = {
 
 export type PortfolioRequest = {
   allocations: PortfolioAllocation[];
-  mode: "weighted_vote" | "equal_vote" | "first_active";
+  mode: "weighted_vote" | "equal_vote" | "first_active" | "primary_assist";
   ai_adjust: boolean;
   ai_direction?: string | null;
 };

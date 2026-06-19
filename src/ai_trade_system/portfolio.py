@@ -5,6 +5,10 @@ from dataclasses import dataclass, field, replace
 from ai_trade_system.market import Bar, Signal
 from ai_trade_system.strategy import Strategy
 
+PRIMARY_ASSIST_BUY_BOOST_PCT = 0.08
+PRIMARY_ASSIST_BUY_VETO_THRESHOLD = 0.15
+PORTFOLIO_MODES = {"weighted_vote", "equal_vote", "first_active", "primary_assist"}
+
 
 @dataclass
 class StrategyAllocation:
@@ -38,7 +42,7 @@ class PortfolioSignalBreakdown:
 
 class PortfolioStrategy(Strategy):
     def __init__(self, allocations: list[StrategyAllocation], mode: str = "weighted_vote") -> None:
-        if mode not in {"weighted_vote", "equal_vote", "first_active"}:
+        if mode not in PORTFOLIO_MODES:
             raise ValueError(f"unsupported portfolio mode: {mode}")
         self.allocations = allocations
         self.mode = mode
@@ -60,6 +64,8 @@ class PortfolioStrategy(Strategy):
         signals = self._collect_signals(bar)
         if self.mode == "first_active":
             return self._first_active(signals)
+        if self.mode == "primary_assist":
+            return self._primary_assist(signals, bar)
         return self._vote(signals, bar)
 
     def _enabled_allocations(self) -> list[tuple[int, StrategyAllocation]]:
@@ -96,22 +102,73 @@ class PortfolioStrategy(Strategy):
         )
         return [Signal(signal.action, signal.symbol, signal.price, signal.volume, f"portfolio_first_active:{allocation.name}")]
 
-    def _vote(self, signals: list[tuple[int, StrategyAllocation, Signal]], bar: Bar) -> list[Signal]:
-        buy_score = 0.0
-        sell_score = 0.0
-        buy_volume = 0.0
-        sell_volume = 0.0
-        contributions: list[PortfolioSignalContribution] = []
-        for index, allocation, signal in signals:
-            score = allocation.weight if self.mode == "weighted_vote" else 1.0
-            contributions.append(self._contribution(index, allocation, signal, score=score))
-            if signal.action == "buy":
-                buy_score += score
-                buy_volume += signal.volume * score
-            elif signal.action == "sell":
-                sell_score += score
-                sell_volume += signal.volume * score
+    def _primary_assist(self, signals: list[tuple[int, StrategyAllocation, Signal]], bar: Bar) -> list[Signal]:
+        if not signals:
+            self.last_breakdown = PortfolioSignalBreakdown(0, 0, 0, self.mode, [], [])
+            return []
 
+        enabled_allocations = self._enabled_allocations()
+        if not enabled_allocations:
+            self.last_breakdown = PortfolioSignalBreakdown(0, 0, 0, self.mode, [], [])
+            return []
+
+        primary_index = enabled_allocations[0][0]
+        primary_signal = next(
+            ((index, allocation, signal) for index, allocation, signal in signals if index == primary_index),
+            None,
+        )
+        buy_score, sell_score, contributions = self._score_contributions(signals)
+        if primary_signal is None:
+            self.last_breakdown = PortfolioSignalBreakdown(
+                buy_score=buy_score,
+                sell_score=sell_score,
+                active_signals=len(signals),
+                mode=self.mode,
+                reasons=[f"{contribution.name}:{contribution.reason}" for contribution in contributions],
+                contributions=contributions,
+            )
+            return []
+
+        _, _, signal = primary_signal
+        aligned_score = sum(
+            allocation.weight
+            for index, allocation, candidate in signals
+            if index != primary_index and candidate.action == signal.action
+        )
+        opposed_score = sum(
+            allocation.weight
+            for index, allocation, candidate in signals
+            if index != primary_index and candidate.action != signal.action
+        )
+        vetoed = signal.action == "buy" and opposed_score > PRIMARY_ASSIST_BUY_VETO_THRESHOLD
+        contributions = [
+            replace(
+                contribution,
+                selected=(
+                    not vetoed
+                    and (contribution.allocation_index == primary_index or contribution.action == signal.action)
+                ),
+            )
+            for contribution in contributions
+        ]
+        self.last_breakdown = PortfolioSignalBreakdown(
+            buy_score=buy_score,
+            sell_score=sell_score,
+            active_signals=len(signals),
+            mode=self.mode,
+            reasons=[f"{contribution.name}:{contribution.reason}" for contribution in contributions],
+            contributions=contributions,
+        )
+        if vetoed:
+            return []
+
+        volume = signal.volume
+        if signal.action == "buy" and aligned_score > 0:
+            volume = max(1, round(volume * (1 + PRIMARY_ASSIST_BUY_BOOST_PCT)))
+        return [Signal(signal.action, bar.symbol, bar.close_price, volume, "portfolio_primary_assist")]
+
+    def _vote(self, signals: list[tuple[int, StrategyAllocation, Signal]], bar: Bar) -> list[Signal]:
+        buy_score, sell_score, contributions = self._score_contributions(signals)
         selected_action: str | None = None
         if buy_score != sell_score:
             selected_action = "buy" if buy_score > sell_score else "sell"
@@ -126,9 +183,33 @@ class PortfolioStrategy(Strategy):
         )
         if buy_score == sell_score:
             return []
+
+        buy_volume = 0.0
+        sell_volume = 0.0
+        for _, allocation, signal in signals:
+            score = allocation.weight if self.mode == "weighted_vote" else 1.0
+            if signal.action == "buy":
+                buy_volume += signal.volume * score
+            elif signal.action == "sell":
+                sell_volume += signal.volume * score
         if buy_score > sell_score:
             return [Signal("buy", bar.symbol, bar.close_price, max(1, round(buy_volume / buy_score)), f"portfolio_{self.mode}")]
         return [Signal("sell", bar.symbol, bar.close_price, max(1, round(sell_volume / sell_score)), f"portfolio_{self.mode}")]
+
+    def _score_contributions(
+        self, signals: list[tuple[int, StrategyAllocation, Signal]]
+    ) -> tuple[float, float, list[PortfolioSignalContribution]]:
+        buy_score = 0.0
+        sell_score = 0.0
+        contributions: list[PortfolioSignalContribution] = []
+        for index, allocation, signal in signals:
+            score = allocation.weight if self.mode in {"weighted_vote", "primary_assist"} else 1.0
+            contributions.append(self._contribution(index, allocation, signal, score=score))
+            if signal.action == "buy":
+                buy_score += score
+            elif signal.action == "sell":
+                sell_score += score
+        return buy_score, sell_score, contributions
 
     def _contribution(
         self,

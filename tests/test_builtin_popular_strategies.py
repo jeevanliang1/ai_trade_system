@@ -1725,6 +1725,144 @@ def test_chan_volume_fusion_prioritizes_chan_sell_before_weak_volume_reduce(monk
     assert signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_CHAN_SELL")
 
 
+def test_chan_volume_fusion_holds_weak_volume_above_continuation_trend(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 11.0, 1000),
+        make_volume_bar(3, 9.8, 1000),
+        make_volume_bar(4, 9.9, 1000),
+        make_volume_bar(5, 10.4, 1000),
+    ]
+    patch_chan_structure_analyzer(monkeypatch, [], trends=[SimpleNamespace(level="stroke", trend_type="up")])
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=5,
+        lookback=5,
+        momentum_window=3,
+        volume_window=3,
+        trend_window=3,
+        continuation_trend_window=3,
+        weak_volume_requires_trend_break=True,
+        weak_volume_exit_mode="reduce",
+        weak_volume_momentum_pct=0.0,
+        severe_weak_momentum_pct=-0.08,
+        max_holding_bars=0,
+    )
+    strategy.position_units = 2
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert signals == []
+    assert strategy.position_units == 2
+
+
+def test_chan_volume_fusion_reduces_weak_volume_after_continuation_trend_break(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 10.3, 1000),
+        make_volume_bar(3, 10.6, 1000),
+        make_volume_bar(4, 10.9, 1000),
+        make_volume_bar(5, 9.7, 1000),
+    ]
+    patch_chan_structure_analyzer(monkeypatch, [], trends=[SimpleNamespace(level="stroke", trend_type="up")])
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=5,
+        lookback=5,
+        momentum_window=3,
+        volume_window=3,
+        trend_window=3,
+        continuation_trend_window=3,
+        weak_volume_requires_trend_break=True,
+        weak_volume_exit_mode="reduce",
+        weak_volume_momentum_pct=0.0,
+        severe_weak_momentum_pct=-0.08,
+        max_holding_bars=0,
+    )
+    strategy.position_units = 2
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("sell", 100)]
+    assert strategy.position_units == 1
+    assert signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_WEAK_REDUCE")
+
+
+def test_chan_volume_fusion_severe_weak_momentum_reduces_before_trend_break(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 11.0, 1000),
+        make_volume_bar(3, 9.8, 1000),
+        make_volume_bar(4, 9.9, 1000),
+        make_volume_bar(5, 10.4, 1000),
+    ]
+    patch_chan_structure_analyzer(monkeypatch, [], trends=[SimpleNamespace(level="stroke", trend_type="up")])
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=5,
+        lookback=5,
+        momentum_window=3,
+        volume_window=3,
+        trend_window=3,
+        continuation_trend_window=3,
+        weak_volume_requires_trend_break=True,
+        weak_volume_exit_mode="reduce",
+        weak_volume_momentum_pct=0.0,
+        severe_weak_momentum_pct=-0.02,
+        max_holding_bars=0,
+    )
+    strategy.position_units = 2
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("sell", 100)]
+    assert strategy.position_units == 1
+
+
+def test_chan_volume_fusion_chan_sell_ignores_continuation_hold(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 10.2, 1000),
+        make_volume_bar(3, 10.4, 1000),
+        make_volume_bar(4, 10.6, 1000),
+        make_volume_bar(5, 10.1, 1000),
+    ]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[-1].trading_day,
+                "CHAN_STRUCT_SELL_T3",
+                "sell",
+                -60.0,
+                bars[-1].close_price,
+                tags=("chan", "structure", "third-sell"),
+                metadata={"point_type": "third-sell", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="up")],
+    )
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=5,
+        lookback=5,
+        momentum_window=3,
+        volume_window=3,
+        trend_window=3,
+        continuation_trend_window=3,
+        weak_volume_requires_trend_break=True,
+        weak_volume_exit_mode="reduce",
+        max_holding_bars=0,
+    )
+    strategy.position_units = 2
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("sell", 200)]
+    assert strategy.position_units == 0
+    assert signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_CHAN_SELL")
+
+
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():
     signals = collect_volume_momentum_signals(
         [10, 10.2, 10.4, 10.6, 11.2],

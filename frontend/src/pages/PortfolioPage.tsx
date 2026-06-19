@@ -38,6 +38,12 @@ const MODE_DETAILS: Record<
     summary: "按分配行顺序采用第一个有效信号，适合主备策略或优先级执行。",
     detail: "第一条有效信号会直接成为组合信号，后续策略不会继续竞争。",
     bestFor: "适合有明确主策略、备用策略或人工排序优先级的场景。"
+  },
+  primary_assist: {
+    label: "主策略辅助确认",
+    summary: "第一条启用策略必须先触发信号，辅助策略只参与冲突过滤和顺向小幅加仓。",
+    detail: "辅助策略不能独立开仓；反向辅助信号会过滤主策略买入，顺向买入会小幅放大主策略仓位。",
+    bestFor: "适合以缠论为主、量价和趋势策略为辅的进攻组合。"
   }
 };
 
@@ -106,7 +112,8 @@ export function PortfolioPage({ state, actions }: PageProps) {
           options={[
             { label: "加权投票", value: "weighted_vote" },
             { label: "等权投票", value: "equal_vote" },
-            { label: "优先级", value: "first_active" }
+            { label: "优先级", value: "first_active" },
+            { label: "主策略辅助", value: "primary_assist" }
           ]}
         />
         <section className="mode-explainer" aria-label="组合模式说明">

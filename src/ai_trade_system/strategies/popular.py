@@ -854,6 +854,9 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
         strong_volume_extend_bars: int = 5,
         weak_volume_exit_mode: str = "reduce",
         weak_volume_momentum_pct: float = -0.02,
+        weak_volume_requires_trend_break: bool = True,
+        continuation_trend_window: int = 60,
+        severe_weak_momentum_pct: float = -0.04,
         low_confidence_units: int = 1,
         divergence_confirm_units: int = 2,
         high_confidence_units: int = 2,
@@ -863,6 +866,8 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
     ) -> None:
         if momentum_window <= 0 or volume_window <= 0 or trend_window <= 0:
             raise ValueError("momentum_window, volume_window, and trend_window must be positive")
+        if continuation_trend_window <= 0:
+            raise ValueError("continuation_trend_window must be positive")
         if volume_multiplier < 0:
             raise ValueError("volume_multiplier must be non-negative")
         if volume_boost_units < 0:
@@ -910,7 +915,14 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
         self.strong_volume_extend_bars = int(strong_volume_extend_bars)
         self.weak_volume_exit_mode = weak_volume_exit_mode
         self.weak_volume_momentum_pct = float(weak_volume_momentum_pct)
-        self.volume_closes: deque[float] = deque(maxlen=max(self.momentum_window, self.trend_window) + 1)
+        self.weak_volume_requires_trend_break = bool(weak_volume_requires_trend_break)
+        self.continuation_trend_window = int(continuation_trend_window)
+        self.severe_weak_momentum_pct = float(severe_weak_momentum_pct)
+        self._latest_volume_momentum = 0.0
+        self._latest_continuation_trend_average: float | None = None
+        self.volume_closes: deque[float] = deque(
+            maxlen=max(self.momentum_window, self.trend_window, self.continuation_trend_window) + 1
+        )
         self.volume_volumes: deque[float] = deque(maxlen=self.volume_window + 1)
 
     @property
@@ -989,7 +1001,7 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
                     self._signal_reason(signal, volume_state, target_units, base_target_units),
                 )
 
-        if self.in_position and volume_state == "weak":
+        if self.in_position and volume_state == "weak" and self._weak_volume_should_reduce(bar, result):
             target_units = self._weak_volume_target_units(self.position_units)
             if self._can_emit_target_units("sell", target_units):
                 return self._emit_position_delta(
@@ -1031,6 +1043,12 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
         previous_closes: list[float],
         previous_volumes: list[float],
     ) -> str:
+        self._latest_volume_momentum = 0.0
+        self._latest_continuation_trend_average = (
+            mean(previous_closes[-self.continuation_trend_window :])
+            if len(previous_closes) >= self.continuation_trend_window
+            else None
+        )
         if (
             len(previous_closes) < max(self.momentum_window, self.trend_window)
             or len(previous_volumes) < self.volume_window
@@ -1040,6 +1058,7 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
         if base <= 0:
             return "neutral"
         momentum = close_price / base - 1
+        self._latest_volume_momentum = momentum
         trend_average = mean(previous_closes[-self.trend_window :])
         baseline_volume = mean(previous_volumes[-self.volume_window :])
         volume_ratio = volume / baseline_volume if baseline_volume > 0 else 0.0
@@ -1086,6 +1105,24 @@ class ChanVolumeFusionStrategy(ChanStructureStrategy):
         if self.weak_volume_exit_mode == "reduce":
             return max(0, current_units - 1)
         return current_units
+
+    def _weak_volume_should_reduce(self, bar: Bar, result) -> bool:
+        if not self.weak_volume_requires_trend_break:
+            return True
+        if self._latest_volume_momentum <= self.severe_weak_momentum_pct:
+            return True
+        trend_average = self._latest_continuation_trend_average
+        if trend_average is not None and bar.close_price < trend_average:
+            return True
+        return self._chan_context_is_bearish(result)
+
+    def _chan_context_is_bearish(self, result) -> bool:
+        core_v2 = getattr(result, "core_v2", None)
+        trends = list(getattr(core_v2, "trends", []) or [])
+        for trend in reversed(trends):
+            if getattr(trend, "level", None) in CHAN_CORE_V2_TREND_LEVELS:
+                return getattr(trend, "trend_type", "") == "down"
+        return False
 
     def _effective_max_holding_bars(self, volume_state: str) -> int:
         if self.max_holding_bars <= 0:

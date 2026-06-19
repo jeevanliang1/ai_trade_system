@@ -71,7 +71,7 @@ class PortfolioAllocationRequest(BaseModel):
 
 class PortfolioRequest(BaseModel):
     allocations: list[PortfolioAllocationRequest] = Field(default_factory=list)
-    mode: Literal["weighted_vote", "equal_vote", "first_active"] = "weighted_vote"
+    mode: Literal["weighted_vote", "equal_vote", "first_active", "primary_assist"] = "weighted_vote"
     ai_adjust: bool = False
     ai_direction: str | None = None
 

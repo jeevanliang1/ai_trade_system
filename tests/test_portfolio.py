@@ -22,6 +22,11 @@ class SellStrategy(Strategy):
         return [Signal("sell", bar.symbol, bar.close_price, 100, "sell")]
 
 
+class NoSignalStrategy(Strategy):
+    def on_bar(self, bar):
+        return []
+
+
 def test_weighted_vote_keeps_buy_when_buy_weight_is_larger(sample_bar):
     strategy = PortfolioStrategy(
         [
@@ -97,3 +102,66 @@ def test_equal_vote_returns_no_signal_on_tie(sample_bar):
     )
 
     assert strategy.on_bar(sample_bar) == []
+
+
+def test_primary_assist_ignores_auxiliary_only_signal(sample_bar):
+    strategy = PortfolioStrategy(
+        [
+            StrategyAllocation("primary", NoSignalStrategy(), 1.0),
+            StrategyAllocation("aux", BuyStrategy(), 0.2),
+        ],
+        mode="primary_assist",
+    )
+
+    assert strategy.on_bar(sample_bar) == []
+    assert strategy.last_breakdown.buy_score == 0.2
+    assert strategy.last_breakdown.contributions[0].selected is False
+
+
+def test_primary_assist_vetoes_conflicting_auxiliary_buy(sample_bar):
+    strategy = PortfolioStrategy(
+        [
+            StrategyAllocation("primary", BuyStrategy(), 1.0),
+            StrategyAllocation("aux", SellStrategy(), 0.2),
+        ],
+        mode="primary_assist",
+    )
+
+    assert strategy.on_bar(sample_bar) == []
+    assert strategy.last_breakdown.buy_score == 1.0
+    assert strategy.last_breakdown.sell_score == 0.2
+    assert all(not contribution.selected for contribution in strategy.last_breakdown.contributions)
+
+
+def test_primary_assist_boosts_aligned_auxiliary_buy(sample_bar):
+    strategy = PortfolioStrategy(
+        [
+            StrategyAllocation("primary", BuyStrategy(), 1.0),
+            StrategyAllocation("aux", BuyStrategy(), 0.2),
+        ],
+        mode="primary_assist",
+    )
+
+    signals = strategy.on_bar(sample_bar)
+
+    assert signals[0].action == "buy"
+    assert signals[0].volume == 108
+    assert signals[0].reason == "portfolio_primary_assist"
+    assert all(contribution.selected for contribution in strategy.last_breakdown.contributions)
+
+
+def test_primary_assist_keeps_primary_sell_when_auxiliary_conflicts(sample_bar):
+    strategy = PortfolioStrategy(
+        [
+            StrategyAllocation("primary", SellStrategy(), 1.0),
+            StrategyAllocation("aux", BuyStrategy(), 0.2),
+        ],
+        mode="primary_assist",
+    )
+
+    signals = strategy.on_bar(sample_bar)
+
+    assert signals[0].action == "sell"
+    assert signals[0].volume == 100
+    assert strategy.last_breakdown.contributions[0].selected is True
+    assert strategy.last_breakdown.contributions[1].selected is False

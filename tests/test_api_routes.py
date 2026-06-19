@@ -171,6 +171,18 @@ def test_bootstrap_returns_portfolio_presets_for_strategy_combinations(tmp_path,
         "momentum_breakout_stack",
         "chan_research_stack",
     }
+    offensive = next(preset for preset in presets if preset["id"] == "chan_offensive_fusion_stack")
+
+    assert offensive["name"] == "缠论进攻融合组合"
+    assert offensive["mode"] == "primary_assist"
+    assert "进攻" in offensive["description"]
+    assert offensive["allocations"][0]["strategy"]["id"] == "builtin:popular:ChanVolumeFusionStrategy"
+    assert offensive["allocations"][0]["weight"] > offensive["allocations"][1]["weight"]
+    assert offensive["allocations"][0]["strategy"]["params"]["symbol"] == "000001"
+    assert offensive["allocations"][0]["strategy"]["params"]["weak_volume_requires_trend_break"] is True
+    assert offensive["allocations"][0]["strategy"]["params"]["high_confidence_units"] == 2
+    assert offensive["allocations"][0]["strategy"]["params"]["max_units"] == 3
+    assert offensive["allocations"][0]["strategy"]["params"]["severe_weak_momentum_pct"] == -0.04
 
 
 def test_portfolio_preview_accepts_bootstrap_preset_allocations(tmp_path, monkeypatch):

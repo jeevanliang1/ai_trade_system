@@ -157,7 +157,7 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
         display_name="缠论量价融合",
-        description="以缠论结构为主策略，使用量价动量确认低确定性买点、增强三买等高确定性买点，并在量价转弱时减仓或退出。",
+        description="以缠论结构为主策略，使用量价动量确认低确定性买点、增强三买等高确定性买点，并在弱量价叠加趋势破坏、严重弱动量或缠论空头上下文时减仓或退出。",
     ),
 ]
 
@@ -629,6 +629,24 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         description="当前价格相对动量窗口起点跌破该比例时，判定量价动量转弱。",
         increase_effect="调大后更容易判定转弱，减仓或退出更积极。",
         decrease_effect="调小后弱量价判定更宽松，持仓更久。",
+    ),
+    "weak_volume_requires_trend_break": ParameterGuidance(
+        display_name="弱量价需趋势破坏",
+        description="开启后，弱量价本身不会立刻减仓，必须同时出现趋势均线破坏、Chan走势转弱或严重动量下跌。",
+        increase_effect="布尔参数不是数值大小；开启后更能容忍强趋势中的缩量回踩，减少过早卖出。",
+        decrease_effect="关闭后弱量价会直接触发减仓或退出，防守更快但可能卖飞趋势。",
+    ),
+    "continuation_trend_window": ParameterGuidance(
+        display_name="延续趋势周期",
+        description="判断弱量价是否仍属于健康趋势回踩的均线周期，当前价格跌破该均线才视为趋势破坏。",
+        increase_effect="调大后更看重中期趋势，短线回踩更不容易触发减仓。",
+        decrease_effect="调小后趋势破坏判断更敏感，弱量价更容易触发防守。",
+    ),
+    "severe_weak_momentum_pct": ParameterGuidance(
+        display_name="严重弱动量阈值",
+        description="即使延续趋势均线未破，动量跌幅达到该阈值也允许弱量价减仓。",
+        increase_effect="调大后更容易识别严重转弱，防守更快。",
+        decrease_effect="调小后只有更深的动量下跌才触发提前减仓，进攻性更强。",
     ),
     "max_units": ParameterGuidance(
         display_name="最大融合仓位",

@@ -289,5 +289,6 @@ function paperModeLabel(mode: PaperMode | null) {
 function portfolioModeLabel(mode: PlatformState["portfolio"]["mode"]) {
   if (mode === "equal_vote") return "等权投票";
   if (mode === "first_active") return "优先级";
+  if (mode === "primary_assist") return "主策略辅助确认";
   return "加权投票";
 }

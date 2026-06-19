@@ -601,7 +601,11 @@ def _render_portfolio_builder(settings: dict[str, Any], key_prefix: str) -> Port
     labels = [_strategy_label(spec) for spec in specs]
     default_labels = labels[: min(2, len(labels))]
     selected = st.multiselect("添加策略", labels, default=default_labels, key=f"{key_prefix}_selected")
-    mode = st.selectbox("组合模式", ["weighted_vote", "equal_vote", "first_active"], key=f"{key_prefix}_mode")
+    mode = st.selectbox(
+        "组合模式",
+        ["weighted_vote", "equal_vote", "first_active", "primary_assist"],
+        key=f"{key_prefix}_mode",
+    )
     ai_adjust = st.toggle("AI参与评分", value=False, key=f"{key_prefix}_ai_adjust")
     allocations: list[StrategyAllocation] = []
     for index, label in enumerate(selected):

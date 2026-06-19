@@ -63,6 +63,31 @@ PORTFOLIO_PRESETS: tuple[PortfolioPresetSpec, ...] = (
             PortfolioPresetAllocationSpec("AtrVolatilityBreakoutStrategy", 0.45, "波动确认"),
         ),
     ),
+    PortfolioPresetSpec(
+        id="chan_offensive_fusion_stack",
+        name="缠论进攻融合组合",
+        description="以缠论量价融合为主的进攻组合，辅助策略只做冲突过滤和顺向小幅加仓，目标是在强趋势中提高收益上限并保留下限控制。",
+        mode="primary_assist",
+        allocations=(
+            PortfolioPresetAllocationSpec(
+                "ChanVolumeFusionStrategy",
+                1.0,
+                "缠论量价主策略",
+                params={
+                    "high_confidence_units": 2,
+                    "max_units": 3,
+                    "volume_boost_units": 1,
+                    "weak_volume_requires_trend_break": True,
+                    "continuation_trend_window": 60,
+                    "severe_weak_momentum_pct": -0.04,
+                },
+            ),
+            PortfolioPresetAllocationSpec("ChanStructureStrategy", 0.25, "缠论结构确认"),
+            PortfolioPresetAllocationSpec("VolumeConfirmedMomentumStrategy", 0.2, "量价趋势确认"),
+            PortfolioPresetAllocationSpec("MacdTrendStrategy", 0.15, "趋势延续确认"),
+            PortfolioPresetAllocationSpec("AtrVolatilityBreakoutStrategy", 0.15, "波动突破确认"),
+        ),
+    ),
 )
 
 
