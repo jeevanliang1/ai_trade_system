@@ -16,7 +16,7 @@ src/ai_trade_system/strategies/
 - `RsiMeanReversionStrategy`: RSI 均值回归。
 - `BollingerMeanReversionStrategy`: 布林带均值回归。
 - `ChanRsiResearchStrategy`: 缠论 + 增强 RSI 研究预览策略。
-- `ChanStructureStrategy`: 包含关系、分型、笔和中枢驱动的缠论结构策略，并按二买/背驰确认/三买等确定性分层调整仓位单位；普通二买/二卖 T2 默认还会经过低确定性门控。
+- `ChanStructureStrategy`: 包含关系、分型、笔和中枢驱动的缠论结构策略，并按二买/背驰确认/三买等确定性分层调整仓位单位；普通二买/二卖 T2 默认还会经过低确定性门控，买入目标仓位还会受动态风险预算约束。
 - `DonchianBreakoutStrategy`: 通道突破。
 - `PriceMomentumStrategy`: 价格动量。
 

@@ -258,9 +258,9 @@ CHAN_POSITION_CAP_MODES = {"off", "trend", "risk", "trend_risk"}
 Add constructor parameters after `range_max_units`:
 
 ```python
-position_cap_mode: str = "trend_risk",
+position_cap_mode: str = "risk",
 trend_cap_units: int = 2,
-risk_drawdown_cap_pct: float = 3.0,
+risk_drawdown_cap_pct: float = 8.0,
 ```
 
 Validate:
@@ -379,9 +379,9 @@ assert "浮亏" in params["risk_drawdown_cap_pct"].description
 Extend `test_chan_structure_strategy_registry_exposes_balanced_tuned_defaults`:
 
 ```python
-assert defaults["position_cap_mode"] == "trend_risk"
+assert defaults["position_cap_mode"] == "risk"
 assert defaults["trend_cap_units"] == 2
-assert defaults["risk_drawdown_cap_pct"] == 3.0
+assert defaults["risk_drawdown_cap_pct"] == 8.0
 ```
 
 Run:

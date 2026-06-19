@@ -472,6 +472,25 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         increase_effect="调大后震荡区也允许更多低确定性加仓，收益弹性和回撤都会增加。",
         decrease_effect="调小后震荡区低确定性买点更克制，减少反复交易。",
     ),
+    "position_cap_mode": ParameterGuidance(
+        display_name="动态仓位上限",
+        description="控制缠论结构策略是否用趋势环境和浮亏风险动态限制买入目标仓位；trend_risk 同时启用两类限制。",
+        increase_effect="该参数不是数值大小；off 最宽松，trend/risk 只启用单项限制，trend_risk 最克制。",
+        decrease_effect="该参数不是数值大小；切换枚举值会改变三买、背驰确认等买入信号能达到的最大仓位。",
+        options=("off", "trend", "risk", "trend_risk"),
+    ),
+    "trend_cap_units": ParameterGuidance(
+        display_name="趋势不明上限",
+        description="Chan Core V2 判断为 range 或 transition 时，买入信号最多允许达到的仓位单位。",
+        increase_effect="调大后震荡或过渡走势中也允许更高仓位，收益弹性和回撤风险都会增加。",
+        decrease_effect="调小后趋势不明时更克制，减少高仓位反复交易。",
+    ),
+    "risk_drawdown_cap_pct": ParameterGuidance(
+        display_name="浮亏加仓阈值",
+        description="当前价格相对策略平均入场价浮亏达到该百分比后，禁止继续加仓但不强制卖出。",
+        increase_effect="调大后允许更深浮亏时继续加仓，交易更激进。",
+        decrease_effect="调小后更早停止加仓，风险预算更保守。",
+    ),
     "divergence_confirm_units": ParameterGuidance(
         display_name="背驰确认目标仓位",
         description="底背驰确认或背驰观察被同向结构确认后的目标仓位单位。",

@@ -28,11 +28,11 @@ The cap applies only to buy targets:
 
 New parameters:
 
-- `position_cap_mode: str = "trend_risk"`
+- `position_cap_mode: str = "risk"`
   - Allowed values: `off`, `trend`, `risk`, `trend_risk`.
 - `trend_cap_units: int = 2`
   - Maximum buy target units when Chan Core V2 context is not clearly supportive.
-- `risk_drawdown_cap_pct: float = 3.0`
+- `risk_drawdown_cap_pct: float = 8.0`
   - If the current close/signal price is at least this percentage below the strategy average entry price, do not increase units.
 
 Trend cap rules for buy signals:
@@ -65,6 +65,7 @@ Focused unit tests must cover:
 - T3 buy in uptrend can still reach `high_confidence_units`.
 - T3 buy in range/transition is capped to `trend_cap_units`.
 - `position_cap_mode="off"` preserves full A/B target behavior.
+- Trend cap behavior is covered with explicit `position_cap_mode="trend"` so the default can remain risk-budget focused.
 - Floating drawdown cap prevents add-on buys while keeping existing units.
 - Full exits clear `average_entry_price`.
 - Invalid cap configuration raises `ValueError`.

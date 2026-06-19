@@ -49,6 +49,7 @@ CHAN_LEVELS = {"segment", "stroke", "fractal"}
 CHAN_LOW_CONFIDENCE_GATES = {"off", "divergence", "trend", "divergence_or_trend"}
 CHAN_LOW_CONFIDENCE_SIGNAL_KINDS = {"CHAN_STRUCT_BUY_T2", "CHAN_STRUCT_SELL_T2"}
 CHAN_CORE_V2_TREND_LEVELS = {"stroke", "segment"}
+CHAN_POSITION_CAP_MODES = {"off", "trend", "risk", "trend_risk"}
 
 
 @dataclass(frozen=True)
@@ -275,6 +276,9 @@ class ChanStructureStrategy(Strategy):
         low_confidence_gate: str = "divergence_or_trend",
         low_confidence_min_score: float = 32.0,
         range_max_units: int = 1,
+        position_cap_mode: str = "risk",
+        trend_cap_units: int = 2,
+        risk_drawdown_cap_pct: float = 8.0,
         low_confidence_units: int = 1,
         divergence_confirm_units: int = 2,
         high_confidence_units: int = 3,
@@ -305,6 +309,10 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("low_confidence_gate must be one of: off, divergence, trend, divergence_or_trend")
         if low_confidence_min_score < 0:
             raise ValueError("low_confidence_min_score must be non-negative")
+        if position_cap_mode not in CHAN_POSITION_CAP_MODES:
+            raise ValueError("position_cap_mode must be one of: off, trend, risk, trend_risk")
+        if risk_drawdown_cap_pct < 0:
+            raise ValueError("risk_drawdown_cap_pct must be non-negative")
         if low_confidence_units < 1:
             raise ValueError("low_confidence_units must be at least 1 units")
         if divergence_confirm_units < low_confidence_units:
@@ -313,6 +321,8 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("high_confidence_units must be greater than or equal to divergence_confirm_units")
         if range_max_units < 0 or range_max_units > high_confidence_units:
             raise ValueError("range_max_units must be between 0 and high_confidence_units")
+        if trend_cap_units < 1 or trend_cap_units > high_confidence_units:
+            raise ValueError("trend_cap_units must be between 1 and high_confidence_units")
         if sell_confirm_units < 0 or sell_confirm_units >= high_confidence_units:
             raise ValueError("sell_confirm_units must be non-negative and smaller than high_confidence_units")
         if trade_size <= 0:
@@ -333,6 +343,9 @@ class ChanStructureStrategy(Strategy):
         self.low_confidence_gate = low_confidence_gate
         self.low_confidence_min_score = low_confidence_min_score
         self.range_max_units = range_max_units
+        self.position_cap_mode = position_cap_mode
+        self.trend_cap_units = trend_cap_units
+        self.risk_drawdown_cap_pct = risk_drawdown_cap_pct
         self.low_confidence_units = low_confidence_units
         self.divergence_confirm_units = divergence_confirm_units
         self.high_confidence_units = high_confidence_units
@@ -348,6 +361,7 @@ class ChanStructureStrategy(Strategy):
         self.holding_bars = 0
         self.bar_index = 0
         self.armed_watch: ArmedChanWatch | None = None
+        self.average_entry_price: float | None = None
         self.emitted: set[tuple[object, str, str]] = set()
 
     @property
@@ -394,6 +408,7 @@ class ChanStructureStrategy(Strategy):
                 if key in self.emitted:
                     continue
                 target_units = self._target_units_for_armed_confirmation(signal)
+                target_units = self._cap_target_units(signal, result, target_units)
                 if self._can_emit_target_units(signal.action, target_units):
                     self.emitted.add(key)
                     self.armed_watch = None
@@ -415,6 +430,7 @@ class ChanStructureStrategy(Strategy):
             if key in self.emitted:
                 continue
             target_units = self._target_units_for_signal(signal)
+            target_units = self._cap_target_units(signal, result, target_units)
             if self._can_emit_target_units(signal.action, target_units):
                 self.emitted.add(key)
                 self.armed_watch = None
@@ -427,6 +443,7 @@ class ChanStructureStrategy(Strategy):
         if self.in_position and self.max_holding_bars > 0 and self.holding_bars >= self.max_holding_bars:
             volume = self.position_units * self.trade_size
             self.position_units = 0
+            self.average_entry_price = None
             self.holding_bars = 0
             self.armed_watch = None
             return [
@@ -501,6 +518,38 @@ class ChanStructureStrategy(Strategy):
                 if getattr(trend, "level", None) == fallback_level:
                     return trend
         return None
+
+    def _cap_target_units(self, signal, result, target_units: int) -> int:
+        target_units = self._clamp_position_units(target_units)
+        if signal.action != "buy" or self.position_cap_mode == "off":
+            return target_units
+        capped = target_units
+        if self.position_cap_mode in {"trend", "trend_risk"}:
+            capped = min(capped, self._trend_cap_units(signal, result))
+        if self.position_cap_mode in {"risk", "trend_risk"} and self._drawdown_cap_blocks_add(signal.price):
+            capped = min(capped, self.position_units)
+        return self._clamp_position_units(capped)
+
+    def _trend_cap_units(self, signal, result) -> int:
+        trend = self._trend_for_signal(signal, result)
+        if trend is None:
+            return self.high_confidence_units
+        trend_type = getattr(trend, "trend_type", "")
+        if trend_type == "up":
+            return self.high_confidence_units
+        if trend_type in {"transition", "range"}:
+            return self.trend_cap_units
+        if trend_type == "down":
+            return self.low_confidence_units
+        return self.high_confidence_units
+
+    def _drawdown_cap_blocks_add(self, price: float) -> bool:
+        if self.position_units <= 0 or self.average_entry_price is None:
+            return False
+        if self.average_entry_price <= 0:
+            return False
+        drawdown_pct = (price / self.average_entry_price - 1) * 100
+        return drawdown_pct <= -self.risk_drawdown_cap_pct
 
     def _is_watch_signal(self, signal) -> bool:
         return signal.kind in CHAN_WATCH_SIGNAL_KINDS and "watch" in signal.tags
@@ -598,7 +647,14 @@ class ChanStructureStrategy(Strategy):
         if target_units == current_units:
             return []
         action = "buy" if target_units > current_units else "sell"
-        volume = abs(target_units - current_units) * self.trade_size
+        delta_units = abs(target_units - current_units)
+        volume = delta_units * self.trade_size
+        if action == "buy":
+            previous_cost = (self.average_entry_price or price) * current_units
+            new_cost = previous_cost + price * delta_units
+            self.average_entry_price = new_cost / target_units if target_units > 0 else None
+        elif target_units == 0:
+            self.average_entry_price = None
         self.position_units = target_units
         self.holding_bars = 0
         return [Signal(action, bar.symbol, price, volume, reason)]

@@ -266,6 +266,7 @@ def test_chan_structure_strategy_emits_buy_from_structural_buy_signal():
         min_rebound_pct=0.03,
         min_signal_score=40,
         signal_mode="structure",
+        position_cap_mode="off",
         trade_size=100,
     )
     bars = [
@@ -526,7 +527,14 @@ def test_chan_structure_strategy_default_gate_blocks_t2_buy_in_downtrend(monkeyp
         ],
         trends=[SimpleNamespace(level="stroke", trend_type="down")],
     )
-    strategy = ChanStructureStrategy("000001", min_bars=3, lookback=5, min_signal_score=20.0, max_holding_bars=0)
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="trend",
+    )
 
     signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
 
@@ -551,7 +559,14 @@ def test_chan_structure_strategy_t2_score_override_passes_low_confidence_gate(mo
         ],
         trends=[SimpleNamespace(level="stroke", trend_type="down")],
     )
-    strategy = ChanStructureStrategy("000001", min_bars=3, lookback=5, min_signal_score=20.0, max_holding_bars=0)
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="trend",
+    )
 
     signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
 
@@ -624,6 +639,7 @@ def test_chan_structure_strategy_armed_t1_confirmation_bypasses_low_confidence_g
         allowed_point_types="all",
         watch_confirm_bars=5,
         max_holding_bars=0,
+        position_cap_mode="off",
     )
 
     signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
@@ -682,11 +698,236 @@ def test_chan_structure_strategy_t3_ignores_low_confidence_gate(monkeypatch):
         ],
         trends=[SimpleNamespace(level="stroke", trend_type="down")],
     )
-    strategy = ChanStructureStrategy("000001", min_bars=3, lookback=5, min_signal_score=20.0, max_holding_bars=0)
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="off",
+    )
 
     signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
 
     assert [(signal.action, signal.volume) for signal in signals] == [("buy", 300)]
+
+
+def test_chan_structure_strategy_dynamic_cap_limits_t3_buy_in_downtrend(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="down")],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="trend",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 100)]
+    assert strategy.position_units == 1
+
+
+def test_chan_structure_strategy_dynamic_cap_allows_full_t3_buy_in_uptrend(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="up")],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="trend",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 300)]
+    assert strategy.position_units == 3
+
+
+def test_chan_structure_strategy_dynamic_cap_limits_range_t3_to_trend_cap(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="range")],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="trend",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 200)]
+    assert strategy.position_units == 2
+
+
+def test_chan_structure_strategy_position_cap_off_preserves_full_t3_target(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="down")],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=20.0,
+        max_holding_bars=0,
+        position_cap_mode="off",
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 300)]
+
+
+def test_chan_structure_strategy_drawdown_cap_blocks_add_on_buy(monkeypatch):
+    bars = [
+        make_chan_bar(0, 12.0, 12.5, 11.5),
+        make_chan_bar(1, 12.0, 12.5, 11.5),
+        make_chan_bar(2, 12.0, 12.5, 11.5),
+        make_chan_bar(3, 11.0, 11.2, 10.8),
+        make_chan_bar(4, 11.0, 11.2, 10.8),
+    ]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_CONFIRM",
+                "buy",
+                60.0,
+                bars[2].close_price,
+                metadata={"point_type": "first-buy", "level": "segment"},
+            ),
+            make_research_signal(
+                bars[3].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                60.0,
+                bars[3].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            ),
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="up"), SimpleNamespace(level="segment", trend_type="up")],
+    )
+    strategy = ChanStructureStrategy("000001", min_bars=3, lookback=5, min_signal_score=20.0, max_holding_bars=0)
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 200)]
+    assert strategy.position_units == 2
+
+
+def test_chan_structure_strategy_full_exit_clears_average_entry_price(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(6)]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                60.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_SELL_T3",
+                "sell",
+                -60.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "third-sell"),
+                metadata={"point_type": "third-sell", "level": "stroke"},
+            ),
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="up")],
+    )
+    strategy = ChanStructureStrategy("000001", min_bars=3, lookback=6, min_signal_score=20.0, max_holding_bars=0)
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 300), ("sell", 300)]
+    assert strategy.position_units == 0
+    assert strategy.average_entry_price is None
+
+
+def test_chan_structure_strategy_rejects_invalid_dynamic_cap_configuration():
+    invalid_kwargs = [
+        {"position_cap_mode": "bad"},
+        {"trend_cap_units": 0},
+        {"trend_cap_units": 4, "high_confidence_units": 3},
+        {"risk_drawdown_cap_pct": -1.0},
+    ]
+
+    for kwargs in invalid_kwargs:
+        try:
+            ChanStructureStrategy("000001", **kwargs)
+        except ValueError as exc:
+            assert "position_cap" in str(exc) or "trend_cap_units" in str(exc) or "risk_drawdown" in str(exc)
+        else:
+            raise AssertionError(f"invalid dynamic cap config should raise: {kwargs}")
 
 
 def test_chan_structure_strategy_rejects_invalid_low_confidence_gate_configuration():

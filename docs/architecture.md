@@ -82,7 +82,7 @@ EventEngine + MainEngine + Gateway + CtaStrategyApp/CtaBacktesterApp
 
 - 趋势跟随：双均线。
 - 均值回归：RSI、布林带。
-- 研究信号策略：缠论 + 增强 RSI 预览包装策略、按买卖点确定性、背驰确认和低确定性 T2 门控分层调仓的缠论结构策略。
+- 研究信号策略：缠论 + 增强 RSI 预览包装策略、按买卖点确定性、背驰确认、低确定性 T2 门控和动态仓位上限分层调仓的缠论结构策略。
 - 突破：Donchian/Turtle 通道突破。
 - 动量：固定回看窗口价格动量。
 
