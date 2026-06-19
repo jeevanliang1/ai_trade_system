@@ -1,6 +1,6 @@
 # Current System State
 
-Date: 2026-06-13
+Date: 2026-06-19
 
 ## Product Scope
 
@@ -77,6 +77,8 @@ The strategy registry discovers:
 
 Constructor parameters are rendered as web inputs. A constructor parameter named `symbol` defaults to the sidebar symbol.
 
+Current built-in strategy coverage includes 10 single-symbol daily-bar templates: dual moving average, RSI mean reversion, Bollinger mean reversion, Donchian breakout, price momentum, volume-confirmed momentum, Chan + RSI research, Chan structure, MACD trend, and ATR volatility breakout.
+
 ## Portfolio Model
 
 `PortfolioStrategy` wraps multiple `StrategyAllocation` entries and still implements the same `Strategy` interface. This lets existing backtest and paper trading services run a composed strategy without changing the event loop.
@@ -86,6 +88,8 @@ Supported modes:
 - `weighted_vote`: compare weighted buy and sell scores.
 - `equal_vote`: compare one vote per enabled strategy.
 - `first_active`: use the first enabled strategy signal.
+
+React Portfolio Lab exposes preset combinations that expand into the same `PortfolioRequest` shape: conservative trend + mean reversion, momentum breakout stack, and Chan research stack.
 
 ## AI Research Model
 

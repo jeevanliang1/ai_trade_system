@@ -354,6 +354,7 @@ export type BootstrapResponse = {
   watchlist?: Stock[];
   managed_data?: ManagedDataFile[];
   strategies: StrategySpec[];
+  portfolio_presets?: PortfolioPreset[];
   limits: Record<string, unknown>;
 };
 
@@ -432,6 +433,19 @@ export type PortfolioRequest = {
   mode: "weighted_vote" | "equal_vote" | "first_active";
   ai_adjust: boolean;
   ai_direction?: string | null;
+};
+
+export type PortfolioPresetAllocation = PortfolioAllocation & {
+  role: string;
+  display_name: string;
+};
+
+export type PortfolioPreset = {
+  id: string;
+  name: string;
+  description: string;
+  mode: PortfolioRequest["mode"];
+  allocations: PortfolioPresetAllocation[];
 };
 
 export type DataSummary = {

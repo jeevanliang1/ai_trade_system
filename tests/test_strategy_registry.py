@@ -112,6 +112,59 @@ def test_volume_confirmed_momentum_strategy_metadata_and_parameter_guidance():
     assert "价格涨幅" in params["min_momentum_pct"].description
     assert "成交量" in params["volume_multiplier"].description
     assert "持仓" in params["max_holding_bars"].description
+    assert params["trailing_stop_pct"].display_name == "跟踪止盈回撤"
+    assert "最高收盘价回撤" in params["trailing_stop_pct"].description
+
+
+def test_volume_confirmed_momentum_registry_exposes_tuned_defaults():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    spec = next(item for item in specs if item.name == "VolumeConfirmedMomentumStrategy")
+
+    defaults = {param.name: param.default for param in inspect_strategy_parameters(spec)}
+
+    assert defaults["momentum_window"] == 15
+    assert defaults["min_momentum_pct"] == 0.10
+    assert defaults["volume_window"] == 20
+    assert defaults["volume_multiplier"] == 1.1
+    assert defaults["trend_window"] == 60
+    assert defaults["max_holding_bars"] == 45
+    assert defaults["trailing_stop_pct"] == 0.18
+
+
+def test_macd_and_atr_strategies_expose_metadata_and_guidance():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    macd = next(item for item in specs if item.name == "MacdTrendStrategy")
+    atr = next(item for item in specs if item.name == "AtrVolatilityBreakoutStrategy")
+
+    assert macd.display_name == "MACD趋势策略"
+    assert "MACD" in macd.description
+    assert atr.display_name == "ATR波动突破"
+    assert "ATR" in atr.description
+
+    macd_params = {param.name: param for param in inspect_strategy_parameters(macd)}
+    assert macd_params["fast_period"].display_name == "MACD快线周期"
+    assert "EMA" in macd_params["slow_period"].description
+    assert "金叉" in macd_params["signal_period"].description
+
+    atr_params = {param.name: param for param in inspect_strategy_parameters(atr)}
+    assert atr_params["breakout_window"].display_name == "突破观察窗口"
+    assert "ATR" in atr_params["atr_window"].description
+    assert "止损" in atr_params["stop_atr_multiplier"].description
+    assert "跟踪" in atr_params["trailing_atr_multiplier"].description
+
+    macd_defaults = {param.name: param.default for param in macd_params.values()}
+    assert macd_defaults["fast_period"] == 12
+    assert macd_defaults["slow_period"] == 18
+    assert macd_defaults["signal_period"] == 9
+    assert macd_defaults["trend_window"] == 90
+
+    atr_defaults = {param.name: param.default for param in atr_params.values()}
+    assert atr_defaults["breakout_window"] == 30
+    assert atr_defaults["atr_window"] == 10
+    assert atr_defaults["entry_atr_multiplier"] == 0.0
+    assert atr_defaults["stop_atr_multiplier"] == 2.0
+    assert atr_defaults["trailing_atr_multiplier"] == 3.0
+    assert atr_defaults["max_holding_bars"] == 45
 
 
 def test_chan_structure_strategy_metadata_and_parameter_guidance():
@@ -200,6 +253,19 @@ def test_chan_structure_strategy_registry_exposes_balanced_tuned_defaults():
     assert defaults["divergence_confirm_units"] == 2
     assert defaults["high_confidence_units"] == 3
     assert defaults["sell_confirm_units"] == 1
+
+
+def test_chan_volume_fusion_strategy_is_registered_with_guidance():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    spec = next(strategy for strategy in specs if strategy.class_name == "ChanVolumeFusionStrategy")
+
+    assert spec.display_name == "缠论量价融合"
+    assert "量价动量确认低确定性买点" in spec.description
+
+    parameters = {parameter.name: parameter for parameter in inspect_strategy_parameters(spec)}
+    assert parameters["weak_volume_exit_mode"].options == ("reduce", "exit", "ignore")
+    assert parameters["low_confidence_requires_volume"].display_name
+    assert parameters["volume_boost_units"].description
 
 
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):

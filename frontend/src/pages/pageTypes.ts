@@ -6,6 +6,7 @@ import type {
   ManagedDataFile,
   PaperResponse,
   PlatformSettings,
+  PortfolioPreset,
   PortfolioRequest,
   ResearchSignalPreview,
   RiskStatus,
@@ -20,6 +21,7 @@ export type PlatformState = {
   watchlist: Stock[];
   managedData: ManagedDataFile[];
   strategies: StrategySpec[];
+  portfolioPresets: PortfolioPreset[];
   selectedStrategyId: string;
   strategyParams: Record<string, unknown>;
   bars: Bar[];

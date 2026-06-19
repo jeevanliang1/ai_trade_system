@@ -50,6 +50,7 @@ CHAN_LOW_CONFIDENCE_GATES = {"off", "divergence", "trend", "divergence_or_trend"
 CHAN_LOW_CONFIDENCE_SIGNAL_KINDS = {"CHAN_STRUCT_BUY_T2", "CHAN_STRUCT_SELL_T2"}
 CHAN_CORE_V2_TREND_LEVELS = {"stroke", "segment"}
 CHAN_POSITION_CAP_MODES = {"off", "trend", "risk", "trend_risk"}
+CHAN_VOLUME_WEAK_EXIT_MODES = {"reduce", "exit", "ignore"}
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,165 @@ class DonchianBreakoutStrategy(Strategy):
             self.in_position = False
             return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, "donchian_exit")]
         return []
+
+
+class MacdTrendStrategy(Strategy):
+    def __init__(
+        self,
+        symbol: str,
+        fast_period: int = 12,
+        slow_period: int = 18,
+        signal_period: int = 9,
+        trend_window: int = 90,
+        trade_size: int = 100,
+    ) -> None:
+        if fast_period <= 1 or slow_period <= 1 or signal_period <= 1 or trend_window <= 1:
+            raise ValueError("fast_period, slow_period, signal_period, and trend_window must be greater than 1")
+        if fast_period >= slow_period:
+            raise ValueError("fast_period must be smaller than slow_period")
+        self.symbol = symbol
+        self.fast_period = int(fast_period)
+        self.slow_period = int(slow_period)
+        self.signal_period = int(signal_period)
+        self.trend_window = int(trend_window)
+        self.trade_size = max(1, int(trade_size))
+        self.closes: deque[float] = deque(maxlen=self.trend_window)
+        self.fast_ema: float | None = None
+        self.slow_ema: float | None = None
+        self.signal_ema: float | None = None
+        self.previous_macd: float | None = None
+        self.previous_signal: float | None = None
+        self.bar_count = 0
+        self.in_position = False
+
+    def on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+
+        self.bar_count += 1
+        self.closes.append(bar.close_price)
+        self.fast_ema = _next_ema(self.fast_ema, bar.close_price, self.fast_period)
+        self.slow_ema = _next_ema(self.slow_ema, bar.close_price, self.slow_period)
+        macd_line = self.fast_ema - self.slow_ema
+        self.signal_ema = _next_ema(self.signal_ema, macd_line, self.signal_period)
+
+        if self.bar_count < max(self.slow_period, self.signal_period, self.trend_window):
+            self.previous_macd = macd_line
+            self.previous_signal = self.signal_ema
+            return []
+
+        bullish_cross = (
+            self.previous_macd is not None
+            and self.previous_signal is not None
+            and self.previous_macd <= self.previous_signal
+            and macd_line > self.signal_ema
+        )
+        bearish_cross = (
+            self.previous_macd is not None
+            and self.previous_signal is not None
+            and self.previous_macd >= self.previous_signal
+            and macd_line < self.signal_ema
+        )
+        trend_average = mean(self.closes)
+        self.previous_macd = macd_line
+        self.previous_signal = self.signal_ema
+
+        if bullish_cross and not self.in_position and bar.close_price >= trend_average:
+            self.in_position = True
+            return [Signal("buy", bar.symbol, bar.close_price, self.trade_size, "macd_bullish_cross")]
+        if self.in_position and bearish_cross:
+            self.in_position = False
+            return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, "macd_bearish_cross")]
+        if self.in_position and bar.close_price < trend_average:
+            self.in_position = False
+            return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, "macd_trend_break")]
+        return []
+
+
+class AtrVolatilityBreakoutStrategy(Strategy):
+    def __init__(
+        self,
+        symbol: str,
+        breakout_window: int = 30,
+        atr_window: int = 10,
+        entry_atr_multiplier: float = 0.0,
+        stop_atr_multiplier: float = 2.0,
+        trailing_atr_multiplier: float = 3.0,
+        max_holding_bars: int = 45,
+        trade_size: int = 100,
+    ) -> None:
+        if breakout_window <= 1 or atr_window <= 1:
+            raise ValueError("breakout_window and atr_window must be greater than 1")
+        if entry_atr_multiplier < 0 or stop_atr_multiplier <= 0 or trailing_atr_multiplier <= 0:
+            raise ValueError("ATR multipliers must be non-negative for entry and positive for exits")
+        if max_holding_bars <= 0:
+            raise ValueError("max_holding_bars must be positive")
+        self.symbol = symbol
+        self.breakout_window = int(breakout_window)
+        self.atr_window = int(atr_window)
+        self.entry_atr_multiplier = float(entry_atr_multiplier)
+        self.stop_atr_multiplier = float(stop_atr_multiplier)
+        self.trailing_atr_multiplier = float(trailing_atr_multiplier)
+        self.max_holding_bars = int(max_holding_bars)
+        self.trade_size = max(1, int(trade_size))
+        self.highs: deque[float] = deque(maxlen=self.breakout_window)
+        self.lows: deque[float] = deque(maxlen=self.breakout_window)
+        self.closes: deque[float] = deque(maxlen=max(self.breakout_window, self.atr_window) + 1)
+        self.true_ranges: deque[float] = deque(maxlen=self.atr_window)
+        self.in_position = False
+        self.entry_price: float | None = None
+        self.highest_close_since_entry: float | None = None
+        self.holding_bars = 0
+
+    def on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+
+        previous_highs = list(self.highs)
+        previous_close = self.closes[-1] if self.closes else None
+        self.true_ranges.append(_true_range(bar, previous_close))
+        self.highs.append(bar.high_price)
+        self.lows.append(bar.low_price)
+        self.closes.append(bar.close_price)
+        if len(self.true_ranges) < self.atr_window:
+            return []
+
+        atr = mean(self.true_ranges)
+        if self.in_position:
+            self.holding_bars += 1
+            if self.highest_close_since_entry is None or bar.close_price > self.highest_close_since_entry:
+                self.highest_close_since_entry = bar.close_price
+            exit_reason = self._exit_reason(bar.close_price, atr)
+            if exit_reason:
+                self.in_position = False
+                self.entry_price = None
+                self.highest_close_since_entry = None
+                self.holding_bars = 0
+                return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, exit_reason)]
+            return []
+
+        if len(previous_highs) < self.breakout_window:
+            return []
+        breakout_level = max(previous_highs[-self.breakout_window :]) + self.entry_atr_multiplier * atr
+        if bar.close_price > breakout_level:
+            self.in_position = True
+            self.entry_price = bar.close_price
+            self.highest_close_since_entry = bar.close_price
+            self.holding_bars = 0
+            return [Signal("buy", bar.symbol, bar.close_price, self.trade_size, "atr_volatility_breakout")]
+        return []
+
+    def _exit_reason(self, close_price: float, atr: float) -> str | None:
+        if self.entry_price is not None and close_price <= self.entry_price - self.stop_atr_multiplier * atr:
+            return "atr_stop_loss"
+        if (
+            self.highest_close_since_entry is not None
+            and close_price <= self.highest_close_since_entry - self.trailing_atr_multiplier * atr
+        ):
+            return "atr_trailing_stop"
+        if self.holding_bars >= self.max_holding_bars:
+            return "time_exit"
+        return None
 
 
 class PriceMomentumStrategy(Strategy):
@@ -663,16 +823,309 @@ class ChanStructureStrategy(Strategy):
         return min(max(units, 0), self.high_confidence_units)
 
 
+class ChanVolumeFusionStrategy(ChanStructureStrategy):
+    def __init__(
+        self,
+        symbol: str,
+        min_bars: int = 60,
+        lookback: int = 160,
+        min_stroke_bars: int = 5,
+        min_rebound_pct: float = 0.03,
+        min_signal_score: float = 28.0,
+        signal_mode: str = "all",
+        allowed_point_types: str = "all",
+        allowed_levels: str = "all",
+        max_holding_bars: int = 15,
+        watch_confirm_bars: int = 20,
+        low_confidence_gate: str = "divergence_or_trend",
+        low_confidence_min_score: float = 32.0,
+        range_max_units: int = 1,
+        position_cap_mode: str = "risk",
+        trend_cap_units: int = 2,
+        risk_drawdown_cap_pct: float = 8.0,
+        momentum_window: int = 15,
+        min_momentum_pct: float = 0.08,
+        volume_window: int = 20,
+        volume_multiplier: float = 1.1,
+        trend_window: int = 60,
+        low_confidence_requires_volume: bool = True,
+        high_confidence_volume_boost: bool = True,
+        volume_boost_units: int = 1,
+        strong_volume_extend_bars: int = 5,
+        weak_volume_exit_mode: str = "reduce",
+        weak_volume_momentum_pct: float = -0.02,
+        low_confidence_units: int = 1,
+        divergence_confirm_units: int = 2,
+        high_confidence_units: int = 2,
+        sell_confirm_units: int = 1,
+        max_units: int = 3,
+        trade_size: int = 100,
+    ) -> None:
+        if momentum_window <= 0 or volume_window <= 0 or trend_window <= 0:
+            raise ValueError("momentum_window, volume_window, and trend_window must be positive")
+        if volume_multiplier < 0:
+            raise ValueError("volume_multiplier must be non-negative")
+        if volume_boost_units < 0:
+            raise ValueError("volume_boost_units must be non-negative")
+        if strong_volume_extend_bars < 0:
+            raise ValueError("strong_volume_extend_bars must be non-negative")
+        if weak_volume_exit_mode not in CHAN_VOLUME_WEAK_EXIT_MODES:
+            raise ValueError("weak_volume_exit_mode must be one of: reduce, exit, ignore")
+        if max_units < high_confidence_units:
+            raise ValueError("max_units must be greater than or equal to high_confidence_units")
+
+        self.max_units = int(max_units)
+        super().__init__(
+            symbol=symbol,
+            min_bars=min_bars,
+            lookback=lookback,
+            min_stroke_bars=min_stroke_bars,
+            min_rebound_pct=min_rebound_pct,
+            min_signal_score=min_signal_score,
+            signal_mode=signal_mode,
+            allowed_point_types=allowed_point_types,
+            allowed_levels=allowed_levels,
+            max_holding_bars=max_holding_bars,
+            watch_confirm_bars=watch_confirm_bars,
+            low_confidence_gate=low_confidence_gate,
+            low_confidence_min_score=low_confidence_min_score,
+            range_max_units=range_max_units,
+            position_cap_mode=position_cap_mode,
+            trend_cap_units=trend_cap_units,
+            risk_drawdown_cap_pct=risk_drawdown_cap_pct,
+            low_confidence_units=low_confidence_units,
+            divergence_confirm_units=divergence_confirm_units,
+            high_confidence_units=high_confidence_units,
+            sell_confirm_units=sell_confirm_units,
+            trade_size=trade_size,
+        )
+        self.momentum_window = int(momentum_window)
+        self.min_momentum_pct = float(min_momentum_pct)
+        self.volume_window = int(volume_window)
+        self.volume_multiplier = float(volume_multiplier)
+        self.trend_window = int(trend_window)
+        self.low_confidence_requires_volume = bool(low_confidence_requires_volume)
+        self.high_confidence_volume_boost = bool(high_confidence_volume_boost)
+        self.volume_boost_units = int(volume_boost_units)
+        self.strong_volume_extend_bars = int(strong_volume_extend_bars)
+        self.weak_volume_exit_mode = weak_volume_exit_mode
+        self.weak_volume_momentum_pct = float(weak_volume_momentum_pct)
+        self.volume_closes: deque[float] = deque(maxlen=max(self.momentum_window, self.trend_window) + 1)
+        self.volume_volumes: deque[float] = deque(maxlen=self.volume_window + 1)
+
+    @property
+    def position_units(self) -> int:
+        return self._position_units
+
+    @position_units.setter
+    def position_units(self, units: int) -> None:
+        if units < 0:
+            raise ValueError("position_units must be non-negative units")
+        self._position_units = self._clamp_position_units(units)
+
+    def on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+        self.bar_index += 1
+        self.bars.append(bar)
+        volume_state = self._update_volume_state(bar)
+        result = self.chan_analyzer.update_bar(bar)
+        if self.in_position:
+            self.holding_bars += 1
+        if len(self.bars) < self.min_bars:
+            return []
+
+        self._expire_armed_watch()
+        candidates = [signal for signal in result.signals if signal.trading_day == bar.trading_day]
+        candidates.sort(key=lambda signal: abs(signal.score), reverse=True)
+        for signal in candidates:
+            if self._is_watch_signal(signal):
+                self._arm_watch(signal)
+                continue
+            if self._armed_watch_confirms(signal):
+                armed_watch = self.armed_watch
+                if armed_watch is None:
+                    continue
+                key = (signal.trading_day, f"ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}", signal.action)
+                if key in self.emitted:
+                    continue
+                target_units = self._target_units_for_armed_confirmation(signal)
+                target_units = self._cap_target_units(signal, result, target_units)
+                target_units = self._apply_buy_volume_boost(signal, target_units, volume_state)
+                target_units = self._apply_risk_cap_after_volume_boost(signal, target_units)
+                if self._can_emit_target_units(signal.action, target_units):
+                    self.emitted.add(key)
+                    self.armed_watch = None
+                    return self._emit_position_delta(
+                        target_units,
+                        bar,
+                        signal.price,
+                        self._armed_reason(armed_watch, signal, volume_state),
+                    )
+            if (
+                abs(signal.score) < self.min_signal_score
+                or not self._signal_mode_allows(signal.kind)
+                or not self._signal_filters_allow(signal)
+            ):
+                continue
+            if not self._low_confidence_gate_allows(signal, result):
+                continue
+            if signal.kind == "CHAN_STRUCT_BUY_T2" and not self._volume_allows_low_confidence(volume_state):
+                continue
+            key = (signal.trading_day, signal.kind, signal.action)
+            if key in self.emitted:
+                continue
+            base_target_units = self._target_units_for_signal(signal)
+            target_units = self._cap_target_units(signal, result, base_target_units)
+            target_units = self._apply_buy_volume_boost(signal, target_units, volume_state)
+            target_units = self._apply_risk_cap_after_volume_boost(signal, target_units)
+            if self._can_emit_target_units(signal.action, target_units):
+                self.emitted.add(key)
+                self.armed_watch = None
+                return self._emit_position_delta(
+                    target_units,
+                    bar,
+                    signal.price,
+                    self._signal_reason(signal, volume_state, target_units, base_target_units),
+                )
+
+        if self.in_position and volume_state == "weak":
+            target_units = self._weak_volume_target_units(self.position_units)
+            if self._can_emit_target_units("sell", target_units):
+                return self._emit_position_delta(
+                    target_units,
+                    bar,
+                    bar.close_price,
+                    f"chan_volume_fusion:CHAN_VOLUME_WEAK_{self.weak_volume_exit_mode.upper()}:volume=weak",
+                )
+
+        effective_max_holding = self._effective_max_holding_bars(volume_state)
+        if self.in_position and effective_max_holding > 0 and self.holding_bars >= effective_max_holding:
+            volume = self.position_units * self.trade_size
+            self.position_units = 0
+            self.average_entry_price = None
+            self.holding_bars = 0
+            self.armed_watch = None
+            return [
+                Signal(
+                    "sell",
+                    bar.symbol,
+                    bar.close_price,
+                    volume,
+                    f"chan_volume_fusion:TIME_EXIT:max_holding_bars={effective_max_holding}:volume={volume_state}",
+                )
+            ]
+        return []
+
+    def _update_volume_state(self, bar: Bar) -> str:
+        previous_closes = list(self.volume_closes)
+        previous_volumes = list(self.volume_volumes)
+        self.volume_closes.append(bar.close_price)
+        self.volume_volumes.append(bar.volume)
+        return self._classify_volume_state(bar.close_price, bar.volume, previous_closes, previous_volumes)
+
+    def _classify_volume_state(
+        self,
+        close_price: float,
+        volume: float,
+        previous_closes: list[float],
+        previous_volumes: list[float],
+    ) -> str:
+        if (
+            len(previous_closes) < max(self.momentum_window, self.trend_window)
+            or len(previous_volumes) < self.volume_window
+        ):
+            return "neutral"
+        base = previous_closes[-self.momentum_window]
+        if base <= 0:
+            return "neutral"
+        momentum = close_price / base - 1
+        trend_average = mean(previous_closes[-self.trend_window :])
+        baseline_volume = mean(previous_volumes[-self.volume_window :])
+        volume_ratio = volume / baseline_volume if baseline_volume > 0 else 0.0
+        if (
+            momentum >= self.min_momentum_pct
+            and volume_ratio >= self.volume_multiplier
+            and close_price > trend_average
+        ):
+            return "strong"
+        if momentum <= self.weak_volume_momentum_pct or close_price < trend_average:
+            return "weak"
+        return "neutral"
+
+    def _volume_allows_low_confidence(self, volume_state: str) -> bool:
+        return not self.low_confidence_requires_volume or volume_state == "strong"
+
+    def _apply_volume_boost(self, target_units: int, volume_state: str) -> int:
+        if self.high_confidence_volume_boost and volume_state == "strong":
+            return self._clamp_position_units(target_units + self.volume_boost_units)
+        return self._clamp_position_units(target_units)
+
+    def _apply_buy_volume_boost(self, signal, target_units: int, volume_state: str) -> int:
+        if signal.action != "buy" or not self._is_boostable_buy_signal(signal):
+            return self._clamp_position_units(target_units)
+        return self._apply_volume_boost(target_units, volume_state)
+
+    def _apply_risk_cap_after_volume_boost(self, signal, target_units: int) -> int:
+        if signal.action == "buy" and self.position_cap_mode in {"risk", "trend_risk"}:
+            if self._drawdown_cap_blocks_add(signal.price):
+                return min(self.position_units, self._clamp_position_units(target_units))
+        return self._clamp_position_units(target_units)
+
+    def _is_boostable_buy_signal(self, signal) -> bool:
+        return signal.kind in {
+            "CHAN_STRUCT_BUY_T1_DIVERGENCE",
+            "CHAN_STRUCT_BUY_CONFIRM",
+            "CHAN_STRUCT_BUY_T3",
+        }
+
+    def _weak_volume_target_units(self, current_units: int) -> int:
+        current_units = self._clamp_position_units(current_units)
+        if self.weak_volume_exit_mode == "exit":
+            return 0
+        if self.weak_volume_exit_mode == "reduce":
+            return max(0, current_units - 1)
+        return current_units
+
+    def _effective_max_holding_bars(self, volume_state: str) -> int:
+        if self.max_holding_bars <= 0:
+            return 0
+        if volume_state == "strong":
+            return self.max_holding_bars + self.strong_volume_extend_bars
+        return self.max_holding_bars
+
+    def _signal_reason(self, signal, volume_state: str, target_units: int, base_target_units: int) -> str:
+        if signal.kind == "CHAN_STRUCT_BUY_T2" and volume_state == "strong":
+            label = "CHAN_VOLUME_T2_BUY_VOLUME_CONFIRMED"
+        elif signal.action == "buy" and target_units > base_target_units and volume_state == "strong":
+            label = "CHAN_VOLUME_HIGH_CONFIDENCE_BOOST"
+        elif signal.action == "sell":
+            label = "CHAN_VOLUME_CHAN_SELL"
+        else:
+            label = signal.kind
+        return f"chan_volume_fusion:{label}:{signal.kind}:volume={volume_state}:{signal.reason}"
+
+    def _armed_reason(self, armed_watch: ArmedChanWatch, signal, volume_state: str) -> str:
+        return (
+            "chan_volume_fusion:ARMED_CONFIRM:"
+            f"{armed_watch.kind}->{signal.kind}:volume={volume_state}:{signal.reason}"
+        )
+
+    def _clamp_position_units(self, units: int) -> int:
+        return min(max(units, 0), self.max_units)
+
+
 class VolumeConfirmedMomentumStrategy(Strategy):
     def __init__(
         self,
         symbol: str,
-        momentum_window: int = 20,
-        min_momentum_pct: float = 0.08,
+        momentum_window: int = 15,
+        min_momentum_pct: float = 0.10,
         volume_window: int = 20,
-        volume_multiplier: float = 1.5,
+        volume_multiplier: float = 1.1,
         trend_window: int = 60,
-        max_holding_bars: int = 20,
+        max_holding_bars: int = 45,
+        trailing_stop_pct: float = 0.18,
         trade_size: int = 100,
     ) -> None:
         self.symbol = symbol
@@ -682,11 +1135,13 @@ class VolumeConfirmedMomentumStrategy(Strategy):
         self.volume_multiplier = max(0.0, float(volume_multiplier))
         self.trend_window = max(1, int(trend_window))
         self.max_holding_bars = max(1, int(max_holding_bars))
+        self.trailing_stop_pct = max(0.0, float(trailing_stop_pct))
         self.trade_size = max(1, int(trade_size))
         self.closes: deque[float] = deque(maxlen=max(self.momentum_window, self.trend_window) + 1)
         self.volumes: deque[float] = deque(maxlen=self.volume_window + 1)
         self.in_position = False
         self.holding_bars = 0
+        self.highest_close_since_entry: float | None = None
 
     def on_bar(self, bar: Bar) -> list[Signal]:
         if bar.symbol != self.symbol:
@@ -699,10 +1154,13 @@ class VolumeConfirmedMomentumStrategy(Strategy):
 
         if self.in_position:
             self.holding_bars += 1
+            if self.highest_close_since_entry is None or bar.close_price > self.highest_close_since_entry:
+                self.highest_close_since_entry = bar.close_price
             exit_reason = self._exit_reason(bar.close_price, previous_closes)
             if exit_reason:
                 self.in_position = False
                 self.holding_bars = 0
+                self.highest_close_since_entry = None
                 return [Signal("sell", bar.symbol, bar.close_price, self.trade_size, exit_reason)]
             return []
 
@@ -717,6 +1175,7 @@ class VolumeConfirmedMomentumStrategy(Strategy):
 
         self.in_position = True
         self.holding_bars = 0
+        self.highest_close_since_entry = bar.close_price
         return [Signal("buy", bar.symbol, bar.close_price, self.trade_size, "volume_confirmed_momentum_entry")]
 
     def _entry_ready(self, previous_closes: list[float], previous_volumes: list[float]) -> bool:
@@ -741,11 +1200,31 @@ class VolumeConfirmedMomentumStrategy(Strategy):
             base = previous_closes[-self.momentum_window]
             if base > 0 and close_price <= base:
                 return "momentum_exit"
+        if (
+            self.trailing_stop_pct > 0
+            and self.highest_close_since_entry is not None
+            and close_price <= self.highest_close_since_entry * (1 - self.trailing_stop_pct)
+        ):
+            return "trailing_stop_exit"
         if len(previous_closes) >= self.trend_window and close_price < mean(previous_closes[-self.trend_window :]):
             return "trend_exit"
         if self.holding_bars >= self.max_holding_bars:
             return "time_exit"
         return None
+
+
+def _next_ema(previous: float | None, value: float, period: int) -> float:
+    if previous is None:
+        return value
+    alpha = 2 / (period + 1)
+    return value * alpha + previous * (1 - alpha)
+
+
+def _true_range(bar: Bar, previous_close: float | None) -> float:
+    high_low = bar.high_price - bar.low_price
+    if previous_close is None:
+        return high_low
+    return max(high_low, abs(bar.high_price - previous_close), abs(bar.low_price - previous_close))
 
 
 def _rsi(closes: list[float]) -> float:

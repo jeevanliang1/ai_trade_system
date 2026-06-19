@@ -84,6 +84,10 @@ Each pending item below should be small enough to finish in one focused implemen
 - Chan low-confidence gate B variant is complete for current scope: ordinary 二买/二卖 T2 signals now pass through configurable `low_confidence_gate` rules using high-score override, Chan Core V2 trend compatibility, range-position caps, or explicit off mode; fixed six-stock benchmark results are recorded in QA.
 - Chan dynamic position cap C variant is complete for current scope: `ChanStructureStrategy` now tracks average entry price and applies configurable `position_cap_mode` buy-side target caps, defaulting to floating-loss risk-budget control while keeping trend caps available as optional modes; fixed six-stock benchmark results are recorded in QA.
 - Chan signal attribution is complete for current scope: backtests now record accepted-trade source reasons, classify Chan signal families, return entry/exit PnL attribution through the API, render `信号归因` in the React backtest result surface, and record six-stock attribution evidence in QA.
+- Popular strategy expansion is complete for current scope: built-in strategies now cover ten single-symbol daily-bar templates, adding `MacdTrendStrategy` and `AtrVolatilityBreakoutStrategy`, tuning `VolumeConfirmedMomentumStrategy` defaults plus trailing stop behavior, and recording fixed six-stock benchmark evidence in QA.
+- Strategy development roadmap is complete for current scope: `docs/context/strategy-development-roadmap.md` maps the top-ten strategy request to implemented single-symbol strategies, existing `PortfolioStrategy` combination modes, and deferred multi-symbol strategy families.
+- Portfolio preset combinations are complete for current scope: FastAPI bootstrap now exposes conservative trend/mean-reversion, momentum breakout, and Chan research portfolio presets; React Portfolio Lab can apply them into editable allocations; fixed six-stock combination benchmark evidence is recorded in QA.
+- Chan-volume fusion strategy is complete for current scope: `ChanVolumeFusionStrategy` keeps Chan structure as the primary signal engine, uses volume-price momentum to confirm low-confidence T2 entries, boost high-confidence Chan buys, and reduce weak-volume positions, with fixed six-stock plus STAR supplemental benchmark evidence recorded in QA.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -124,7 +128,7 @@ No current pending items.
 
 ### Strategy Development
 
-- Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed six-stock benchmark fixtures, then document the comparison results.
+No current pending items.
 
 ### Engineering And Review Hygiene
 
@@ -132,7 +136,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed six-stock benchmark fixtures, then document the comparison results".
+Start with "Engineering And Review Hygiene - Execute the reviewable commit split from `docs/runbooks/reviewable-commit-plan.md` after confirming whether the local launchd automation files should be included in version control".
 
 ## Update Rules
 

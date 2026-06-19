@@ -32,7 +32,7 @@ import { StrategyPage } from "../pages/StrategyPage";
 import { currentSelection, strategyDisplayName } from "../pages/pageTypes";
 import type { PlatformActions, PlatformState } from "../pages/pageTypes";
 import { defaultTwoYearDateRange } from "../utils/dateRange";
-import type { BootstrapResponse, PlatformSettings, PortfolioRequest, Stock, StrategySpec } from "../types";
+import type { BootstrapResponse, PlatformSettings, PortfolioPreset, PortfolioRequest, Stock, StrategySpec } from "../types";
 
 export const NAV_GROUPS = [
   {
@@ -122,6 +122,7 @@ function initialState(): PlatformState {
     watchlist: [],
     managedData: [],
     strategies: FALLBACK_STRATEGIES,
+    portfolioPresets: [],
     selectedStrategyId: FALLBACK_STRATEGIES[0].id,
     strategyParams: { symbol: "000001", fast: 5, slow: 20, size: 100 },
     bars: [],
@@ -408,6 +409,7 @@ function fromBootstrap(current: PlatformState, bootstrap: BootstrapResponse): Pl
     watchlist: bootstrap.watchlist ?? [],
     managedData: bootstrap.managed_data ?? [],
     strategies,
+    portfolioPresets: syncPortfolioPresetSymbols(bootstrap.portfolio_presets ?? [], bootstrap.settings.symbol),
     selectedStrategyId,
     strategyParams: paramsFromStrategy(strategies[0], bootstrap.settings.symbol),
     portfolio: defaultPortfolio(selectedStrategyId),
@@ -443,6 +445,7 @@ function applyStockSelection(current: PlatformState, stock: Stock): PlatformStat
   return {
     ...next,
     strategyParams: syncSymbolParam(next.strategyParams, stock.code),
+    portfolioPresets: syncPortfolioPresetSymbols(next.portfolioPresets, stock.code),
     portfolio: {
       ...next.portfolio,
       allocations: next.portfolio.allocations.map((allocation) => ({
@@ -470,6 +473,19 @@ function upsertManagedData(files: PlatformState["managedData"], file: PlatformSt
 function syncSymbolParam(params: Record<string, unknown>, symbol: string): Record<string, unknown> {
   if (!("symbol" in params)) return params;
   return { ...params, symbol };
+}
+
+function syncPortfolioPresetSymbols(presets: PortfolioPreset[], symbol: string): PortfolioPreset[] {
+  return presets.map((preset) => ({
+    ...preset,
+    allocations: preset.allocations.map((allocation) => ({
+      ...allocation,
+      strategy: {
+        ...allocation.strategy,
+        params: syncSymbolParam(allocation.strategy.params, symbol)
+      }
+    }))
+  }));
 }
 
 function paramsFromStrategy(strategy: StrategySpec | undefined, symbol: string): Record<string, unknown> {

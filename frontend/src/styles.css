@@ -292,14 +292,18 @@ button {
 .allocation-row,
 .weight-summary,
 .mode-explainer,
-.mode-detail-grid {
+.mode-detail-grid,
+.portfolio-preset-panel,
+.portfolio-preset-list,
+.portfolio-preset-card {
   display: grid;
   gap: 8px;
   min-width: 0;
 }
 
 .active-mode-card,
-.mode-detail-card {
+.mode-detail-card,
+.portfolio-preset-card {
   display: grid;
   gap: 5px;
   border: 1px solid var(--border-soft);
@@ -334,6 +338,35 @@ button {
 .mode-detail-card.active {
   border-color: #93c5fd;
   box-shadow: inset 3px 0 0 var(--blue);
+}
+
+.portfolio-preset-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.portfolio-preset-card p {
+  margin: 0;
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.preset-allocation-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-allocation-tags span {
+  border: 1px solid #dbeafe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  padding: 3px 7px;
 }
 
 .allocation-row {

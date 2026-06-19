@@ -6,10 +6,12 @@ from ai_trade_system.backtest import run_backtest
 from ai_trade_system.research.models import ResearchSignal
 from ai_trade_system.strategies import popular as popular_strategies
 from ai_trade_system.strategies.popular import (
+    AtrVolatilityBreakoutStrategy,
     BollingerMeanReversionStrategy,
     ChanStructureStrategy,
     ChanRsiResearchStrategy,
     DonchianBreakoutStrategy,
+    MacdTrendStrategy,
     PriceMomentumStrategy,
     RsiMeanReversionStrategy,
     VolumeConfirmedMomentumStrategy,
@@ -39,6 +41,20 @@ def make_volume_bar(day: int, close: float, volume: float) -> Bar:
         open_price=close,
         high_price=close,
         low_price=close,
+        close_price=close,
+        volume=volume,
+        turnover=close * volume,
+    )
+
+
+def make_ohlcv_bar(day: int, close: float, high: float, low: float, volume: float = 1000) -> Bar:
+    return Bar(
+        symbol="000001",
+        exchange="SZSE",
+        trading_day=date(2024, 1, day),
+        open_price=close,
+        high_price=high,
+        low_price=low,
         close_price=close,
         volume=volume,
         turnover=close * volume,
@@ -186,12 +202,15 @@ def test_registry_includes_popular_builtin_strategies():
     names = {spec.name for spec in discover_strategies(user_dir="/tmp/nonexistent-ai-trade-strategies")}
 
     assert {
+        "AtrVolatilityBreakoutStrategy",
         "BollingerMeanReversionStrategy",
         "ChanRsiResearchStrategy",
         "DonchianBreakoutStrategy",
+        "MacdTrendStrategy",
         "PriceMomentumStrategy",
         "RsiMeanReversionStrategy",
         "VolumeConfirmedMomentumStrategy",
+        "ChanVolumeFusionStrategy",
     }.issubset(names)
 
 
@@ -223,6 +242,50 @@ def test_donchian_breakout_buys_new_high_and_sells_exit_breakdown():
     assert [signal.action for signal in signals] == ["buy", "sell"]
     assert signals[0].reason == "donchian_breakout"
     assert signals[1].reason == "donchian_exit"
+
+
+def test_macd_trend_buys_bullish_cross_and_sells_bearish_cross():
+    strategy = MacdTrendStrategy(
+        "000001",
+        fast_period=2,
+        slow_period=4,
+        signal_period=2,
+        trend_window=3,
+        trade_size=100,
+    )
+    closes = [10, 10, 10, 10.6, 11.2, 12.0, 11.0, 10.2, 9.8]
+    signals = [signal for index, close in enumerate(closes, start=1) for signal in strategy.on_bar(make_bar(index, close))]
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[0].reason == "macd_bullish_cross"
+    assert signals[1].reason == "macd_bearish_cross"
+
+
+def test_atr_volatility_breakout_buys_breakout_and_uses_atr_trailing_stop():
+    strategy = AtrVolatilityBreakoutStrategy(
+        "000001",
+        breakout_window=3,
+        atr_window=3,
+        entry_atr_multiplier=0.0,
+        stop_atr_multiplier=2.0,
+        trailing_atr_multiplier=0.8,
+        max_holding_bars=10,
+        trade_size=100,
+    )
+    bars = [
+        make_ohlcv_bar(1, 10.0, 10.0, 10.0),
+        make_ohlcv_bar(2, 10.0, 10.0, 10.0),
+        make_ohlcv_bar(3, 10.0, 10.0, 10.0),
+        make_ohlcv_bar(4, 11.0, 11.0, 11.0),
+        make_ohlcv_bar(5, 12.0, 12.0, 12.0),
+        make_ohlcv_bar(6, 11.0, 11.0, 11.0),
+    ]
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[0].reason == "atr_volatility_breakout"
+    assert signals[1].reason == "atr_trailing_stop"
 
 
 def test_price_momentum_buys_strength_and_sells_weakness():
@@ -1458,6 +1521,210 @@ def test_chan_structure_strategy_rejects_negative_watch_confirm_bars():
         raise AssertionError("negative watch_confirm_bars should raise ValueError")
 
 
+def test_chan_volume_fusion_blocks_low_confidence_without_strong_volume():
+    strategy = popular_strategies.ChanVolumeFusionStrategy("000001", low_confidence_requires_volume=True)
+
+    assert not strategy._volume_allows_low_confidence("neutral")
+    assert strategy._volume_allows_low_confidence("strong")
+
+
+def test_chan_volume_fusion_boosts_high_confidence_units_with_strong_volume():
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        high_confidence_units=2,
+        volume_boost_units=1,
+        max_units=3,
+    )
+
+    assert strategy._apply_volume_boost(2, "strong") == 3
+    assert strategy._apply_volume_boost(2, "neutral") == 2
+
+
+def test_chan_volume_fusion_weak_volume_reduces_or_exits():
+    reduce_strategy = popular_strategies.ChanVolumeFusionStrategy("000001", weak_volume_exit_mode="reduce")
+    exit_strategy = popular_strategies.ChanVolumeFusionStrategy("000001", weak_volume_exit_mode="exit")
+    ignore_strategy = popular_strategies.ChanVolumeFusionStrategy("000001", weak_volume_exit_mode="ignore")
+
+    assert reduce_strategy._weak_volume_target_units(2) == 1
+    assert exit_strategy._weak_volume_target_units(2) == 0
+    assert ignore_strategy._weak_volume_target_units(2) == 2
+
+
+def test_chan_volume_fusion_requires_strong_volume_for_t2_buy(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 10.2, 1000),
+        make_volume_bar(3, 10.4, 1000),
+        make_volume_bar(4, 10.6, 1000),
+        make_volume_bar(5, 11.2, 1000),
+    ]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[-1].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                32.0,
+                bars[-1].close_price,
+                tags=("chan", "structure", "second-buy"),
+                metadata={"point_type": "second-buy", "level": "fractal"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="up")],
+    )
+    neutral_strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        low_confidence_gate="off",
+        position_cap_mode="off",
+        max_holding_bars=0,
+    )
+    strong_strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        low_confidence_gate="off",
+        position_cap_mode="off",
+        max_holding_bars=0,
+    )
+    strong_bars = [*bars[:-1], make_volume_bar(5, 11.2, 2200)]
+
+    neutral_signals = [signal for bar in bars for signal in neutral_strategy.on_bar(bar)]
+    strong_signals = [signal for bar in strong_bars for signal in strong_strategy.on_bar(bar)]
+
+    assert neutral_signals == []
+    assert [(signal.action, signal.volume) for signal in strong_signals] == [("buy", 100)]
+    assert strong_signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_T2_BUY_VOLUME_CONFIRMED")
+
+
+def test_chan_volume_fusion_boosts_t3_buy_on_strong_volume(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 10.2, 1000),
+        make_volume_bar(3, 10.4, 1000),
+        make_volume_bar(4, 10.6, 1000),
+        make_volume_bar(5, 11.2, 2200),
+    ]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[-1].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[-1].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="up")],
+    )
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=3,
+        position_cap_mode="off",
+        max_holding_bars=0,
+        high_confidence_units=2,
+        max_units=3,
+        trade_size=100,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 300)]
+    assert strategy.position_units == 3
+    assert signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_HIGH_CONFIDENCE_BOOST")
+
+
+def test_chan_volume_fusion_weak_volume_reduces_position_without_chan_sell(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 10.0, 1000),
+        make_volume_bar(3, 10.0, 1000),
+        make_volume_bar(4, 10.0, 1000),
+        make_volume_bar(5, 9.6, 1000),
+    ]
+    patch_chan_structure_analyzer(monkeypatch, [], trends=[SimpleNamespace(level="stroke", trend_type="down")])
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        momentum_window=3,
+        volume_window=3,
+        trend_window=3,
+        max_holding_bars=0,
+        weak_volume_exit_mode="reduce",
+    )
+    strategy.position_units = 2
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("sell", 100)]
+    assert strategy.position_units == 1
+    assert signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_WEAK_REDUCE")
+
+
+def test_chan_volume_fusion_prioritizes_chan_sell_before_weak_volume_reduce(monkeypatch):
+    bars = [
+        make_volume_bar(1, 10.0, 1000),
+        make_volume_bar(2, 10.0, 1000),
+        make_volume_bar(3, 10.0, 1000),
+        make_volume_bar(4, 10.0, 1000),
+        make_volume_bar(5, 9.6, 1000),
+    ]
+    patch_chan_structure_analyzer(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[-1].trading_day,
+                "CHAN_STRUCT_SELL_T3",
+                "sell",
+                -60.0,
+                bars[-1].close_price,
+                tags=("chan", "structure", "third-sell"),
+                metadata={"point_type": "third-sell", "level": "stroke"},
+            )
+        ],
+        trends=[SimpleNamespace(level="stroke", trend_type="down")],
+    )
+    strategy = popular_strategies.ChanVolumeFusionStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        momentum_window=3,
+        volume_window=3,
+        trend_window=3,
+        max_holding_bars=0,
+        weak_volume_exit_mode="reduce",
+    )
+    strategy.position_units = 2
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("sell", 200)]
+    assert strategy.position_units == 0
+    assert signals[0].reason.startswith("chan_volume_fusion:CHAN_VOLUME_CHAN_SELL")
+
+
 def test_volume_confirmed_momentum_buys_only_when_price_volume_and_trend_pass():
     signals = collect_volume_momentum_signals(
         [10, 10.2, 10.4, 10.6, 11.2],
@@ -1535,6 +1802,23 @@ def test_volume_confirmed_momentum_sells_after_max_holding_bars():
 
     assert [signal.action for signal in signals] == ["buy", "sell"]
     assert signals[1].reason == "time_exit"
+
+
+def test_volume_confirmed_momentum_sells_on_trailing_stop_from_peak():
+    signals = collect_volume_momentum_signals(
+        [10, 10.1, 10.2, 10.3, 10.4, 11.2, 12.0, 11.0],
+        [1000, 1000, 1000, 1000, 1000, 2200, 1000, 1000],
+        momentum_window=3,
+        min_momentum_pct=0.05,
+        volume_window=3,
+        volume_multiplier=1.5,
+        trend_window=5,
+        max_holding_bars=10,
+        trailing_stop_pct=0.08,
+    )
+
+    assert [signal.action for signal in signals] == ["buy", "sell"]
+    assert signals[1].reason == "trailing_stop_exit"
 
 
 def test_volume_confirmed_momentum_is_backtestable():

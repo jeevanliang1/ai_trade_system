@@ -18,6 +18,7 @@ from ai_trade_system.llm import MockLLMProvider, build_research_prompt
 from ai_trade_system.market import Bar
 from ai_trade_system.paper_service import PaperTradingService
 from ai_trade_system.portfolio import PortfolioStrategy, StrategyAllocation
+from ai_trade_system.portfolio_presets import portfolio_preset_views
 from ai_trade_system.research import preview_research_signals as build_research_signal_preview
 from ai_trade_system.research.chan_structure import scan_chan_structure
 from ai_trade_system.research.dataframe import bars_to_frame
@@ -83,12 +84,14 @@ def bootstrap() -> dict[str, Any]:
     catalog = load_stock_catalog()
     settings = default_settings()
     watchlist = list_watchlist()["stocks"]
+    strategies = discover_strategies()
     return {
         "settings": settings.model_dump(),
         "catalog_available": bool(catalog),
         "catalog_size": len(catalog),
         "stocks": [_stock_view(stock) for stock in catalog[:20]],
-        "strategies": list_strategies(),
+        "strategies": [_strategy_view(strategy) for strategy in strategies],
+        "portfolio_presets": portfolio_preset_views(strategies, settings.symbol),
         "watchlist": watchlist,
         "managed_data": list_managed_data()["files"],
         "limits": {

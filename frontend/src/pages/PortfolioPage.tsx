@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Layers3, Plus, Trash2 } from "lucide-react";
 
 import { ChartPanel } from "../components/ChartPanel";
 import { DataTable } from "../components/DataTable";
@@ -10,7 +10,7 @@ import { ToolbarButton } from "../components/ToolbarButton";
 import { priceOption } from "./chartOptions";
 import { currentStrategy, strategyDisplayName } from "./pageTypes";
 import type { PageProps } from "./pageTypes";
-import type { PortfolioAllocation, PortfolioPreviewAllocation, PortfolioRequest, PortfolioSignalContribution, SignalsResponse, StrategySpec } from "../types";
+import type { PortfolioAllocation, PortfolioPreset, PortfolioPreviewAllocation, PortfolioRequest, PortfolioSignalContribution, SignalsResponse, StrategySpec } from "../types";
 
 const MODE_DETAILS: Record<
   PortfolioRequest["mode"],
@@ -80,6 +80,21 @@ export function PortfolioPage({ state, actions }: PageProps) {
       allocations: allocations.filter((_, currentIndex) => currentIndex !== index)
     });
   };
+  const applyPreset = (preset: PortfolioPreset) => {
+    commitPortfolio({
+      mode: preset.mode,
+      ai_adjust: false,
+      ai_direction: null,
+      allocations: preset.allocations.map((allocation) => ({
+        strategy: {
+          id: allocation.strategy.id,
+          params: syncSymbolParam(allocation.strategy.params, state.settings.symbol)
+        },
+        weight: allocation.weight,
+        enabled: allocation.enabled
+      }))
+    });
+  };
 
   return (
     <div className="page-grid">
@@ -113,8 +128,33 @@ export function PortfolioPage({ state, actions }: PageProps) {
               );
             })}
           </div>
-        </section>
+            </section>
         <Switch checked={draftPortfolio.ai_adjust} label="AI参与评分" onChange={(ai_adjust) => updatePortfolio({ ai_adjust })} />
+        {state.portfolioPresets.length > 0 ? (
+          <section className="portfolio-preset-panel" aria-label="预设组合">
+            <div className="panel-title compact-title">预设组合</div>
+            <div className="portfolio-preset-list">
+              {state.portfolioPresets.map((preset) => (
+                <article className="portfolio-preset-card" key={preset.id}>
+                  <div className="portfolio-preset-header">
+                    <strong>{preset.name}</strong>
+                    <button className="mini-button" onClick={() => applyPreset(preset)}>
+                      <Layers3 size={14} /> 套用{preset.name}
+                    </button>
+                  </div>
+                  <p>{preset.description}</p>
+                  <div className="preset-allocation-tags">
+                    {preset.allocations.map((allocation) => (
+                      <span key={`${preset.id}-${allocation.strategy.id}-${allocation.role}`}>
+                        {allocation.role} · {allocation.display_name} · {formatNumber(allocation.weight)}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <div className="portfolio-editor">
           <div className="panel-title compact-title between">
             <span>策略分配</span>
@@ -316,6 +356,11 @@ function paramsFromStrategy(strategy: StrategySpec, symbol: string): Record<stri
     params[parameter.name] = parameter.name === "symbol" ? symbol : parameter.default;
   }
   return params;
+}
+
+function syncSymbolParam(params: Record<string, unknown>, symbol: string): Record<string, unknown> {
+  if (!("symbol" in params)) return params;
+  return { ...params, symbol };
 }
 
 function normalizedWeightSummary(allocations: PortfolioAllocation[], strategies: StrategySpec[]) {

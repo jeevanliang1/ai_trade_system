@@ -1,6 +1,10 @@
-# Volume Momentum Strategy Benchmark
+# Volume Momentum Strategy Baseline
 
 Date: 2026-06-19
+
+Superseded current-default benchmark: `docs/qa/2026-06-19-popular-strategy-expansion-benchmark.md`.
+
+This file preserves the first two-stock `VolumeConfirmedMomentumStrategy` baseline recorded before the later six-stock tuning pass.
 
 ## Fixed Dataset
 
@@ -19,7 +23,7 @@ These data files are local benchmark fixtures and are ignored by git through `da
 
 ## Strategy Parameters
 
-Default `VolumeConfirmedMomentumStrategy` parameters:
+Original baseline `VolumeConfirmedMomentumStrategy` parameters at the time this file was first written:
 
 - `momentum_window=20`
 - `min_momentum_pct=0.08`

@@ -8,7 +8,7 @@ This directory is the durable project memory for humans and future AI agents. Us
 - `architecture.md`: module map, data flow, and future vn.py integration direction.
 - `context/pending-features.md`: durable pending feature list and next recommended feature for continuation prompts.
 - `rules/feature-backlog-continuation.md`: feature decomposition and backlog maintenance rule.
-- `rules/strategy-benchmark-backtest.md`: mandatory fixed 中芯国际/五粮液 benchmark backtest rule for strategy changes.
+- `rules/strategy-benchmark-backtest.md`: mandatory fixed six-stock benchmark backtest rule for strategy changes.
 - `../strategies/README.md`: custom strategy workspace guidance.
 
 ## Directory Map

@@ -122,6 +122,8 @@ python -m ai_trade_system.cli paper \
 
 默认 Web 平台使用 React + FastAPI，包含数据下载、CSV 查看、策略管理、策略编辑、策略选择回测、组合实验室、信号预览、信号雷达、资金曲线、买卖点、交易记录、信号归因、纸面交易日志、风控和 Mock AI 研究员。
 
+组合实验室支持手动配置策略 allocation，也内置稳健趋势均值、动量突破、缠论研究三组组合模板，套用后仍走同一套组合预览、组合回测和纸面交易流程。
+
 安装 API 依赖并安装前端依赖：
 
 ```bash
@@ -175,8 +177,12 @@ python -m pip install -e ".[web,data]"
 - `BollingerMeanReversionStrategy`: 布林带下轨买入、回归中轨卖出。
 - `ChanRsiResearchStrategy`: 将缠论 + 增强 RSI 研究预览包装为可回测策略。
 - `ChanStructureStrategy`: 基于包含关系、分型、笔和中枢识别二买/二卖、三买/三卖，并按买卖点确定性、背驰确认、低确定性 T2 门控和动态仓位上限调整仓位单位。
+- `ChanVolumeFusionStrategy`: 以缠论结构为主，使用量价动量确认二买等低确定性买点、放量增强三买/确认买点，并在量价转弱时减仓。
 - `DonchianBreakoutStrategy`: Donchian/Turtle 突破入场、跌破退出通道离场。
 - `PriceMomentumStrategy`: 价格动量入场、负动量退出。
+- `VolumeConfirmedMomentumStrategy`: 价格动量、放量确认、趋势过滤和跟踪止盈结合的量价动量策略。
+- `MacdTrendStrategy`: MACD 金叉配合趋势均线过滤入场，死叉或趋势破位退出。
+- `AtrVolatilityBreakoutStrategy`: 近期高点突破入场，使用 ATR 初始止损、跟踪止损和时间退出。
 
 这些策略是研究和回测模板，不是收益承诺。
 

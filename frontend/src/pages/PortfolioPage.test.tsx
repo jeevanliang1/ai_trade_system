@@ -73,6 +73,30 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
       stop_loss_mode: "fixed_pct"
     },
     strategies,
+    portfolioPresets: [
+      {
+        id: "conservative_trend_reversion",
+        name: "稳健趋势均值组合",
+        description: "用双均线趋势和RSI均值回归组成保守组合。",
+        mode: "weighted_vote",
+        allocations: [
+          {
+            strategy: { id: strategies[0].id, params: { symbol: "000001", fast: 5, slow: 20, size: 100 } },
+            weight: 1,
+            enabled: true,
+            role: "趋势底座",
+            display_name: "双均线趋势"
+          },
+          {
+            strategy: { id: strategies[1].id, params: { symbol: "000001", rsi_period: 14, trade_size: 100 } },
+            weight: 0.55,
+            enabled: true,
+            role: "超卖修复",
+            display_name: "RSI均值回归"
+          }
+        ]
+      }
+    ],
     selectedStrategyId: strategies[0].id,
     strategyParams: { symbol: "000001", fast: 5, slow: 20, size: 100 },
     bars: [],
@@ -168,6 +192,28 @@ test("PortfolioPage edits allocation rows and shows normalized enabled weights",
     allocations: [
       changedFirstAllocation,
       { strategy: { id: strategies[0].id, params: { symbol: "000001", fast: 5, slow: 20, size: 100 } }, weight: 1, enabled: true }
+    ]
+  });
+});
+
+test("PortfolioPage applies a portfolio preset to the allocation editor", async () => {
+  const user = userEvent.setup();
+  const props = makeProps();
+
+  render(<PortfolioPage {...props} />);
+
+  expect(screen.getByText("预设组合")).toBeInTheDocument();
+  expect(screen.getByText("用双均线趋势和RSI均值回归组成保守组合。")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "套用稳健趋势均值组合" }));
+
+  expect(props.actions.setPortfolio).toHaveBeenLastCalledWith({
+    mode: "weighted_vote",
+    ai_adjust: false,
+    ai_direction: null,
+    allocations: [
+      { strategy: { id: strategies[0].id, params: { symbol: "000001", fast: 5, slow: 20, size: 100 } }, weight: 1, enabled: true },
+      { strategy: { id: strategies[1].id, params: { symbol: "000001", rsi_period: 14, trade_size: 100 } }, weight: 0.55, enabled: true }
     ]
   });
 });

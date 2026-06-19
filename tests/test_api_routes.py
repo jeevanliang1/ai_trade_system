@@ -144,6 +144,66 @@ def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch)
     assert "更敏感" in fast_window["decrease_effect"]
 
 
+def test_bootstrap_returns_portfolio_presets_for_strategy_combinations(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.get("/api/bootstrap")
+
+    assert response.status_code == 200
+    payload = response.json()
+    presets = payload["portfolio_presets"]
+    conservative = next(preset for preset in presets if preset["id"] == "conservative_trend_reversion")
+
+    assert conservative["name"] == "稳健趋势均值组合"
+    assert conservative["mode"] == "weighted_vote"
+    assert "趋势" in conservative["description"]
+    assert "均值回归" in conservative["description"]
+    assert len(conservative["allocations"]) >= 4
+    strategy_ids = [allocation["strategy"]["id"] for allocation in conservative["allocations"]]
+    assert "builtin:dual_moving_average:DualMovingAverageStrategy" in strategy_ids
+    assert "builtin:popular:RsiMeanReversionStrategy" in strategy_ids
+    assert "builtin:popular:AtrVolatilityBreakoutStrategy" in strategy_ids
+    assert conservative["allocations"][0]["strategy"]["params"]["symbol"] == "000001"
+    assert conservative["allocations"][0]["weight"] > 0
+    assert conservative["allocations"][0]["enabled"] is True
+    assert {preset["id"] for preset in presets} >= {
+        "conservative_trend_reversion",
+        "momentum_breakout_stack",
+        "chan_research_stack",
+    }
+
+
+def test_portfolio_preview_accepts_bootstrap_preset_allocations(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    settings = _settings_payload()
+    demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 120})
+    assert demo_response.status_code == 200
+    bootstrap = client.get("/api/bootstrap").json()
+    preset = next(item for item in bootstrap["portfolio_presets"] if item["id"] == "conservative_trend_reversion")
+
+    preview_response = client.post(
+        "/api/portfolio/preview",
+        json={
+            "settings": settings,
+            "portfolio": {
+                "allocations": [
+                    {"strategy": allocation["strategy"], "weight": allocation["weight"], "enabled": allocation["enabled"]}
+                    for allocation in preset["allocations"]
+                ],
+                "mode": preset["mode"],
+                "ai_adjust": False,
+                "ai_direction": None,
+            },
+        },
+    )
+
+    assert preview_response.status_code == 200
+    payload = preview_response.json()
+    assert payload["allocations"][0]["name"] == "双均线趋势"
+    assert len(payload["allocations"]) == len(preset["allocations"])
+    assert payload["breakdown"]["mode"] == "weighted_vote"
+
+
 def test_default_settings_use_two_year_range_from_current_date():
     settings = service.default_settings(today=date(2026, 6, 18))
 
@@ -336,6 +396,14 @@ def test_strategies_route_exposes_enum_parameter_options(tmp_path, monkeypatch):
     assert params["allowed_point_types"]["multiple"] is True
     assert params["allowed_levels"]["options"] == ["all", "segment", "stroke", "fractal"]
     assert params["allowed_levels"]["multiple"] is True
+
+    fusion = next(strategy for strategy in payload if strategy["class_name"] == "ChanVolumeFusionStrategy")
+    fusion_params = {param["name"]: param for param in fusion["parameters"]}
+
+    assert fusion["display_name"] == "缠论量价融合"
+    assert fusion_params["weak_volume_exit_mode"]["options"] == ["reduce", "exit", "ignore"]
+    assert fusion_params["low_confidence_requires_volume"]["display_name"] == "低确定性需量价确认"
+    assert "放量" in fusion_params["volume_boost_units"]["description"]
 
 
 def test_paper_run_and_events_routes_round_trip_log(tmp_path, monkeypatch):
