@@ -447,6 +447,30 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         increase_effect="调大后确认更严格，信号更少但反弹或回落更充分。",
         decrease_effect="调小后更早触发二买/二卖，信号更多但假突破风险更高。",
     ),
+    "low_confidence_units": ParameterGuidance(
+        display_name="低确定性目标仓位",
+        description="二买等低确定性结构买点触发后的目标仓位单位，1 个单位等于每次交易股数。",
+        increase_effect="调大后二买建仓更积极，收益弹性和回撤都会放大。",
+        decrease_effect="调小后二买只做更轻仓试探，交易风险更低但可能错过早期反弹。",
+    ),
+    "divergence_confirm_units": ParameterGuidance(
+        display_name="背驰确认目标仓位",
+        description="底背驰确认或背驰观察被同向结构确认后的目标仓位单位。",
+        increase_effect="调大后背驰确认买点加仓更积极，适合更信任背驰有效性的回测。",
+        decrease_effect="调小后背驰确认只做轻度加仓，减少误判背驰带来的仓位暴露。",
+    ),
+    "high_confidence_units": ParameterGuidance(
+        display_name="高确定性目标仓位",
+        description="三买等高确定性买点触发后的目标仓位单位，也是策略允许的最大仓位单位。",
+        increase_effect="调大后三买加仓更激进，趋势延续时收益更高但风险也更集中。",
+        decrease_effect="调小后三买后的最大仓位更克制，回撤暴露更低。",
+    ),
+    "sell_confirm_units": ParameterGuidance(
+        display_name="卖出确认保留仓位",
+        description="顶背驰确认或同类卖出确认后保留的目标仓位单位；三卖仍会清仓。",
+        increase_effect="调大后卖出确认更偏保留底仓，可能延续趋势收益但回撤也更大。",
+        decrease_effect="调小后卖出确认更接近清仓，保护利润更积极但可能过早离场。",
+    ),
 }
 
 

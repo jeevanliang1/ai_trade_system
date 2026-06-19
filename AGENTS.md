@@ -31,7 +31,7 @@
 - User-facing strategy parameters should include a Chinese label, plain-language purpose, and simple tuning impact for increasing or decreasing the value when the parameter semantics allow it.
 - Stock-aware React controls should use the shared watchlist selector and `selectStock` action so `symbol`, `exchange`, `csv_path`, strategy params, portfolio params, and stale market-derived results stay synchronized.
 - Watchlist market-data workflows should use `src/ai_trade_system/data_manager.py` and canonical paths under `data/market/a_share/{exchange}/{code}/`; do not reintroduce ad hoc `data/{code}_daily.csv` defaults for stock-aware flows. Product code may expose CLI/API update hooks, but committing machine-local scheduling such as launchd still requires owner confirmation.
-- Every strategy modification or new strategy must run fixed-stock benchmark backtests before final delivery, using local qfq fixtures for 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` over `20230619` to `20260619` under `data/market/a_share/{exchange}/{code}/`; record comparable results under `docs/qa/`.
+- Every strategy modification or new strategy must run fixed-stock benchmark backtests before final delivery, using local qfq fixtures for 中芯国际 `688981/SSE`, 五粮液 `000858/SZSE`, 中国平安 `601318/SSE`, 江苏金租 `600901/SSE`, 宝丰能源 `600989/SSE`, and 兆易创新 `603986/SSE` over `20230619` to `20260619` under `data/market/a_share/{exchange}/{code}/`; record comparable results under `docs/qa/`.
 - Global shell controls should summarize current context or navigate to the next workflow step; page-owned execution actions such as running backtests, scans, AI research, risk checks, or paper trading should live inside their responsible workspace.
 
 ## Required Context Before Development

@@ -241,12 +241,8 @@ def _target_units_for_signal(self, signal) -> int:
 Add:
 
 ```python
-def _target_units_for_armed_confirmation(self, action: str) -> int:
-    if action == "buy":
-        return self.divergence_confirm_units
-    if action == "sell":
-        return self.sell_confirm_units
-    return self.position_units
+def _target_units_for_armed_confirmation(self, signal) -> int:
+    return self._target_units_for_signal(signal)
 ```
 
 Add an emit helper that clamps the target between 0 and `high_confidence_units`, emits only the delta, updates `position_units`, clears/keeps state, and resets `holding_bars`.
@@ -364,4 +360,3 @@ Start `./scripts/run_app.sh`, open `http://localhost:5173`, navigate to the stra
 - [ ] **Step 5: Final status**
 
 Report commit status, verification commands, benchmark result summary, screenshot paths, and sedimentation changes.
-

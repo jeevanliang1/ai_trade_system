@@ -265,10 +265,14 @@ class ChanStructureStrategy(Strategy):
         min_rebound_pct: float = 0.03,
         min_signal_score: float = 28.0,
         signal_mode: str = "all",
-        allowed_point_types: str = "third-buy,third-sell",
+        allowed_point_types: str = "all",
         allowed_levels: str = "all",
         max_holding_bars: int = 15,
         watch_confirm_bars: int = 20,
+        low_confidence_units: int = 1,
+        divergence_confirm_units: int = 2,
+        high_confidence_units: int = 3,
+        sell_confirm_units: int = 1,
         trade_size: int = 100,
     ) -> None:
         if min_bars < 3:
@@ -291,6 +295,14 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("max_holding_bars must be non-negative")
         if watch_confirm_bars < 0:
             raise ValueError("watch_confirm_bars must be non-negative")
+        if low_confidence_units < 1:
+            raise ValueError("low_confidence_units must be at least 1 units")
+        if divergence_confirm_units < low_confidence_units:
+            raise ValueError("divergence_confirm_units must be greater than or equal to low_confidence_units")
+        if high_confidence_units < divergence_confirm_units:
+            raise ValueError("high_confidence_units must be greater than or equal to divergence_confirm_units")
+        if sell_confirm_units < 0 or sell_confirm_units >= high_confidence_units:
+            raise ValueError("sell_confirm_units must be non-negative and smaller than high_confidence_units")
         if trade_size <= 0:
             raise ValueError("trade_size must be positive")
         self.symbol = symbol
@@ -306,6 +318,10 @@ class ChanStructureStrategy(Strategy):
         self.allowed_level_set = allowed_level_set
         self.max_holding_bars = max_holding_bars
         self.watch_confirm_bars = watch_confirm_bars
+        self.low_confidence_units = low_confidence_units
+        self.divergence_confirm_units = divergence_confirm_units
+        self.high_confidence_units = high_confidence_units
+        self.sell_confirm_units = sell_confirm_units
         self.trade_size = trade_size
         self.bars: deque[Bar] = deque(maxlen=lookback)
         self.chan_analyzer = ChanCoreV2Analyzer(
@@ -313,11 +329,29 @@ class ChanStructureStrategy(Strategy):
             min_rebound_pct=self.min_rebound_pct,
             lookback=self.lookback,
         )
-        self.in_position = False
+        self._position_units = 0
         self.holding_bars = 0
         self.bar_index = 0
         self.armed_watch: ArmedChanWatch | None = None
         self.emitted: set[tuple[object, str, str]] = set()
+
+    @property
+    def position_units(self) -> int:
+        return self._position_units
+
+    @position_units.setter
+    def position_units(self, units: int) -> None:
+        if units < 0:
+            raise ValueError("position_units must be non-negative units")
+        self._position_units = min(units, self.high_confidence_units)
+
+    @property
+    def in_position(self) -> bool:
+        return self.position_units > 0
+
+    @in_position.setter
+    def in_position(self, value: bool) -> None:
+        self.position_units = self.low_confidence_units if value else 0
 
     def on_bar(self, bar: Bar) -> list[Signal]:
         if bar.symbol != self.symbol:
@@ -344,23 +378,16 @@ class ChanStructureStrategy(Strategy):
                 key = (signal.trading_day, f"ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}", signal.action)
                 if key in self.emitted:
                     continue
-                if self._can_emit_action(signal.action):
+                target_units = self._target_units_for_armed_confirmation(signal)
+                if self._can_emit_target_units(signal.action, target_units):
                     self.emitted.add(key)
                     self.armed_watch = None
-                    if signal.action == "buy":
-                        self.in_position = True
-                    else:
-                        self.in_position = False
-                    self.holding_bars = 0
-                    return [
-                        Signal(
-                            signal.action,
-                            bar.symbol,
-                            signal.price,
-                            self.trade_size,
-                            f"chan_structure:ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}:{signal.reason}",
-                        )
-                    ]
+                    return self._emit_position_delta(
+                        target_units,
+                        bar,
+                        signal.price,
+                        f"chan_structure:ARMED_CONFIRM:{armed_watch.kind}->{signal.kind}:{signal.reason}",
+                    )
             if (
                 abs(signal.score) < self.min_signal_score
                 or not self._signal_mode_allows(signal.kind)
@@ -370,20 +397,19 @@ class ChanStructureStrategy(Strategy):
             key = (signal.trading_day, signal.kind, signal.action)
             if key in self.emitted:
                 continue
-            if signal.action == "buy" and not self.in_position:
+            target_units = self._target_units_for_signal(signal)
+            if self._can_emit_target_units(signal.action, target_units):
                 self.emitted.add(key)
                 self.armed_watch = None
-                self.in_position = True
-                self.holding_bars = 0
-                return [Signal("buy", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
-            if signal.action == "sell" and self.in_position:
-                self.emitted.add(key)
-                self.armed_watch = None
-                self.in_position = False
-                self.holding_bars = 0
-                return [Signal("sell", bar.symbol, signal.price, self.trade_size, f"chan_structure:{signal.kind}:{signal.reason}")]
+                return self._emit_position_delta(
+                    target_units,
+                    bar,
+                    signal.price,
+                    f"chan_structure:{signal.kind}:{signal.reason}",
+                )
         if self.in_position and self.max_holding_bars > 0 and self.holding_bars >= self.max_holding_bars:
-            self.in_position = False
+            volume = self.position_units * self.trade_size
+            self.position_units = 0
             self.holding_bars = 0
             self.armed_watch = None
             return [
@@ -391,7 +417,7 @@ class ChanStructureStrategy(Strategy):
                     "sell",
                     bar.symbol,
                     bar.close_price,
-                    self.trade_size,
+                    volume,
                     f"chan_structure:TIME_EXIT:max_holding_bars={self.max_holding_bars}",
                 )
             ]
@@ -422,7 +448,7 @@ class ChanStructureStrategy(Strategy):
             return
         if abs(signal.score) < self.min_signal_score:
             return
-        if not self._can_emit_action(signal.action):
+        if not self._can_arm_watch_action(signal.action):
             return
         self.armed_watch = ArmedChanWatch(
             action=signal.action,
@@ -452,11 +478,69 @@ class ChanStructureStrategy(Strategy):
         )
 
     def _can_emit_action(self, action: str) -> bool:
+        return self._can_emit_target_units(action, self._target_units_for_action(action))
+
+    def _target_units_for_action(self, action: str) -> int:
         if action == "buy":
-            return not self.in_position
+            return self.divergence_confirm_units
         if action == "sell":
-            return self.in_position
+            return self.sell_confirm_units
+        return self.position_units
+
+    def _target_units_for_signal(self, signal) -> int:
+        if signal.kind == "CHAN_STRUCT_BUY_T2":
+            return self.low_confidence_units
+        if signal.kind in {"CHAN_STRUCT_BUY_T1_DIVERGENCE", "CHAN_STRUCT_BUY_CONFIRM"}:
+            return self.divergence_confirm_units
+        if signal.kind == "CHAN_STRUCT_BUY_T3":
+            return self.high_confidence_units
+        if signal.kind == "CHAN_STRUCT_SELL_T2":
+            return max(0, self.position_units - self.low_confidence_units)
+        if signal.kind in {"CHAN_STRUCT_SELL_T1_DIVERGENCE", "CHAN_STRUCT_SELL_CONFIRM"}:
+            return self.sell_confirm_units
+        if signal.kind == "CHAN_STRUCT_SELL_T3":
+            return 0
+        return self.position_units
+
+    def _target_units_for_armed_confirmation(self, signal) -> int:
+        if signal.action == "buy":
+            if signal.kind == "CHAN_STRUCT_BUY_T3":
+                return self.high_confidence_units
+            return self.divergence_confirm_units
+        if signal.action == "sell":
+            if signal.kind == "CHAN_STRUCT_SELL_T3":
+                return 0
+            return self.sell_confirm_units
+        return self.position_units
+
+    def _can_arm_watch_action(self, action: str) -> bool:
+        if action == "buy":
+            return self.position_units < self.high_confidence_units
+        if action == "sell":
+            return self.position_units > 0
         return False
+
+    def _can_emit_target_units(self, action: str, target_units: int) -> bool:
+        target_units = self._clamp_position_units(target_units)
+        if action == "buy":
+            return target_units > self.position_units
+        if action == "sell":
+            return target_units < self.position_units
+        return False
+
+    def _emit_position_delta(self, target_units: int, bar: Bar, price: float, reason: str) -> list[Signal]:
+        target_units = self._clamp_position_units(target_units)
+        current_units = self.position_units
+        if target_units == current_units:
+            return []
+        action = "buy" if target_units > current_units else "sell"
+        volume = abs(target_units - current_units) * self.trade_size
+        self.position_units = target_units
+        self.holding_bars = 0
+        return [Signal(action, bar.symbol, price, volume, reason)]
+
+    def _clamp_position_units(self, units: int) -> int:
+        return min(max(units, 0), self.high_confidence_units)
 
 
 class VolumeConfirmedMomentumStrategy(Strategy):

@@ -174,7 +174,7 @@ python -m pip install -e ".[web,data]"
 - `RsiMeanReversionStrategy`: RSI 超卖/超买均值回归。
 - `BollingerMeanReversionStrategy`: 布林带下轨买入、回归中轨卖出。
 - `ChanRsiResearchStrategy`: 将缠论 + 增强 RSI 研究预览包装为可回测策略。
-- `ChanStructureStrategy`: 基于包含关系、分型、笔和中枢识别二买/二卖、三买/三卖。
+- `ChanStructureStrategy`: 基于包含关系、分型、笔和中枢识别二买/二卖、三买/三卖，并按买卖点确定性和背驰确认调整仓位单位。
 - `DonchianBreakoutStrategy`: Donchian/Turtle 突破入场、跌破退出通道离场。
 - `PriceMomentumStrategy`: 价格动量入场、负动量退出。
 

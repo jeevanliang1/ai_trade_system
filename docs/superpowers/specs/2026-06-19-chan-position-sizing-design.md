@@ -68,8 +68,9 @@ Existing signal score, mode, point-type, and level filters still apply before a 
 
 Raw T1 divergence watch signals still arm only; they do not trade immediately. When an armed watch is later confirmed by an allowed same-direction T2/T3/confirmation signal:
 
-- Buy confirmation uses the divergence-confirm target.
-- Sell confirmation uses the sell-confirm target.
+- Buy confirmation with T2/confirmation uses the divergence-confirm target.
+- Sell confirmation with T2/confirmation uses the sell-confirm target.
+- Confirmation by T3 still uses the high-certainty T3 target: 三买 adds to the high target and 三卖 clears the position.
 - The reason keeps the existing `ARMED_CONFIRM:<watch_kind>-><confirm_kind>` prefix.
 
 ## Fixed Benchmark Universe
@@ -110,4 +111,3 @@ Before final delivery:
 - Record comparable results in `docs/qa/` with fixture metadata and interpretation.
 - Update `docs/rules/strategy-benchmark-backtest.md` for the expanded fixed universe.
 - Capture the React strategy surface after parameter metadata changes, or document a concrete blocker.
-

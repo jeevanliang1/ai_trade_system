@@ -154,6 +154,14 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert "fractal" in params["allowed_levels"].description
     assert params["allowed_levels"].options == ("all", "segment", "stroke", "fractal")
     assert params["allowed_levels"].multiple is True
+    assert params["low_confidence_units"].display_name == "低确定性目标仓位"
+    assert "二买" in params["low_confidence_units"].description
+    assert params["divergence_confirm_units"].display_name == "背驰确认目标仓位"
+    assert "背驰" in params["divergence_confirm_units"].description
+    assert params["high_confidence_units"].display_name == "高确定性目标仓位"
+    assert "三买" in params["high_confidence_units"].description
+    assert params["sell_confirm_units"].display_name == "卖出确认保留仓位"
+    assert "顶背驰" in params["sell_confirm_units"].description
 
 
 def test_chan_structure_strategy_registry_exposes_balanced_tuned_defaults():
@@ -164,10 +172,14 @@ def test_chan_structure_strategy_registry_exposes_balanced_tuned_defaults():
 
     assert defaults["min_signal_score"] == 28.0
     assert defaults["signal_mode"] == "all"
-    assert defaults["allowed_point_types"] == "third-buy,third-sell"
+    assert defaults["allowed_point_types"] == "all"
     assert defaults["allowed_levels"] == "all"
     assert defaults["max_holding_bars"] == 15
     assert defaults["watch_confirm_bars"] == 20
+    assert defaults["low_confidence_units"] == 1
+    assert defaults["divergence_confirm_units"] == 2
+    assert defaults["high_confidence_units"] == 3
+    assert defaults["sell_confirm_units"] == 1
 
 
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):

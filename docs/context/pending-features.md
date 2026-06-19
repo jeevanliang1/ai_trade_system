@@ -80,6 +80,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Strategy parameter enum controls are complete for current scope: registry/API parameter metadata now exposes allowed `options` plus `multiple`, and React renders `signal_mode` as a select plus `allowed_point_types`/`allowed_levels` as checkbox multi-select controls while preserving string-valued strategy params.
 - Chan balanced parameter tuning is complete for current scope: `ChanStructureStrategy` defaults now use `min_signal_score=28.0`, `allowed_point_types=third-buy,third-sell`, and `max_holding_bars=15`, improving the fixed-fixture worst return and drawdown while recording the trade-off against the old higher-sum profile in QA.
 - Chan Core V2 infrastructure is complete for current scope: `research.chan_core_v2` now derives stroke/segment trend-type summaries, pivot lifecycle states, compact overlay diagnostics, and a conservative incremental-window analyzer used by `ChanStructureStrategy` without changing the fixed-fixture default benchmark results.
+- Chan structure position-sizing A variant is complete for current scope: `ChanStructureStrategy` now maps 二买/二卖、背驰确认、三买/三卖 into target position units, keeps `in_position` compatibility, exposes Chinese parameter guidance for the sizing units, expands the fixed benchmark universe to six A-share fixtures, and records the six-stock benchmark in QA.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -120,7 +121,8 @@ No current pending items.
 
 ### Strategy Development
 
-- Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results.
+- Continue Chan structure strategy roadmap with the deferred B/C variants after confirming their exact semantics, and run the fixed six-stock benchmark after each strategy change.
+- Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed six-stock benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
 
@@ -128,7 +130,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed 中芯国际 `688981/SSE` and 五粮液 `000858/SZSE` three-year benchmark fixtures, then document the comparison results".
+Start with "Strategy Development - Continue Chan structure strategy roadmap with the deferred B/C variants after confirming their exact semantics, and run the fixed six-stock benchmark after each strategy change".
 
 ## Update Rules
 

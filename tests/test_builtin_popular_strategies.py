@@ -273,7 +273,7 @@ def test_chan_structure_strategy_emits_buy_from_structural_buy_signal():
     signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
 
     assert [signal.action for signal in signals] == ["buy"]
-    assert signals[0].volume == 100
+    assert signals[0].volume == 300
     assert signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T3")
 
 
@@ -288,7 +288,7 @@ def test_chan_structure_strategy_emits_sell_after_structural_sell_signal():
         signal_mode="structure",
         trade_size=100,
     )
-    strategy.in_position = True
+    strategy.position_units = strategy.high_confidence_units
     bars = [
         make_chan_bar(0, 12.0, 12.4, 11.7),
         make_chan_bar(1, 12.8, 13.2, 12.2),
@@ -321,7 +321,7 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
         max_holding_bars=0,
         trade_size=100,
     )
-    strategy.in_position = True
+    strategy.position_units = strategy.high_confidence_units
 
     signals = [signal for bar in make_deep_chan_bars() for signal in strategy.on_bar(bar)]
 
@@ -362,6 +362,140 @@ def test_chan_structure_strategy_uses_incremental_chan_core_v2_analyzer(monkeypa
     assert [signal.action for signal in signals] == ["buy"]
 
 
+def test_chan_structure_strategy_sizes_position_by_chan_certainty(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(8)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_T2",
+                "buy",
+                30.0,
+                bars[2].close_price,
+                tags=("chan", "structure", "second-buy"),
+                metadata={"point_type": "second-buy", "level": "fractal"},
+            ),
+            make_research_signal(
+                bars[3].trading_day,
+                "CHAN_STRUCT_BUY_T3",
+                "buy",
+                44.0,
+                bars[3].close_price,
+                tags=("chan", "structure", "third-buy"),
+                metadata={"point_type": "third-buy", "level": "stroke"},
+            ),
+            make_research_signal(
+                bars[4].trading_day,
+                "CHAN_STRUCT_SELL_T2",
+                "sell",
+                -30.0,
+                bars[4].close_price,
+                tags=("chan", "structure", "second-sell"),
+                metadata={"point_type": "second-sell", "level": "fractal"},
+            ),
+            make_research_signal(
+                bars[5].trading_day,
+                "CHAN_STRUCT_SELL_CONFIRM",
+                "sell",
+                -60.0,
+                bars[5].close_price,
+                metadata={"point_type": "first-sell", "level": "segment"},
+            ),
+            make_research_signal(
+                bars[6].trading_day,
+                "CHAN_STRUCT_SELL_T3",
+                "sell",
+                -44.0,
+                bars[6].close_price,
+                tags=("chan", "structure", "third-sell"),
+                metadata={"point_type": "third-sell", "level": "stroke"},
+            ),
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=8,
+        min_signal_score=20.0,
+        allowed_point_types="all",
+        max_holding_bars=0,
+        trade_size=100,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [
+        ("buy", 100),
+        ("buy", 200),
+        ("sell", 100),
+        ("sell", 100),
+        ("sell", 100),
+    ]
+    assert strategy.position_units == 0
+
+
+def test_chan_structure_strategy_divergence_confirmation_targets_middle_units(monkeypatch):
+    bars = [make_chan_bar(index, 10 + index, 10.5 + index, 9.5 + index) for index in range(5)]
+    patch_chan_structure_scan(
+        monkeypatch,
+        [
+            make_research_signal(
+                bars[2].trading_day,
+                "CHAN_STRUCT_BUY_CONFIRM",
+                "buy",
+                60.0,
+                bars[2].close_price,
+                metadata={"point_type": "first-buy", "level": "segment"},
+            )
+        ],
+    )
+    strategy = ChanStructureStrategy(
+        "000001",
+        min_bars=3,
+        lookback=5,
+        min_signal_score=30.0,
+        allowed_point_types="all",
+        max_holding_bars=0,
+        trade_size=100,
+    )
+
+    signals = [signal for bar in bars for signal in strategy.on_bar(bar)]
+
+    assert [(signal.action, signal.volume) for signal in signals] == [("buy", 200)]
+    assert strategy.position_units == 2
+
+
+def test_chan_structure_strategy_in_position_property_remains_compatible():
+    strategy = ChanStructureStrategy("000001")
+
+    strategy.in_position = True
+    assert strategy.in_position is True
+    assert strategy.position_units == 1
+
+    strategy.in_position = False
+    assert strategy.in_position is False
+    assert strategy.position_units == 0
+
+
+def test_chan_structure_strategy_rejects_invalid_unit_configuration():
+    invalid_kwargs = [
+        {"low_confidence_units": 0},
+        {"low_confidence_units": 2, "divergence_confirm_units": 1},
+        {"divergence_confirm_units": 3, "high_confidence_units": 2},
+        {"high_confidence_units": 3, "sell_confirm_units": 3},
+        {"sell_confirm_units": -1},
+    ]
+
+    for kwargs in invalid_kwargs:
+        try:
+            ChanStructureStrategy("000001", **kwargs)
+        except ValueError as exc:
+            assert "units" in str(exc)
+        else:
+            raise AssertionError(f"invalid units should raise ValueError: {kwargs}")
+
+
 def test_chan_structure_strategy_default_filters_low_confidence_structure_signals():
     bars = make_low_confidence_t2_chan_bars()
     tuned_default = ChanStructureStrategy("000001", min_bars=12, lookback=40, min_stroke_bars=2, min_rebound_pct=0.03)
@@ -381,9 +515,10 @@ def test_chan_structure_strategy_default_filters_low_confidence_structure_signal
 
     assert tuned_default.min_signal_score == 28.0
     assert tuned_default.signal_mode == "all"
-    assert tuned_default.allowed_point_types == "third-buy,third-sell"
+    assert tuned_default.allowed_point_types == "all"
     assert tuned_default.max_holding_bars == 15
-    assert tuned_signals == []
+    assert [signal.action for signal in tuned_signals] == ["buy"]
+    assert tuned_signals[0].volume == 100
     assert [signal.action for signal in lower_threshold_signals] == ["buy"]
     assert lower_threshold_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T2")
 
@@ -457,8 +592,8 @@ def test_chan_structure_strategy_signal_mode_filters_confirmation_family():
         allowed_point_types="all",
         max_holding_bars=0,
     )
-    confirmation.in_position = True
-    structure.in_position = True
+    confirmation.position_units = confirmation.high_confidence_units
+    structure.position_units = structure.high_confidence_units
 
     confirmation_signals = [signal for bar in make_deep_chan_bars() for signal in confirmation.on_bar(bar)]
     structure_signals = [signal for bar in make_deep_chan_bars() for signal in structure.on_bar(bar)]
