@@ -243,7 +243,29 @@ def update_stock_data(
             message="no missing date range",
         )
 
-    fetched_bars = fetch(data_file.code, fetch_start, requested_end, data_file.exchange, data_file.adjust)
+    try:
+        fetched_bars = fetch(data_file.code, fetch_start, requested_end, data_file.exchange, data_file.adjust)
+    except Exception as exc:
+        if not existing_bars:
+            raise
+        return DataUpdateResult(
+            code=data_file.code,
+            name=data_file.name,
+            exchange=data_file.exchange,
+            adjust=data_file.adjust,
+            status="skipped",
+            requested_start=requested_start,
+            requested_end=requested_end,
+            fetched_start=fetch_start,
+            fetched_end=requested_end,
+            fetched_rows=0,
+            latest_rows=len(existing_bars),
+            latest_start=latest_start,
+            latest_end=latest_end,
+            latest_path=data_file.latest_path.as_posix(),
+            increment_path=None,
+            message=f"using existing local data; incremental fetch failed: {exc}",
+        )
     if not fetched_bars:
         return DataUpdateResult(
             code=data_file.code,

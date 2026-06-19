@@ -71,6 +71,38 @@ def test_update_stock_data_merges_latest_csv_and_writes_increment_manifest(tmp_p
     assert manifest["last_increment_path"] == result.increment_path
 
 
+def test_update_stock_data_keeps_existing_csv_when_increment_fetch_fails(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    stock = {"code": "688001", "name": "华兴源创", "exchange": "SSE"}
+    data_file = data_file_for_stock(stock)
+    write_bars_csv(
+        [
+            _bar("688001", "SSE", date(2026, 6, 17), 30.0),
+            _bar("688001", "SSE", date(2026, 6, 18), 31.0),
+        ],
+        data_file.latest_path,
+    )
+
+    def fail_fetch(symbol: str, start_date: str, end_date: str, exchange: str, adjust: str):
+        assert (symbol, start_date, end_date, exchange, adjust) == ("688001", "20260619", "20260619", "SSE", "qfq")
+        raise RuntimeError("provider has no data for requested end date")
+
+    result = update_stock_data(stock, start_date="20230619", end_date="20260619", if_stale=True, fetcher=fail_fetch)
+
+    assert result.status == "skipped"
+    assert result.fetched_start == "20260619"
+    assert result.fetched_end == "20260619"
+    assert result.fetched_rows == 0
+    assert result.latest_rows == 2
+    assert result.latest_start == "2026-06-17"
+    assert result.latest_end == "2026-06-18"
+    assert result.latest_path == data_file.latest_path.as_posix()
+    assert result.increment_path is None
+    assert "using existing local data" in result.message
+    assert "provider has no data" in result.message
+    assert [bar.trading_day for bar in read_bars_csv(data_file.latest_path)] == [date(2026, 6, 17), date(2026, 6, 18)]
+
+
 def test_watchlist_status_marks_missing_and_stale_files(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     stock = {"code": "000001", "name": "平安银行", "exchange": "SZSE"}

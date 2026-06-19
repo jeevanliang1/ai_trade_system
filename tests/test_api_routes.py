@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from ai_trade_system import data_manager
 from ai_trade_system.api import service
 from ai_trade_system.api.app import create_app
 from ai_trade_system.data import write_bars_csv
@@ -785,6 +786,51 @@ def test_research_signals_batch_auto_updates_star_data_before_scan(tmp_path, mon
     assert payload["rows"][0]["data_status"]["status"] == "updated"
     assert payload["rows"][0]["data_status"]["rows"] == 80
     assert payload["rows"][0]["momentum"]["entry_ready"] is True
+
+
+def test_research_signals_batch_auto_update_skips_when_increment_fetch_fails_but_local_csv_exists(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    stock = StockInfo("688001", "华兴源创", "SSE")
+    monkeypatch.setattr(service, "load_stock_catalog", lambda: [stock])
+    _write_managed_bars(stock, _momentum_closes(10.0, 16.0), [1000.0] * 79 + [2600.0])
+
+    def fail_fetch(symbol: str, start_date: str, end_date: str, exchange: str, adjust: str):
+        assert (symbol, start_date, end_date, exchange, adjust) == ("688001", "20260322", "20260322", "SSE", "qfq")
+        raise RuntimeError("provider has no data for requested end date")
+
+    monkeypatch.setattr(data_manager, "fetch_akshare_daily_bars", fail_fetch)
+    settings = {**_settings_payload(), "start_date": "20260101", "end_date": "20260322"}
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": settings,
+            "query": "",
+            "limit": 100,
+            "min_bars": 20,
+            "lookback": 60,
+            "universe": "star",
+            "score_mode": "volume_momentum",
+            "auto_update_data": True,
+            "if_stale": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_update"]["enabled"] is True
+    assert payload["data_update"]["total"] == 1
+    assert payload["data_update"]["updated"] == 0
+    assert payload["data_update"]["skipped"] == 1
+    assert payload["data_update"]["failed"] == 0
+    assert payload["available"] == 1
+    assert payload["missing"] == 0
+    assert payload["rows"][0]["status"] == "scanned"
+    assert payload["rows"][0]["data_status"]["status"] == "skipped"
+    assert payload["rows"][0]["data_status"]["rows"] == 80
+    assert payload["rows"][0]["data_status"]["end"] == "2026-03-21"
+    assert "using existing local data" in payload["rows"][0]["data_status"]["message"]
+    assert not any(blocker["code"] == "DATA_UPDATE_FAILED" for blocker in payload["rows"][0]["blockers"])
 
 
 def test_research_signals_batch_auto_update_failure_returns_blocker(tmp_path, monkeypatch):

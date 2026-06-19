@@ -137,3 +137,36 @@ Repeatability check:
 
 - Re-running the same effective range ending at the actual local data end `20260618` returned `updated=0`, `skipped=5`, `failed=0`, with all 5 rows scanned from local CSV.
 - Re-running with requested `end_date=20260619` attempted to fetch the missing one-day range after the local `2026-06-18` end date; the provider returned no usable data for that day, so the maintenance summary was `failed=5`, while the scan still completed from existing local CSV. This is a maintenance-status edge case rather than a scan blocker.
+
+## Freshness Edge Fix - 2026-06-20
+
+Follow-up fix:
+
+- `update_stock_data` now catches incremental fetch exceptions only when an existing local `latest.csv` is present.
+- In that case it returns `status="skipped"` with the existing `latest_rows`, `latest_start`, `latest_end`, and path, and a message beginning `using existing local data`.
+- First-time downloads with no local data still raise to the caller and remain true `failed` maintenance events.
+
+Regression checks:
+
+```bash
+PYTHONPATH=src python -m pytest \
+  tests/test_data_manager.py \
+  tests/test_api_routes.py::test_research_signals_batch_auto_update_skips_when_increment_fetch_fails_but_local_csv_exists \
+  tests/test_api_routes.py::test_research_signals_batch_auto_update_failure_returns_blocker \
+  tests/test_api_routes.py::test_research_signals_batch_auto_updates_star_data_before_scan -q
+```
+
+Result: `8 passed in 1.08s`.
+
+Real small-sample repeat after the fix, using the same 5 persisted STAR stocks and requested `end_date=20260619`:
+
+| Metric | Value |
+| --- | --- |
+| Candidates | 5 |
+| Available | 5 |
+| Missing | 0 |
+| Data update | `updated=0`, `skipped=5`, `failed=0` |
+| Row status | all `scanned` |
+| Local data end | 2026-06-18 |
+
+The rows keep the same ranking and scores from the initial smoke test while reporting maintenance as skipped from usable existing CSVs instead of failed.
