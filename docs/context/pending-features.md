@@ -126,7 +126,7 @@ No current pending items.
 
 ### Watchlist Data Management
 
-No current pending items.
+- Improve data-maintenance freshness handling for requested end dates beyond the latest provider-available trading day, so repeat auto-update runs can distinguish "existing local data is usable, no newer provider data yet" from true network/update failure.
 
 ### Strategy Development
 
@@ -138,7 +138,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Engineering And Review Hygiene - Execute the reviewable commit split from `docs/runbooks/reviewable-commit-plan.md` after confirming whether the local launchd automation files should be included in version control".
+Start with "Watchlist Data Management - Improve data-maintenance freshness handling for requested end dates beyond the latest provider-available trading day, so repeat auto-update runs can distinguish usable existing data from true update failure".
 
 ## Update Rules
 

@@ -82,3 +82,58 @@ Screenshot evidence:
 
 - Desktop: `docs/qa/screenshots/2026-06-20-signal-radar-star-auto-data-desktop.png`
 - Mobile: `docs/qa/screenshots/2026-06-20-signal-radar-star-auto-data-mobile.png`
+
+## Real Small-Sample Smoke Test
+
+Command shape:
+
+```bash
+PYTHONPATH=src python - <<'PY'
+# Calls ai_trade_system.api.service.batch_research_signals directly with:
+# universe="star", limit=5, score_mode="volume_momentum",
+# auto_update_data=True, if_stale=True, adjust="qfq"
+PY
+```
+
+Initial request range:
+
+```text
+start_date=20230619
+end_date=20260619
+```
+
+Result:
+
+| Metric | Value |
+| --- | --- |
+| Universe | `star` |
+| Score mode | `volume_momentum` |
+| Candidates | 5 |
+| Available | 5 |
+| Missing | 0 |
+| Data update | `updated=5`, `skipped=0`, `failed=0` |
+
+Rows:
+
+| Rank | Code | Name | Rows | Local data end | Score | Scan status |
+| --- | --- | --- | ---: | --- | ---: | --- |
+| 1 | `688003` | 天准科技 | 726 | 2026-06-18 | 82.33 | scanned |
+| 2 | `688001` | 华兴源创 | 726 | 2026-06-18 | 74.70 | scanned |
+| 3 | `688002` | 睿创微纳 | 726 | 2026-06-18 | 50.52 | scanned |
+| 4 | `688005` | 容百科技 | 723 | 2026-06-18 | 15.00 | scanned |
+| 5 | `688004` | 博汇科技 | 726 | 2026-06-18 | 0.00 | scanned |
+
+Persisted files:
+
+```text
+data/market/a_share/SSE/688001/688001_SSE_daily_qfq_latest.csv
+data/market/a_share/SSE/688002/688002_SSE_daily_qfq_latest.csv
+data/market/a_share/SSE/688003/688003_SSE_daily_qfq_latest.csv
+data/market/a_share/SSE/688004/688004_SSE_daily_qfq_latest.csv
+data/market/a_share/SSE/688005/688005_SSE_daily_qfq_latest.csv
+```
+
+Repeatability check:
+
+- Re-running the same effective range ending at the actual local data end `20260618` returned `updated=0`, `skipped=5`, `failed=0`, with all 5 rows scanned from local CSV.
+- Re-running with requested `end_date=20260619` attempted to fetch the missing one-day range after the local `2026-06-18` end date; the provider returned no usable data for that day, so the maintenance summary was `failed=5`, while the scan still completed from existing local CSV. This is a maintenance-status edge case rather than a scan blocker.
