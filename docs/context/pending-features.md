@@ -83,6 +83,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Chan structure position-sizing A variant is complete for current scope: `ChanStructureStrategy` now maps 二买/二卖、背驰确认、三买/三卖 into target position units, keeps `in_position` compatibility, exposes Chinese parameter guidance for the sizing units, expands the fixed benchmark universe to six A-share fixtures, and records the six-stock benchmark in QA.
 - Chan low-confidence gate B variant is complete for current scope: ordinary 二买/二卖 T2 signals now pass through configurable `low_confidence_gate` rules using high-score override, Chan Core V2 trend compatibility, range-position caps, or explicit off mode; fixed six-stock benchmark results are recorded in QA.
 - Chan dynamic position cap C variant is complete for current scope: `ChanStructureStrategy` now tracks average entry price and applies configurable `position_cap_mode` buy-side target caps, defaulting to floating-loss risk-budget control while keeping trend caps available as optional modes; fixed six-stock benchmark results are recorded in QA.
+- Chan signal attribution is complete for current scope: backtests now record accepted-trade source reasons, classify Chan signal families, return entry/exit PnL attribution through the API, render `信号归因` in the React backtest result surface, and record six-stock attribution evidence in QA.
 - Frontend API error-state coverage is complete for current scope: AppShell task tests now cover failed `/api/data/load`, `/api/backtest`, and `/api/ai/research` flows with visible error copy and cleared busy/run state expectations.
 - Core API route coverage is complete for current scope: route tests now pin strategy template creation, strategy source save/readback, paper run plus persisted event reload, and existing portfolio preview contracts.
 - JSON error response documentation is complete for current scope: `docs/runbooks/web-console.md` now documents 400/502 string `detail`, 422 validation-list `detail`, and frontend troubleshooting expectations.
@@ -123,7 +124,6 @@ No current pending items.
 
 ### Strategy Development
 
-- Add Chan strategy signal attribution by T1/T2/T3/divergence/time-exit family so future tuning can compare PnL, trade count, win rate, and drawdown contribution by signal type.
 - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed six-stock benchmark fixtures, then document the comparison results.
 
 ### Engineering And Review Hygiene
@@ -132,7 +132,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Strategy Development - Add Chan strategy signal attribution by T1/T2/T3/divergence/time-exit family so future tuning can compare PnL, trade count, win rate, and drawdown contribution by signal type".
+Start with "Strategy Development - Tune `VolumeConfirmedMomentumStrategy` thresholds and exit rules against the fixed six-stock benchmark fixtures, then document the comparison results".
 
 ## Update Rules
 

@@ -5,7 +5,7 @@ import { DataTable } from "../components/DataTable";
 import { MetricStrip } from "../components/MetricStrip";
 import { SegmentedControl } from "../components/SegmentedControl";
 import { ToolbarButton } from "../components/ToolbarButton";
-import type { BacktestResponse, PortfolioRequest, PlatformSettings, SignalRow, StrategySpec } from "../types";
+import type { BacktestResponse, PortfolioRequest, PlatformSettings, SignalAttributionRow, SignalRow, StrategySpec } from "../types";
 import { drawdownOption, equityOption, priceOption } from "./chartOptions";
 import { strategyDisplayName } from "./pageTypes";
 import type { PageProps, PlatformState } from "./pageTypes";
@@ -172,6 +172,10 @@ export function BacktestResultPanel({
       <ChartPanel title="回撤曲线" option={drawdownOption(result)} height={220} />
       <ChartPanel title="买卖点" option={priceOption(result?.bars ?? [], backtestTradeSignals(result?.trades ?? []))} height={320} />
       <section className="panel">
+        <div className="panel-title">信号归因</div>
+        <DataTable rows={signalAttributionRows(result?.signal_attribution ?? [])} emptyText="暂无信号归因" />
+      </section>
+      <section className="panel">
         <div className="panel-title">交易明细</div>
         <DataTable rows={(result?.trades ?? []) as unknown as Record<string, unknown>[]} />
       </section>
@@ -214,6 +218,23 @@ function backtestTradeSignals(trades: BacktestResponse["trades"]): SignalRow[] {
       }
     ];
   });
+}
+
+function signalAttributionRows(rows: SignalAttributionRow[]): Record<string, unknown>[] {
+  return rows.map((row) => ({
+    信号家族: row.label,
+    交易: row.trade_count,
+    买入: row.buy_count,
+    卖出: row.sell_count,
+    入场平仓: row.entry_closed_trades,
+    入场PnL: row.entry_realized_pnl,
+    入场胜率: row.entry_win_rate_pct == null ? "-" : `${row.entry_win_rate_pct.toFixed(2)}%`,
+    入场回撤: `${row.entry_realized_drawdown_pct.toFixed(2)}%`,
+    出场平仓: row.exit_closed_trades,
+    出场PnL: row.exit_realized_pnl,
+    出场胜率: row.exit_win_rate_pct == null ? "-" : `${row.exit_win_rate_pct.toFixed(2)}%`,
+    出场回撤: `${row.exit_realized_drawdown_pct.toFixed(2)}%`
+  }));
 }
 
 function BacktestExportPanel({ result }: { result: BacktestResponse | null }) {

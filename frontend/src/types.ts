@@ -261,6 +261,32 @@ export type TradeRow = {
   commission: number;
 };
 
+export type TradeAttributionRow = TradeRow & {
+  signal_reason: string;
+  signal_family: string;
+  signal_label: string;
+};
+
+export type SignalAttributionRow = {
+  family: string;
+  label: string;
+  trade_count: number;
+  buy_count: number;
+  sell_count: number;
+  entry_closed_trades: number;
+  entry_realized_pnl: number;
+  entry_return_pct: number;
+  entry_win_rate_pct: number | null;
+  entry_profit_factor: number | null;
+  entry_realized_drawdown_pct: number;
+  exit_closed_trades: number;
+  exit_realized_pnl: number;
+  exit_return_pct: number;
+  exit_win_rate_pct: number | null;
+  exit_profit_factor: number | null;
+  exit_realized_drawdown_pct: number;
+};
+
 export type EquityPoint = {
   trading_day: string;
   equity: number;
@@ -315,6 +341,8 @@ export type BacktestResponse = {
   equity_curve: EquityPoint[];
   drawdowns: DrawdownPoint[];
   trades: TradeRow[];
+  trade_attributions?: TradeAttributionRow[];
+  signal_attribution?: SignalAttributionRow[];
   risk_status: RiskStatus;
 };
 

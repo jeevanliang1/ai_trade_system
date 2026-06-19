@@ -227,6 +227,40 @@ test("BacktestResultPanel renders metrics, chart title, and trade table", () => 
     equity_curve: [{ trading_day: "2024-01-02", equity: 100000, cash: 80000, close_price: 10 }],
     drawdowns: [{ trading_day: "2024-01-02", equity: 100000, drawdown_pct: 0 }],
     trades: [{ trading_day: "2024-01-02", side: "buy", symbol: "000001", price: 10, volume: 100, commission: 0.3 }],
+    trade_attributions: [
+      {
+        trading_day: "2024-01-02",
+        side: "buy",
+        symbol: "000001",
+        price: 10,
+        volume: 100,
+        commission: 0.3,
+        signal_reason: "chan_structure:CHAN_STRUCT_BUY_T3:third buy",
+        signal_family: "t3",
+        signal_label: "T3三买三卖"
+      }
+    ],
+    signal_attribution: [
+      {
+        family: "t3",
+        label: "T3三买三卖",
+        trade_count: 2,
+        buy_count: 1,
+        sell_count: 1,
+        entry_closed_trades: 1,
+        entry_realized_pnl: 197.8,
+        entry_return_pct: 0.1978,
+        entry_win_rate_pct: 100,
+        entry_profit_factor: null,
+        entry_realized_drawdown_pct: 0,
+        exit_closed_trades: 0,
+        exit_realized_pnl: 0,
+        exit_return_pct: 0,
+        exit_win_rate_pct: null,
+        exit_profit_factor: null,
+        exit_realized_drawdown_pct: 0
+      }
+    ],
     risk_status: { ok: true, warnings: [], enabled: true }
   };
 
@@ -234,6 +268,9 @@ test("BacktestResultPanel renders metrics, chart title, and trade table", () => 
 
   expect(screen.getByText("112,000.00")).toBeInTheDocument();
   expect(screen.getByText("资金曲线")).toBeInTheDocument();
+  expect(screen.getByText("信号归因")).toBeInTheDocument();
+  expect(screen.getByText("T3三买三卖")).toBeInTheDocument();
+  expect(screen.getByText("197.80")).toBeInTheDocument();
   expect(screen.getByText("交易明细")).toBeInTheDocument();
 });
 

@@ -8,7 +8,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from ai_trade_system.analytics import calculate_backtest_metrics, drawdown_series
+from ai_trade_system.analytics import calculate_backtest_metrics, calculate_signal_attribution, drawdown_series
 from ai_trade_system.backtest import BacktestConfig, run_backtest
 from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
 from ai_trade_system.data_manager import data_file_for_stock, list_watchlist_data_status, update_watchlist_data as update_watchlist_data_files
@@ -222,6 +222,8 @@ def run_backtest_request(request: BacktestRequest) -> dict[str, Any]:
         "equity_curve": _serialize_many(result.equity_curve),
         "drawdowns": _serialize_many(drawdowns),
         "trades": _serialize_many(result.trades),
+        "trade_attributions": _serialize_many(result.trade_attributions),
+        "signal_attribution": _serialize_many(calculate_signal_attribution(result.trade_attributions, settings.initial_cash)),
         "risk_status": _serialize(risk_status),
     }
 

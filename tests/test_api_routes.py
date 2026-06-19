@@ -273,6 +273,12 @@ def test_demo_data_backtest_ai_and_risk_flow(tmp_path, monkeypatch):
     assert "sharpe_ratio" in backtest_payload["metrics"]
     assert backtest_payload["bars"][0]["trading_day"] == "2024-01-02"
     assert "risk_status" in backtest_payload
+    assert backtest_payload["trade_attributions"]
+    assert {"signal_reason", "signal_family", "signal_label"} <= set(backtest_payload["trade_attributions"][0])
+    assert backtest_payload["signal_attribution"]
+    assert {"family", "label", "trade_count", "entry_realized_pnl", "exit_realized_pnl"} <= set(
+        backtest_payload["signal_attribution"][0]
+    )
 
     ai_response = client.post(
         "/api/ai/research",

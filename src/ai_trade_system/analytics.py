@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from ai_trade_system.backtest import EquityPoint
+from ai_trade_system.backtest import EquityPoint, TradeAttribution, classify_signal_family
 from ai_trade_system.paper import Trade
 
 
@@ -28,6 +28,27 @@ class BacktestMetrics:
     win_rate_pct: float | None
     profit_factor: float | None
     exposure_pct: float
+
+
+@dataclass(frozen=True)
+class SignalAttributionRow:
+    family: str
+    label: str
+    trade_count: int
+    buy_count: int
+    sell_count: int
+    entry_closed_trades: int
+    entry_realized_pnl: float
+    entry_return_pct: float
+    entry_win_rate_pct: float | None
+    entry_profit_factor: float | None
+    entry_realized_drawdown_pct: float
+    exit_closed_trades: int
+    exit_realized_pnl: float
+    exit_return_pct: float
+    exit_win_rate_pct: float | None
+    exit_profit_factor: float | None
+    exit_realized_drawdown_pct: float
 
 
 def drawdown_series(equity_curve: list[EquityPoint]) -> list[DrawdownPoint]:
@@ -76,6 +97,132 @@ def calculate_backtest_metrics(
         profit_factor=profit_factor,
         exposure_pct=exposure_pct,
     )
+
+
+def calculate_signal_attribution(
+    trade_attributions: list[TradeAttribution],
+    initial_cash: float,
+) -> list[SignalAttributionRow]:
+    if initial_cash <= 0:
+        raise ValueError("initial_cash must be positive")
+
+    buckets: dict[str, dict[str, object]] = {}
+    open_lots: list[dict[str, object]] = []
+
+    for trade in trade_attributions:
+        bucket = _signal_bucket(buckets, trade.signal_family, trade.signal_label)
+        bucket["trade_count"] = int(bucket["trade_count"]) + 1
+        if trade.side == "buy":
+            bucket["buy_count"] = int(bucket["buy_count"]) + 1
+            if trade.volume > 0:
+                open_lots.append(
+                    {
+                        "family": trade.signal_family,
+                        "label": trade.signal_label,
+                        "price": trade.price,
+                        "remaining_volume": trade.volume,
+                        "commission_per_share": trade.commission / trade.volume,
+                    }
+                )
+            continue
+
+        if trade.side != "sell":
+            continue
+        bucket["sell_count"] = int(bucket["sell_count"]) + 1
+        remaining = trade.volume
+        exit_commission_per_share = trade.commission / trade.volume if trade.volume > 0 else 0.0
+        while remaining > 0 and open_lots:
+            lot = open_lots[0]
+            lot_volume = int(lot["remaining_volume"])
+            matched = min(remaining, lot_volume)
+            entry_commission = float(lot["commission_per_share"]) * matched
+            exit_commission = exit_commission_per_share * matched
+            pnl = (trade.price - float(lot["price"])) * matched - entry_commission - exit_commission
+
+            entry_bucket = _signal_bucket(buckets, str(lot["family"]), str(lot["label"]))
+            entry_bucket["entry_pnls"].append(pnl)  # type: ignore[index, union-attr]
+            bucket["exit_pnls"].append(pnl)  # type: ignore[index, union-attr]
+
+            remaining -= matched
+            lot["remaining_volume"] = lot_volume - matched
+            if int(lot["remaining_volume"]) == 0:
+                open_lots.pop(0)
+
+    rows = []
+    for family, bucket in buckets.items():
+        entry_stats = _realized_pnl_stats(bucket["entry_pnls"], initial_cash)  # type: ignore[arg-type]
+        exit_stats = _realized_pnl_stats(bucket["exit_pnls"], initial_cash)  # type: ignore[arg-type]
+        rows.append(
+            SignalAttributionRow(
+                family=family,
+                label=str(bucket["label"]),
+                trade_count=int(bucket["trade_count"]),
+                buy_count=int(bucket["buy_count"]),
+                sell_count=int(bucket["sell_count"]),
+                entry_closed_trades=entry_stats["closed_trades"],
+                entry_realized_pnl=entry_stats["realized_pnl"],
+                entry_return_pct=entry_stats["return_pct"],
+                entry_win_rate_pct=entry_stats["win_rate_pct"],
+                entry_profit_factor=entry_stats["profit_factor"],
+                entry_realized_drawdown_pct=entry_stats["realized_drawdown_pct"],
+                exit_closed_trades=exit_stats["closed_trades"],
+                exit_realized_pnl=exit_stats["realized_pnl"],
+                exit_return_pct=exit_stats["return_pct"],
+                exit_win_rate_pct=exit_stats["win_rate_pct"],
+                exit_profit_factor=exit_stats["profit_factor"],
+                exit_realized_drawdown_pct=exit_stats["realized_drawdown_pct"],
+            )
+        )
+    return sorted(rows, key=lambda row: (-row.trade_count, row.family))
+
+
+def _signal_bucket(buckets: dict[str, dict[str, object]], family: str, label: str) -> dict[str, object]:
+    if family not in buckets:
+        buckets[family] = {
+            "label": label,
+            "trade_count": 0,
+            "buy_count": 0,
+            "sell_count": 0,
+            "entry_pnls": [],
+            "exit_pnls": [],
+        }
+    return buckets[family]
+
+
+def _realized_pnl_stats(pnls: list[float], initial_cash: float) -> dict[str, float | int | None]:
+    if not pnls:
+        return {
+            "closed_trades": 0,
+            "realized_pnl": 0.0,
+            "return_pct": 0.0,
+            "win_rate_pct": None,
+            "profit_factor": None,
+            "realized_drawdown_pct": 0.0,
+        }
+    wins = [pnl for pnl in pnls if pnl >= 0]
+    losses = [pnl for pnl in pnls if pnl < 0]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    profit_factor = None if gross_loss == 0 else round(gross_profit / gross_loss, 4)
+    return {
+        "closed_trades": len(pnls),
+        "realized_pnl": round(sum(pnls), 2),
+        "return_pct": _round_pct(sum(pnls) / initial_cash * 100),
+        "win_rate_pct": _round_pct(len(wins) / len(pnls) * 100),
+        "profit_factor": profit_factor,
+        "realized_drawdown_pct": _realized_drawdown_pct(pnls, initial_cash),
+    }
+
+
+def _realized_drawdown_pct(pnls: list[float], initial_cash: float) -> float:
+    peak = 0.0
+    cumulative = 0.0
+    worst = 0.0
+    for pnl in pnls:
+        cumulative += pnl
+        peak = max(peak, cumulative)
+        worst = min(worst, (cumulative - peak) / initial_cash * 100)
+    return _round_pct(worst)
 
 
 def _benchmark_return_pct(equity_curve: list[EquityPoint]) -> float:
