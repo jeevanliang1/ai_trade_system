@@ -453,6 +453,25 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         increase_effect="调大后二买建仓更积极，收益弹性和回撤都会放大。",
         decrease_effect="调小后二买只做更轻仓试探，交易风险更低但可能错过早期反弹。",
     ),
+    "low_confidence_gate": ParameterGuidance(
+        display_name="低确定性门控",
+        description="控制二买/二卖 T2 这类低确定性信号是否需要背驰确认、走势兼容或高分放行。",
+        increase_effect="该参数不是数值大小；off 最宽松，divergence 最严格，trend 和 divergence_or_trend 介于两者之间。",
+        decrease_effect="该参数不是数值大小；切换枚举值会改变 T2 信号参与交易的条件。",
+        options=("off", "divergence", "trend", "divergence_or_trend"),
+    ),
+    "low_confidence_min_score": ParameterGuidance(
+        display_name="低确定性放行分",
+        description="二买/二卖 T2 信号达到该分数后，即使缺少趋势兼容或背驰确认也允许交易。",
+        increase_effect="调大后 T2 分数放行更严格，交易更少。",
+        decrease_effect="调小后更多 T2 信号可被分数放行，交易更频繁。",
+    ),
+    "range_max_units": ParameterGuidance(
+        display_name="震荡区最大仓位",
+        description="Chan Core V2 判断为 range 震荡时，低确定性买点最多允许持有的仓位单位。",
+        increase_effect="调大后震荡区也允许更多低确定性加仓，收益弹性和回撤都会增加。",
+        decrease_effect="调小后震荡区低确定性买点更克制，减少反复交易。",
+    ),
     "divergence_confirm_units": ParameterGuidance(
         display_name="背驰确认目标仓位",
         description="底背驰确认或背驰观察被同向结构确认后的目标仓位单位。",

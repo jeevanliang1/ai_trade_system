@@ -46,6 +46,9 @@ CHAN_POINT_TYPES = {
     "third-sell",
 }
 CHAN_LEVELS = {"segment", "stroke", "fractal"}
+CHAN_LOW_CONFIDENCE_GATES = {"off", "divergence", "trend", "divergence_or_trend"}
+CHAN_LOW_CONFIDENCE_SIGNAL_KINDS = {"CHAN_STRUCT_BUY_T2", "CHAN_STRUCT_SELL_T2"}
+CHAN_CORE_V2_TREND_LEVELS = {"stroke", "segment"}
 
 
 @dataclass(frozen=True)
@@ -269,6 +272,9 @@ class ChanStructureStrategy(Strategy):
         allowed_levels: str = "all",
         max_holding_bars: int = 15,
         watch_confirm_bars: int = 20,
+        low_confidence_gate: str = "divergence_or_trend",
+        low_confidence_min_score: float = 32.0,
+        range_max_units: int = 1,
         low_confidence_units: int = 1,
         divergence_confirm_units: int = 2,
         high_confidence_units: int = 3,
@@ -295,12 +301,18 @@ class ChanStructureStrategy(Strategy):
             raise ValueError("max_holding_bars must be non-negative")
         if watch_confirm_bars < 0:
             raise ValueError("watch_confirm_bars must be non-negative")
+        if low_confidence_gate not in CHAN_LOW_CONFIDENCE_GATES:
+            raise ValueError("low_confidence_gate must be one of: off, divergence, trend, divergence_or_trend")
+        if low_confidence_min_score < 0:
+            raise ValueError("low_confidence_min_score must be non-negative")
         if low_confidence_units < 1:
             raise ValueError("low_confidence_units must be at least 1 units")
         if divergence_confirm_units < low_confidence_units:
             raise ValueError("divergence_confirm_units must be greater than or equal to low_confidence_units")
         if high_confidence_units < divergence_confirm_units:
             raise ValueError("high_confidence_units must be greater than or equal to divergence_confirm_units")
+        if range_max_units < 0 or range_max_units > high_confidence_units:
+            raise ValueError("range_max_units must be between 0 and high_confidence_units")
         if sell_confirm_units < 0 or sell_confirm_units >= high_confidence_units:
             raise ValueError("sell_confirm_units must be non-negative and smaller than high_confidence_units")
         if trade_size <= 0:
@@ -318,6 +330,9 @@ class ChanStructureStrategy(Strategy):
         self.allowed_level_set = allowed_level_set
         self.max_holding_bars = max_holding_bars
         self.watch_confirm_bars = watch_confirm_bars
+        self.low_confidence_gate = low_confidence_gate
+        self.low_confidence_min_score = low_confidence_min_score
+        self.range_max_units = range_max_units
         self.low_confidence_units = low_confidence_units
         self.divergence_confirm_units = divergence_confirm_units
         self.high_confidence_units = high_confidence_units
@@ -394,6 +409,8 @@ class ChanStructureStrategy(Strategy):
                 or not self._signal_filters_allow(signal)
             ):
                 continue
+            if not self._low_confidence_gate_allows(signal, result):
+                continue
             key = (signal.trading_day, signal.kind, signal.action)
             if key in self.emitted:
                 continue
@@ -437,6 +454,53 @@ class ChanStructureStrategy(Strategy):
         if self.allowed_level_set is not None and metadata.get("level") not in self.allowed_level_set:
             return False
         return True
+
+    def _low_confidence_gate_allows(self, signal, result) -> bool:
+        if signal.kind not in CHAN_LOW_CONFIDENCE_SIGNAL_KINDS:
+            return True
+        if self.low_confidence_gate == "off":
+            return True
+        if self.low_confidence_gate == "divergence":
+            return False
+        if abs(signal.score) >= self.low_confidence_min_score:
+            return True
+        return self._trend_context_allows_low_confidence(signal, result)
+
+    def _trend_context_allows_low_confidence(self, signal, result) -> bool:
+        if self.low_confidence_gate not in {"trend", "divergence_or_trend"}:
+            return False
+        trend = self._trend_for_signal(signal, result)
+        if trend is None:
+            return True
+        trend_type = getattr(trend, "trend_type", "")
+        if signal.action == "buy":
+            if trend_type in {"up", "transition"}:
+                return True
+            if trend_type == "range":
+                return self.position_units < self.range_max_units
+            return False
+        if signal.action == "sell":
+            if trend_type in {"down", "transition", "range"}:
+                return True
+            return False
+        return False
+
+    def _trend_for_signal(self, signal, result):
+        core_v2 = getattr(result, "core_v2", None)
+        trends = list(getattr(core_v2, "trends", []) or [])
+        if not trends:
+            return None
+        metadata = getattr(signal, "metadata", {}) or {}
+        level = metadata.get("level")
+        if level in CHAN_CORE_V2_TREND_LEVELS:
+            for trend in reversed(trends):
+                if getattr(trend, "level", None) == level:
+                    return trend
+        for fallback_level in ("stroke", "segment"):
+            for trend in reversed(trends):
+                if getattr(trend, "level", None) == fallback_level:
+                    return trend
+        return None
 
     def _is_watch_signal(self, signal) -> bool:
         return signal.kind in CHAN_WATCH_SIGNAL_KINDS and "watch" in signal.tags

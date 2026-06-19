@@ -156,6 +156,13 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert params["allowed_levels"].multiple is True
     assert params["low_confidence_units"].display_name == "低确定性目标仓位"
     assert "二买" in params["low_confidence_units"].description
+    assert params["low_confidence_gate"].display_name == "低确定性门控"
+    assert "二买" in params["low_confidence_gate"].description
+    assert params["low_confidence_gate"].options == ("off", "divergence", "trend", "divergence_or_trend")
+    assert params["low_confidence_min_score"].display_name == "低确定性放行分"
+    assert "T2" in params["low_confidence_min_score"].description
+    assert params["range_max_units"].display_name == "震荡区最大仓位"
+    assert "range" in params["range_max_units"].description
     assert params["divergence_confirm_units"].display_name == "背驰确认目标仓位"
     assert "背驰" in params["divergence_confirm_units"].description
     assert params["high_confidence_units"].display_name == "高确定性目标仓位"
@@ -176,6 +183,9 @@ def test_chan_structure_strategy_registry_exposes_balanced_tuned_defaults():
     assert defaults["allowed_levels"] == "all"
     assert defaults["max_holding_bars"] == 15
     assert defaults["watch_confirm_bars"] == 20
+    assert defaults["low_confidence_gate"] == "divergence_or_trend"
+    assert defaults["low_confidence_min_score"] == 32.0
+    assert defaults["range_max_units"] == 1
     assert defaults["low_confidence_units"] == 1
     assert defaults["divergence_confirm_units"] == 2
     assert defaults["high_confidence_units"] == 3
