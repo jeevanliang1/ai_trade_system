@@ -304,6 +304,8 @@ def test_chan_structure_strategy_emits_confirmation_from_segment_divergence():
         min_stroke_bars=4,
         min_rebound_pct=0.02,
         min_signal_score=50,
+        allowed_point_types="all",
+        max_holding_bars=0,
         trade_size=100,
     )
     strategy.in_position = True
@@ -325,13 +327,16 @@ def test_chan_structure_strategy_default_filters_low_confidence_structure_signal
         min_rebound_pct=0.03,
         min_signal_score=24.0,
         signal_mode="structure",
+        allowed_point_types="all",
     )
 
     tuned_signals = [signal for bar in bars for signal in tuned_default.on_bar(bar)]
     lower_threshold_signals = [signal for bar in bars for signal in lower_threshold.on_bar(bar)]
 
-    assert tuned_default.min_signal_score == 30.0
+    assert tuned_default.min_signal_score == 28.0
     assert tuned_default.signal_mode == "all"
+    assert tuned_default.allowed_point_types == "third-buy,third-sell"
+    assert tuned_default.max_holding_bars == 15
     assert tuned_signals == []
     assert [signal.action for signal in lower_threshold_signals] == ["buy"]
     assert lower_threshold_signals[0].reason.startswith("chan_structure:CHAN_STRUCT_BUY_T2")
@@ -347,6 +352,7 @@ def test_chan_structure_strategy_signal_mode_filters_structure_family():
         min_rebound_pct=0.03,
         min_signal_score=24.0,
         signal_mode="confirmation",
+        allowed_point_types="all",
     )
     structure = ChanStructureStrategy(
         "000001",
@@ -356,6 +362,7 @@ def test_chan_structure_strategy_signal_mode_filters_structure_family():
         min_rebound_pct=0.03,
         min_signal_score=24.0,
         signal_mode="structure",
+        allowed_point_types="all",
     )
     exploratory = ChanStructureStrategy(
         "000001",
@@ -365,6 +372,7 @@ def test_chan_structure_strategy_signal_mode_filters_structure_family():
         min_rebound_pct=0.03,
         min_signal_score=24.0,
         signal_mode="all",
+        allowed_point_types="all",
     )
 
     confirmation_signals = [signal for bar in bars for signal in confirmation.on_bar(bar)]
@@ -388,6 +396,8 @@ def test_chan_structure_strategy_signal_mode_filters_confirmation_family():
         min_signal_score=50,
         trade_size=100,
         signal_mode="confirmation",
+        allowed_point_types="all",
+        max_holding_bars=0,
     )
     structure = ChanStructureStrategy(
         "000001",
@@ -398,6 +408,8 @@ def test_chan_structure_strategy_signal_mode_filters_confirmation_family():
         min_signal_score=50,
         trade_size=100,
         signal_mode="structure",
+        allowed_point_types="all",
+        max_holding_bars=0,
     )
     confirmation.in_position = True
     structure.in_position = True
@@ -425,6 +437,7 @@ def test_chan_structure_strategy_confirmation_mode_exits_on_opposite_signal(monk
         lookback=5,
         min_signal_score=30.0,
         signal_mode="confirmation",
+        allowed_point_types="all",
         max_holding_bars=0,
     )
 
@@ -447,6 +460,7 @@ def test_chan_structure_strategy_confirmation_mode_exits_after_max_holding_bars(
         lookback=5,
         min_signal_score=30.0,
         signal_mode="confirmation",
+        allowed_point_types="all",
         max_holding_bars=2,
     )
 
@@ -472,6 +486,7 @@ def test_chan_structure_strategy_confirmation_mode_trades_third_buy_and_sell(mon
         lookback=5,
         min_signal_score=30.0,
         signal_mode="confirmation",
+        allowed_point_types="all",
         max_holding_bars=0,
     )
 
@@ -592,6 +607,7 @@ def test_chan_structure_strategy_arms_bottom_divergence_watch_and_confirms_with_
         lookback=6,
         min_signal_score=30.0,
         signal_mode="confirmation",
+        allowed_point_types="all",
         watch_confirm_bars=5,
     )
 
@@ -673,6 +689,7 @@ def test_chan_structure_strategy_arms_top_divergence_watch_and_confirms_with_t3(
         lookback=6,
         min_signal_score=30.0,
         signal_mode="confirmation",
+        allowed_point_types="all",
         watch_confirm_bars=5,
     )
     strategy.in_position = True

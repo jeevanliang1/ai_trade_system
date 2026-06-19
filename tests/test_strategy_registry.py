@@ -156,17 +156,17 @@ def test_chan_structure_strategy_metadata_and_parameter_guidance():
     assert params["allowed_levels"].multiple is True
 
 
-def test_chan_structure_strategy_registry_exposes_tuned_default_score():
+def test_chan_structure_strategy_registry_exposes_balanced_tuned_defaults():
     specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
     spec = next(item for item in specs if item.name == "ChanStructureStrategy")
 
     defaults = {param.name: param.default for param in inspect_strategy_parameters(spec)}
 
-    assert defaults["min_signal_score"] == 30.0
+    assert defaults["min_signal_score"] == 28.0
     assert defaults["signal_mode"] == "all"
-    assert defaults["allowed_point_types"] == "all"
+    assert defaults["allowed_point_types"] == "third-buy,third-sell"
     assert defaults["allowed_levels"] == "all"
-    assert defaults["max_holding_bars"] == 0
+    assert defaults["max_holding_bars"] == 15
     assert defaults["watch_confirm_bars"] == 20
 
 
