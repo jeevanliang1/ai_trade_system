@@ -133,14 +133,18 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
 
   await user.click(screen.getByRole("button", { name: "批量扫描" }));
 
-  expect(api.batchResearchSignals).toHaveBeenCalledWith(makeProps().state.settings, {
-    query: "",
-    limit: 20,
-    min_bars: 60,
-    lookback: 120,
-    universe: "catalog",
-    score_mode: "research"
-  });
+  expect(api.batchResearchSignals).toHaveBeenCalledWith(
+    makeProps().state.settings,
+    expect.objectContaining({
+      query: "",
+      limit: 20,
+      min_bars: 60,
+      lookback: 120,
+      universe: "catalog",
+      score_mode: "research",
+      auto_update_data: false
+    })
+  );
   expect((await screen.findAllByText(/全部目录 · 可扫描 1 \/ 缺数据 1/)).length).toBeGreaterThan(0);
   expect(screen.getByText("平安银行")).toBeVisible();
   expect(screen.getAllByText("看多").length).toBeGreaterThan(0);
@@ -166,6 +170,130 @@ test("SignalRadarPage submits the selected scan universe", async () => {
   await user.click(screen.getByRole("button", { name: "批量扫描" }));
 
   expect(api.batchResearchSignals).toHaveBeenCalledWith(makeProps().state.settings, expect.objectContaining({ universe: "local_csv" }));
+});
+
+test("SignalRadarPage submits STAR universe with auto data update", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.batchResearchSignals).mockResolvedValue({
+    query: "",
+    universe: "star",
+    score_mode: "research",
+    scanned: 0,
+    available: 0,
+    missing: 0,
+    data_update: {
+      enabled: true,
+      total: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      adjust: "qfq",
+      start_date: "20240101",
+      end_date: "20241231"
+    },
+    rows: []
+  });
+
+  render(<SignalRadarPage {...makeProps()} />);
+
+  await user.selectOptions(screen.getByLabelText("扫描范围"), "star");
+  await user.click(screen.getByLabelText("扫描前自动更新数据"));
+  await user.click(screen.getByRole("button", { name: "批量扫描" }));
+
+  expect(api.batchResearchSignals).toHaveBeenCalledWith(
+    makeProps().state.settings,
+    expect.objectContaining({
+      universe: "star",
+      auto_update_data: true,
+      if_stale: true
+    })
+  );
+});
+
+test("SignalRadarPage renders batch data maintenance summary", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.batchResearchSignals).mockResolvedValue({
+    query: "",
+    universe: "star",
+    score_mode: "volume_momentum",
+    scanned: 2,
+    available: 1,
+    missing: 1,
+    data_update: {
+      enabled: true,
+      total: 2,
+      updated: 1,
+      skipped: 0,
+      failed: 1,
+      adjust: "qfq",
+      start_date: "20240101",
+      end_date: "20241231"
+    },
+    rows: [
+      {
+        rank: 1,
+        code: "688001",
+        name: "华兴源创",
+        exchange: "SSE",
+        csv_path: "data/market/a_share/SSE/688001/688001_SSE_daily_qfq_latest.csv",
+        status: "scanned",
+        score: {
+          total_score: 60,
+          direction: "bullish",
+          confidence: 0.7,
+          chan_score: 0,
+          rsi_score: 0,
+          summary: "动量通过"
+        },
+        latest_signal: null,
+        preview: null,
+        momentum: null,
+        blockers: [],
+        data_status: {
+          status: "updated",
+          message: "updated 80 bars",
+          rows: 80,
+          start: "2026-01-01",
+          end: "2026-03-21",
+          path: "data/market/a_share/SSE/688001/688001_SSE_daily_qfq_latest.csv"
+        }
+      },
+      {
+        rank: 2,
+        code: "688002",
+        name: "睿创微纳",
+        exchange: "SSE",
+        csv_path: "data/market/a_share/SSE/688002/688002_SSE_daily_qfq_latest.csv",
+        status: "missing_data",
+        score: null,
+        latest_signal: null,
+        preview: null,
+        momentum: null,
+        blockers: [{ code: "DATA_UPDATE_FAILED", message: "network down" }],
+        data_status: {
+          status: "failed",
+          message: "network down",
+          rows: 0,
+          start: null,
+          end: null,
+          path: "data/market/a_share/SSE/688002/688002_SSE_daily_qfq_latest.csv"
+        }
+      }
+    ]
+  });
+
+  render(<SignalRadarPage {...makeProps()} />);
+
+  await user.selectOptions(screen.getByLabelText("评分模式"), "volume_momentum");
+  await user.click(screen.getByLabelText("扫描前自动更新数据"));
+  await user.click(screen.getByRole("button", { name: "批量扫描" }));
+
+  expect(await screen.findByText("数据维护")).toBeVisible();
+  expect(screen.getByText("已更新")).toBeVisible();
+  expect(screen.getAllByText("1").length).toBeGreaterThan(0);
+  expect(screen.getByText("失败")).toBeVisible();
+  expect(screen.getByText(/数据 updated · 80 根/)).toBeVisible();
+  expect(screen.getByText(/数据 failed · 0 根/)).toBeVisible();
 });
 
 test("SignalRadarPage prepares missing-data candidates in shared data settings", async () => {

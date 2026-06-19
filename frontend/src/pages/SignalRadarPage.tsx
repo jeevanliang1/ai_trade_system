@@ -9,9 +9,10 @@ import type { PageProps } from "./pageTypes";
 import type { ResearchSignalBatchResponse, ResearchSignalBatchRow, ResearchSignalBatchScoreMode } from "../types";
 
 const DEFAULT_LIMIT = 20;
+const MAX_SCAN_LIMIT = 300;
 const DEFAULT_MIN_BARS = 60;
 const DEFAULT_LOOKBACK = 120;
-type ScanUniverse = "catalog" | "local_csv" | "current";
+type ScanUniverse = "catalog" | "local_csv" | "current" | "star";
 type ScanHistoryEntry = {
   id: number;
   query: string;
@@ -29,6 +30,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [minBars, setMinBars] = useState(DEFAULT_MIN_BARS);
   const [lookback, setLookback] = useState(DEFAULT_LOOKBACK);
+  const [autoUpdateData, setAutoUpdateData] = useState(false);
   const [result, setResult] = useState<ResearchSignalBatchResponse | null>(null);
   const [history, setHistory] = useState<ScanHistoryEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,17 @@ export function SignalRadarPage({ state, actions }: PageProps) {
     setBusy(true);
     setError("");
     try {
-      const payload = await api.batchResearchSignals(state.settings, { query: query.trim(), limit, min_bars: minBars, lookback, universe, score_mode: scoreMode });
+      const payload = await api.batchResearchSignals(state.settings, {
+        query: query.trim(),
+        limit,
+        min_bars: minBars,
+        lookback,
+        universe,
+        score_mode: scoreMode,
+        auto_update_data: autoUpdateData,
+        if_stale: true,
+        adjust: state.settings.adjust
+      });
       setResult(payload);
       setHistory((items) =>
         [
@@ -89,6 +101,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
           扫描范围
           <select aria-label="扫描范围" value={universe} onChange={(event) => setUniverse(event.currentTarget.value as ScanUniverse)}>
             <option value="catalog">全部目录候选</option>
+            <option value="star">科创板</option>
             <option value="local_csv">仅本地CSV</option>
             <option value="current">当前标的</option>
           </select>
@@ -103,7 +116,14 @@ export function SignalRadarPage({ state, actions }: PageProps) {
         </label>
         <label className="field">
           扫描数量
-          <input aria-label="扫描数量" type="number" min={1} max={50} value={limit} onChange={(event) => setLimit(clampNumber(event.currentTarget.value, 1, 50, DEFAULT_LIMIT))} />
+          <input
+            aria-label="扫描数量"
+            type="number"
+            min={1}
+            max={MAX_SCAN_LIMIT}
+            value={limit}
+            onChange={(event) => setLimit(clampNumber(event.currentTarget.value, 1, MAX_SCAN_LIMIT, DEFAULT_LIMIT))}
+          />
         </label>
         <label className="field">
           最少K线
@@ -127,10 +147,14 @@ export function SignalRadarPage({ state, actions }: PageProps) {
             onChange={(event) => setLookback(clampNumber(event.currentTarget.value, 20, 500, DEFAULT_LOOKBACK))}
           />
         </label>
+        <label className="switch radar-data-switch">
+          <span>扫描前自动更新数据</span>
+          <input type="checkbox" checked={autoUpdateData} onChange={(event) => setAutoUpdateData(event.currentTarget.checked)} />
+        </label>
         <ToolbarButton disabled={busy} icon={<Activity size={16} />} variant="primary" onClick={runScan}>
           {busy ? "扫描中..." : "批量扫描"}
         </ToolbarButton>
-        <p className="caption">扫描只读取托管本地行情 CSV，不会自动联网下载或发出交易指令。</p>
+        <p className="caption">默认只读取托管本地行情 CSV；开启自动更新后会先维护候选数据，不会发出交易指令。</p>
         {error ? <p className="inline-alert">批量扫描失败：{error}</p> : null}
       </section>
 
@@ -155,6 +179,25 @@ export function SignalRadarPage({ state, actions }: PageProps) {
             ]}
           />
         </section>
+
+        {result?.data_update?.enabled ? (
+          <section className="panel radar-data-update-panel">
+            <div className="panel-title between">
+              <span>数据维护</span>
+              <small>
+                {result.data_update.adjust} · {result.data_update.start_date}-{result.data_update.end_date}
+              </small>
+            </div>
+            <MetricStrip
+              metrics={[
+                { label: "维护候选", value: result.data_update.total },
+                { label: "已更新", value: result.data_update.updated, tone: "positive" },
+                { label: "已跳过", value: result.data_update.skipped },
+                { label: "失败", value: result.data_update.failed, tone: result.data_update.failed ? "negative" : "neutral" }
+              ]}
+            />
+          </section>
+        ) : null}
 
         <section className="panel radar-results">
           <div className="panel-title between">
@@ -232,6 +275,12 @@ function RadarResultCard({ row, onPrepareData }: { row: ResearchSignalBatchRow; 
           <span>中枢 {row.score.chan_structure.pivot_count}</span>
         </div>
       ) : null}
+      {row.data_status ? (
+        <div className="radar-score-line">
+          <span>数据 {row.data_status.status} · {row.data_status.rows} 根</span>
+          <span>{row.data_status.end ?? "-"}</span>
+        </div>
+      ) : null}
       <p>{row.latest_signal?.title ?? row.blockers[0]?.message ?? row.score?.summary ?? "暂无触发信号"}</p>
       {row.blockers.length ? (
         <div className="radar-blockers">
@@ -252,6 +301,7 @@ function RadarResultCard({ row, onPrepareData }: { row: ResearchSignalBatchRow; 
 function radarTableRows(rows: ResearchSignalBatchRow[]): Record<string, unknown>[] {
   const showMomentum = rows.some((row) => row.momentum);
   const showChanStructure = rows.some((row) => row.score?.chan_structure);
+  const showDataStatus = rows.some((row) => row.data_status);
   return rows.map((row) => {
     const base = {
       排名: row.rank,
@@ -279,6 +329,13 @@ function radarTableRows(rows: ResearchSignalBatchRow[]): Record<string, unknown>
             中枢: row.score?.chan_structure?.pivot_count ?? "-",
             结构信号: row.score?.chan_structure?.latest_signal_title ?? "-"
           }
+        : {}),
+      ...(showDataStatus
+        ? {
+            数据状态: row.data_status?.status ?? "-",
+            数据行数: row.data_status?.rows ?? "-",
+            数据截止: row.data_status?.end ?? "-"
+          }
         : {})
     };
   });
@@ -286,6 +343,7 @@ function radarTableRows(rows: ResearchSignalBatchRow[]): Record<string, unknown>
 
 function radarCsv(result: ResearchSignalBatchResponse): string {
   const showChanStructure = result.rows.some((row) => row.score?.chan_structure);
+  const showDataStatus = result.rows.some((row) => row.data_status);
   const headers = [
     "rank",
     "code",
@@ -304,6 +362,9 @@ function radarCsv(result: ResearchSignalBatchResponse): string {
   ];
   if (showChanStructure) {
     headers.splice(headers.length - 1, 0, "fractal_count", "stroke_count", "pivot_count", "structure_signal");
+  }
+  if (showDataStatus) {
+    headers.splice(headers.length - 1, 0, "data_status", "data_rows", "data_start", "data_end", "data_message");
   }
   const rows = result.rows.map((row) =>
     [
@@ -328,6 +389,9 @@ function radarCsv(result: ResearchSignalBatchResponse): string {
             row.score?.chan_structure?.latest_signal_title ?? ""
           ]
         : []),
+      ...(showDataStatus
+        ? [row.data_status?.status ?? "", row.data_status?.rows ?? "", row.data_status?.start ?? "", row.data_status?.end ?? "", row.data_status?.message ?? ""]
+        : []),
       row.csv_path
     ]
       .map(csvCell)
@@ -349,6 +413,7 @@ function directionLabel(direction: string | null | undefined): string {
 }
 
 function universeLabel(universe: string): string {
+  if (universe === "star") return "科创板";
   if (universe === "local_csv") return "仅本地CSV";
   if (universe === "current") return "当前标的";
   return "全部目录";

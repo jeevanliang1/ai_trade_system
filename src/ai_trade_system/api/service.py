@@ -11,7 +11,12 @@ import pandas as pd
 from ai_trade_system.analytics import calculate_backtest_metrics, calculate_signal_attribution, drawdown_series
 from ai_trade_system.backtest import BacktestConfig, run_backtest
 from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
-from ai_trade_system.data_manager import data_file_for_stock, list_watchlist_data_status, update_watchlist_data as update_watchlist_data_files
+from ai_trade_system.data_manager import (
+    data_file_for_stock,
+    list_watchlist_data_status,
+    update_stock_data,
+    update_watchlist_data as update_watchlist_data_files,
+)
 from ai_trade_system.indicators import latest_indicator_snapshot
 from ai_trade_system.llm import LLMResearchRequest as CoreAIResearchRequest
 from ai_trade_system.llm import MockLLMProvider, build_research_prompt
@@ -262,19 +267,27 @@ def preview_research_signals(request: ResearchSignalsRequest) -> dict[str, Any]:
 
 def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any]:
     candidates = _research_batch_candidates(request)
+    batch_adjust = _batch_adjust(request)
+    update_payload = _update_batch_candidate_data(request, candidates, batch_adjust) if request.auto_update_data else None
+    data_statuses = update_payload["statuses"] if update_payload else {}
 
     rows: list[dict[str, Any]] = []
     for index, stock in enumerate(candidates):
-        csv_path = _batch_stock_csv_path(stock, request.settings)
+        csv_path = _batch_stock_csv_path(stock, request.settings, batch_adjust)
         safe_csv_path = _safe_data_path(csv_path)
+        data_status = data_statuses.get(stock.code)
         base_row = {
             "code": stock.code,
             "name": stock.name,
             "exchange": stock.exchange,
             "csv_path": csv_path.as_posix(),
             "rank": None,
+            "data_status": data_status,
         }
         if not safe_csv_path.exists():
+            blockers = [{"code": "MISSING_CSV", "message": f"未找到本地行情 CSV：{csv_path.as_posix()}"}]
+            if data_status and data_status["status"] == "failed":
+                blockers.insert(0, {"code": "DATA_UPDATE_FAILED", "message": data_status["message"]})
             rows.append(
                 {
                     **base_row,
@@ -283,13 +296,15 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
                     "latest_signal": None,
                     "preview": None,
                     "momentum": None,
-                    "blockers": [{"code": "MISSING_CSV", "message": f"未找到本地行情 CSV：{csv_path.as_posix()}"}],
+                    "blockers": blockers,
                     "_order": index,
                 }
             )
             continue
 
-        settings = request.settings.model_copy(update={"symbol": stock.code, "exchange": stock.exchange, "csv_path": csv_path.as_posix()})
+        settings = request.settings.model_copy(
+            update={"symbol": stock.code, "exchange": stock.exchange, "adjust": batch_adjust, "csv_path": csv_path.as_posix()}
+        )
         bars = _load_bars(settings)
         if request.score_mode == "volume_momentum":
             rows.append(_volume_momentum_batch_row(base_row, bars, request, index))
@@ -330,6 +345,7 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
         "scanned": len(rows),
         "available": available,
         "missing": missing,
+        "data_update": update_payload["summary"] if update_payload else _disabled_data_update_summary(request, len(candidates), batch_adjust),
         "rows": rows,
     }
 
@@ -339,17 +355,110 @@ def _research_batch_candidates(request: ResearchSignalBatchRequest) -> list[Stoc
         return [StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)]
 
     catalog = load_stock_catalog()
+    if request.universe == "star":
+        star_candidates = [stock for stock in catalog if stock.exchange == "SSE" and stock.code.startswith("688")]
+        return search_stock_catalog(star_candidates, request.query, request.limit)
+
     candidates = search_stock_catalog(catalog, request.query, request.limit)
     if request.universe == "local_csv":
-        candidates = [stock for stock in candidates if _safe_data_path(_batch_stock_csv_path(stock, request.settings)).exists()]
+        candidates = [
+            stock
+            for stock in candidates
+            if _safe_data_path(_batch_stock_csv_path(stock, request.settings, _batch_adjust(request))).exists()
+        ]
 
     if not candidates and request.universe == "catalog":
         return [StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)]
     return candidates
 
 
-def _batch_stock_csv_path(stock: StockInfo, settings: PlatformSettings) -> Path:
-    return data_file_for_stock(stock, adjust=settings.adjust).latest_path
+def _batch_adjust(request: ResearchSignalBatchRequest) -> str:
+    return (request.adjust or request.settings.adjust or "qfq").strip().lower()
+
+
+def _batch_stock_csv_path(stock: StockInfo, settings: PlatformSettings, adjust: str | None = None) -> Path:
+    return data_file_for_stock(stock, adjust=adjust or settings.adjust).latest_path
+
+
+def _update_batch_candidate_data(request: ResearchSignalBatchRequest, candidates: list[StockInfo], adjust: str) -> dict[str, Any]:
+    files: list[dict[str, Any]] = []
+    statuses: dict[str, dict[str, Any]] = {}
+    updated = skipped = failed = 0
+    for stock in candidates:
+        try:
+            result = update_stock_data(
+                stock,
+                start_date=request.settings.start_date,
+                end_date=request.settings.end_date,
+                adjust=adjust,
+                if_stale=request.if_stale,
+            ).as_dict()
+        except Exception as exc:
+            data_file = data_file_for_stock(stock, adjust=adjust)
+            result = {
+                "code": stock.code,
+                "name": stock.name,
+                "exchange": stock.exchange,
+                "adjust": adjust,
+                "status": "failed",
+                "requested_start": request.settings.start_date,
+                "requested_end": request.settings.end_date,
+                "fetched_start": None,
+                "fetched_end": None,
+                "fetched_rows": 0,
+                "latest_rows": 0,
+                "latest_start": None,
+                "latest_end": None,
+                "latest_path": data_file.latest_path.as_posix(),
+                "increment_path": None,
+                "message": str(exc),
+            }
+        files.append(result)
+        statuses[stock.code] = _data_status_from_update_result(result)
+        if result["status"] == "updated":
+            updated += 1
+        elif result["status"] == "skipped":
+            skipped += 1
+        else:
+            failed += 1
+    return {
+        "summary": {
+            "enabled": True,
+            "total": len(candidates),
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "adjust": adjust,
+            "start_date": request.settings.start_date,
+            "end_date": request.settings.end_date,
+        },
+        "statuses": statuses,
+        "files": files,
+    }
+
+
+def _disabled_data_update_summary(request: ResearchSignalBatchRequest, total: int, adjust: str) -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "total": total,
+        "updated": 0,
+        "skipped": 0,
+        "failed": 0,
+        "adjust": adjust,
+        "start_date": request.settings.start_date,
+        "end_date": request.settings.end_date,
+    }
+
+
+def _data_status_from_update_result(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": result.get("status", "failed"),
+        "message": result.get("message", ""),
+        "rows": result.get("latest_rows", 0),
+        "start": result.get("latest_start"),
+        "end": result.get("latest_end"),
+        "path": result.get("latest_path", ""),
+    }
 
 
 def _volume_momentum_batch_row(base_row: dict[str, Any], bars: list[Bar], request: ResearchSignalBatchRequest, order: int) -> dict[str, Any]:

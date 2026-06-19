@@ -1,6 +1,6 @@
 # Pending Features
 
-Last updated: 2026-06-19
+Last updated: 2026-06-20
 
 ## Purpose
 
@@ -65,6 +65,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Signal Radar scan history and export is complete for current scope: each successful scan records a compact recent-history row, and the current ranked result can be downloaded as CSV from the radar table header.
 - Signal Radar volume-momentum ranking is complete for current scope: batch scans support a `research` / `volume_momentum` scoring mode, use managed A-share CSV paths under `data/market/a_share/{exchange}/{code}/`, render momentum/volume/trend diagnostics, and export the diagnostic fields.
 - Signal Radar Chan-structure ranking is complete for current scope: batch scans support `chan_structure` scoring mode, reuse `research.chan_structure`, render fractal/stroke/pivot diagnostics, export structure fields, and preserve local managed CSV-only scanning.
+- Signal Radar STAR auto-data maintenance is complete for current scope: batch scans accept `universe=star` for SSE `688*` 科创板 candidates, allow up to 300 candidates, optionally maintain candidate CSVs through `data_manager.update_stock_data` before scanning, return `data_update` plus per-row maintenance status, and React exposes the 科创板 range plus an explicit “扫描前自动更新数据” toggle.
 - Strategy Workshop Chan-structure overlays are complete for current scope: `/api/research/signals/preview` returns chart-ready structure payloads, the K-line chart renders fractals, strokes, pivots, and T2/T3 structure markers, and the toolbar can hide or restore the overlay.
 - Chan core deepening first slice is complete for current scope: `research.chan_structure` now builds simplified line segments, stroke/segment recursive pivots, segment-energy divergence records, and divergence/confirmation signals, while preview, batch diagnostics, chart overlays, and `ChanStructureStrategy` consume the expanded structure.
 - Chan strict segment rules first slice is complete for current scope: `research.chan_structure` now builds non-overlapping stateful segments, extends active segments until confirmed breaks, records start/end/break stroke indexes, and preserves segment-level recursive pivots plus confirmation signals on explicit break/rebuild structures.

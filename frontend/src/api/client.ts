@@ -93,8 +93,11 @@ export const api = {
       limit: number;
       min_bars: number;
       lookback: number;
-      universe?: "catalog" | "local_csv" | "current";
+      universe?: "catalog" | "local_csv" | "current" | "star";
       score_mode?: ResearchSignalBatchScoreMode;
+      auto_update_data?: boolean;
+      if_stale?: boolean;
+      adjust?: string | null;
     } = {
       query: "",
       limit: 20,

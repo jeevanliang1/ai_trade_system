@@ -228,6 +228,26 @@ export type ResearchSignalPreview = {
 
 export type ResearchSignalBatchScoreMode = "research" | "volume_momentum" | "chan_structure";
 
+export type ResearchSignalBatchDataStatus = {
+  status: string;
+  message: string;
+  rows: number;
+  start: string | null;
+  end: string | null;
+  path: string;
+};
+
+export type ResearchSignalBatchDataUpdate = {
+  enabled: boolean;
+  total: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  adjust: string;
+  start_date: string;
+  end_date: string;
+};
+
 export type ResearchSignalBatchRow = {
   rank: number;
   code: string;
@@ -239,6 +259,7 @@ export type ResearchSignalBatchRow = {
   latest_signal: ResearchSignal | null;
   preview: ResearchSignalPreview | null;
   momentum?: ResearchSignalMomentum | null;
+  data_status?: ResearchSignalBatchDataStatus | null;
   blockers: ResearchSignalBlocker[];
 };
 
@@ -249,6 +270,7 @@ export type ResearchSignalBatchResponse = {
   scanned: number;
   available: number;
   missing: number;
+  data_update?: ResearchSignalBatchDataUpdate | null;
   rows: ResearchSignalBatchRow[];
 };
 

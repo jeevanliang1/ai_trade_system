@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from ai_trade_system.api import service
 from ai_trade_system.api.app import create_app
 from ai_trade_system.data import write_bars_csv
-from ai_trade_system.data_manager import data_file_for_stock
+from ai_trade_system.data_manager import DataUpdateResult, data_file_for_stock
 from ai_trade_system.market import Bar
 from ai_trade_system.stock_catalog import StockInfo, write_stock_catalog
 
@@ -664,6 +664,162 @@ def test_research_signals_batch_route_can_scan_only_local_csv_universe(tmp_path,
     assert payload["missing"] == 0
     assert {row["code"] for row in payload["rows"]} == {"000001", "601318"}
     assert {row["csv_path"] for row in payload["rows"]} == {ping_an_path.as_posix(), insurer_path.as_posix()}
+
+
+def test_research_signals_batch_star_universe_filters_star_candidates(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "load_stock_catalog",
+        lambda: [
+            StockInfo("688001", "华兴源创", "SSE"),
+            StockInfo("688981", "中芯国际", "SSE"),
+            StockInfo("600000", "浦发银行", "SSE"),
+            StockInfo("300750", "宁德时代", "SZSE"),
+        ],
+    )
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "",
+            "limit": 100,
+            "min_bars": 60,
+            "lookback": 120,
+            "universe": "star",
+            "score_mode": "volume_momentum",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["universe"] == "star"
+    assert [row["code"] for row in payload["rows"]] == ["688001", "688981"]
+    assert payload["scanned"] == 2
+    assert payload["available"] == 0
+    assert payload["missing"] == 2
+
+
+def test_research_signals_batch_star_universe_honors_query(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "load_stock_catalog",
+        lambda: [
+            StockInfo("688001", "华兴源创", "SSE"),
+            StockInfo("688981", "中芯国际", "SSE"),
+        ],
+    )
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "68898",
+            "limit": 100,
+            "min_bars": 60,
+            "lookback": 120,
+            "universe": "star",
+            "score_mode": "volume_momentum",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [row["code"] for row in payload["rows"]] == ["688981"]
+    assert payload["scanned"] == 1
+
+
+def test_research_signals_batch_auto_updates_star_data_before_scan(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    stock = StockInfo("688001", "华兴源创", "SSE")
+    monkeypatch.setattr(service, "load_stock_catalog", lambda: [stock])
+
+    def fake_update_stock_data(stock_arg, *, start_date, end_date, adjust, if_stale, **_kwargs):
+        bars_path = _write_managed_bars(stock, _momentum_closes(10.0, 16.0), [1000.0] * 79 + [2600.0])
+        return DataUpdateResult(
+            code=stock_arg.code,
+            name=stock_arg.name,
+            exchange=stock_arg.exchange,
+            adjust=adjust,
+            status="updated",
+            requested_start=start_date,
+            requested_end=end_date,
+            fetched_start=start_date,
+            fetched_end=end_date,
+            fetched_rows=80,
+            latest_rows=80,
+            latest_start="2026-01-01",
+            latest_end="2026-03-21",
+            latest_path=bars_path.as_posix(),
+            increment_path=None,
+            message="updated 80 bars",
+        )
+
+    monkeypatch.setattr(service, "update_stock_data", fake_update_stock_data, raising=False)
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "",
+            "limit": 100,
+            "min_bars": 20,
+            "lookback": 60,
+            "universe": "star",
+            "score_mode": "volume_momentum",
+            "auto_update_data": True,
+            "if_stale": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_update"]["enabled"] is True
+    assert payload["data_update"]["total"] == 1
+    assert payload["data_update"]["updated"] == 1
+    assert payload["data_update"]["skipped"] == 0
+    assert payload["data_update"]["failed"] == 0
+    assert payload["rows"][0]["status"] == "scanned"
+    assert payload["rows"][0]["data_status"]["status"] == "updated"
+    assert payload["rows"][0]["data_status"]["rows"] == 80
+    assert payload["rows"][0]["momentum"]["entry_ready"] is True
+
+
+def test_research_signals_batch_auto_update_failure_returns_blocker(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    stock = StockInfo("688001", "华兴源创", "SSE")
+    monkeypatch.setattr(service, "load_stock_catalog", lambda: [stock])
+
+    def fail_update_stock_data(*_args, **_kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(service, "update_stock_data", fail_update_stock_data, raising=False)
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "",
+            "limit": 100,
+            "min_bars": 20,
+            "lookback": 60,
+            "universe": "star",
+            "score_mode": "volume_momentum",
+            "auto_update_data": True,
+            "if_stale": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_update"]["enabled"] is True
+    assert payload["data_update"]["failed"] == 1
+    assert payload["rows"][0]["status"] == "missing_data"
+    assert payload["rows"][0]["data_status"]["status"] == "failed"
+    assert payload["rows"][0]["data_status"]["message"] == "network down"
+    assert any(blocker["code"] == "DATA_UPDATE_FAILED" for blocker in payload["rows"][0]["blockers"])
 
 
 def test_research_signals_batch_route_ranks_volume_momentum_from_managed_csv(tmp_path, monkeypatch):
