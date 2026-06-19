@@ -88,7 +88,7 @@ For a low-confidence sell:
 - Compatible when there is no trend object for the signal level.
 - Not compatible when the trend is `up` unless the score override passes.
 
-If a signal does not include `metadata["level"]`, use the latest stroke trend first, then segment trend as fallback.
+If a signal does not include `metadata["level"]`, or the level is not represented in Chan Core V2 trend summaries such as `fractal`, use the latest stroke trend first, then segment trend as fallback.
 
 ## Score Override
 
