@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Star,
+  TimerReset,
 } from "lucide-react";
 
 import { api } from "../api/client";
@@ -20,6 +21,7 @@ import { InspectorPanel } from "../components/InspectorPanel";
 import { StockQuickSelect } from "../components/StockQuickSelect";
 import { ToolbarButton } from "../components/ToolbarButton";
 import { AIPage } from "../pages/AIPage";
+import { AutomationPage } from "../pages/AutomationPage";
 import { BacktestPage } from "../pages/BacktestPage";
 import { DataPage } from "../pages/DataPage";
 import { OverviewPage } from "../pages/OverviewPage";
@@ -62,7 +64,8 @@ export const NAV_GROUPS = [
     label: "辅助",
     items: [
       { id: "ai", label: "AI研究员", icon: Bot },
-      { id: "risk", label: "风控", icon: ShieldCheck }
+      { id: "risk", label: "风控", icon: ShieldCheck },
+      { id: "automation", label: "自动任务", icon: TimerReset }
     ]
   }
 ] as const;
@@ -282,7 +285,8 @@ export function AppShell() {
     radar: <SignalRadarPage {...pageProps} />,
     ai: <AIPage {...pageProps} />,
     paper: <PaperPage {...pageProps} />,
-    risk: <RiskPage {...pageProps} />
+    risk: <RiskPage {...pageProps} />,
+    automation: <AutomationPage {...pageProps} />
   }[activePage];
 
   return (
@@ -378,6 +382,7 @@ function nextStepFor(page: PageId): { label: string; page: PageId } {
   if (page === "backtest") return { label: "去纸面交易", page: "paper" };
   if (page === "ai") return { label: "去风控", page: "risk" };
   if (page === "risk") return { label: "去纸面交易", page: "paper" };
+  if (page === "automation") return { label: "去数据中心", page: "data" };
   return { label: "回到总览", page: "overview" };
 }
 

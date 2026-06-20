@@ -1,8 +1,12 @@
 import type {
   AIResearchResponse,
+  AutomationConfig,
+  AutomationConfigRequest,
+  AutomationStatus,
   BacktestResponse,
   BootstrapResponse,
   DataResponse,
+  DailyJudgmentResponse,
   ManagedDataResponse,
   PaperResponse,
   PlatformSettings,
@@ -15,6 +19,7 @@ import type {
   Stock,
   StrategySelection,
   StrategySpec,
+  WeeklyRadarResult,
   WatchlistDataUpdateRequest,
   WatchlistDataUpdateResponse,
   WatchlistResponse
@@ -59,6 +64,14 @@ export const api = {
   managedData: () => apiRequest<ManagedDataResponse>("/api/data/managed"),
   updateWatchlistData: (request: WatchlistDataUpdateRequest = {}) =>
     apiRequest<WatchlistDataUpdateResponse>("/api/data/update-watchlist", { method: "POST", body: JSON.stringify(request) }),
+  automationStatus: () => apiRequest<AutomationStatus>("/api/automation/status"),
+  automationTop10: () => apiRequest<WeeklyRadarResult>("/api/automation/radar/top10"),
+  automationJudgments: (day?: string) =>
+    apiRequest<DailyJudgmentResponse>(`/api/automation/judgments${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+  updateAutomationConfig: (request: AutomationConfigRequest) =>
+    apiRequest<AutomationConfig>("/api/automation/config", { method: "PUT", body: JSON.stringify(request) }),
+  runAutomationWeekly: () => apiRequest<WeeklyRadarResult>("/api/automation/run-weekly", { method: "POST" }),
+  runAutomationDaily: () => apiRequest<DailyJudgmentResponse>("/api/automation/run-daily", { method: "POST" }),
   strategies: () => apiRequest<StrategySpec[]>("/api/strategies"),
   strategySource: (path: string) => apiRequest<{ path: string; source: string }>(`/api/strategies/source?path=${encodeURIComponent(path)}`),
   saveStrategySource: (filename: string, source: string) =>

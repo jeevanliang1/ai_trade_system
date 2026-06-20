@@ -439,6 +439,87 @@ export type WatchlistDataUpdateResponse = {
   files: WatchlistDataUpdateResult[];
 };
 
+export type AutomationConfig = {
+  enabled: boolean;
+  timezone: string;
+  weekly_weekday: number;
+  weekly_time: string;
+  daily_time: string;
+  top_n: number;
+  adjust: string;
+  min_bars: number;
+  lookback: number;
+  chan_weight: number;
+  volume_weight: number;
+};
+
+export type AutomationConfigRequest = Partial<Pick<AutomationConfig, "enabled" | "top_n" | "chan_weight" | "volume_weight">>;
+
+export type AutomationRunRecord = {
+  run_id: string;
+  task: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  message: string;
+};
+
+export type RadarCandidateScore = {
+  code: string;
+  name: string;
+  exchange: string;
+  rank: number;
+  composite_score: number;
+  chan_score: number;
+  volume_score: number;
+  latest_day: string | null;
+  latest_close: number | null;
+  chan_signal_title: string | null;
+  chan_signal_action: string | null;
+  volume_entry_ready: boolean;
+  reason: string;
+};
+
+export type WeeklyRadarResult = {
+  run_id?: string;
+  generated_at: string | null;
+  status: string;
+  total_candidates?: number;
+  scanned?: number;
+  missing?: number;
+  top: RadarCandidateScore[];
+};
+
+export type DailyJudgment = {
+  code: string;
+  name: string;
+  exchange: string;
+  judgment: string;
+  reason: string;
+  current_score: number;
+  baseline_score: number;
+  latest_day: string | null;
+  latest_close: number | null;
+  chan_signal_title: string | null;
+  volume_entry_ready: boolean;
+};
+
+export type DailyJudgmentResponse = {
+  date: string;
+  judgments: DailyJudgment[];
+};
+
+export type AutomationStatus = {
+  config: AutomationConfig;
+  running: boolean;
+  last_weekly_run: AutomationRunRecord | null;
+  last_daily_run: AutomationRunRecord | null;
+  weekly_top10_count: number;
+  latest_daily_judgment_count: number;
+  next_weekly_run: string | null;
+  next_daily_run: string | null;
+};
+
 export type StrategySelection = {
   id: string;
   params: Record<string, unknown>;
