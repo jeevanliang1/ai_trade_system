@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime, time
+from pathlib import Path
 from statistics import mean, pstdev
 
+from ai_trade_system.data import normalize_timeframe, read_bars_csv
 from ai_trade_system.market import Bar, Signal
 from ai_trade_system.research import preview_research_signals
 from ai_trade_system.research.chan_core_v2 import ChanCoreV2Analyzer
@@ -51,6 +54,12 @@ CHAN_LOW_CONFIDENCE_SIGNAL_KINDS = {"CHAN_STRUCT_BUY_T2", "CHAN_STRUCT_SELL_T2"}
 CHAN_CORE_V2_TREND_LEVELS = {"stroke", "segment"}
 CHAN_POSITION_CAP_MODES = {"off", "trend", "risk", "trend_risk"}
 CHAN_VOLUME_WEAK_EXIT_MODES = {"reduce", "exit", "ignore"}
+CHAN_MULTI_LEVEL_POLICIES = {"confirm_then_risk", "confirm_only"}
+CHAN_MINUTE_MISSING_POLICIES = {"skip_entry", "daily_only"}
+CHAN_MINUTE_SELL_MODES = {"reduce", "exit"}
+CHAN_CONFIRM_TIMEFRAMES = {"30m"}
+CHAN_RISK_TIMEFRAMES = {"15m"}
+CHAN_SESSION_CLOSE = time(15, 0)
 
 
 @dataclass(frozen=True)
@@ -62,6 +71,20 @@ class ArmedChanWatch:
     reason: str
     trading_day: object
     bar_index: int
+
+
+@dataclass
+class ChanLowerLevelContext:
+    timeframe: str
+    csv_path: Path
+    analyzer: object
+    bars: list[Bar]
+    next_index: int = 0
+    latest_result: object | None = None
+
+    @property
+    def has_data(self) -> bool:
+        return bool(self.bars)
 
 
 class RsiMeanReversionStrategy(Strategy):
@@ -821,6 +844,268 @@ class ChanStructureStrategy(Strategy):
 
     def _clamp_position_units(self, units: int) -> int:
         return min(max(units, 0), self.high_confidence_units)
+
+
+def _managed_level_csv_path(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    adjust: str = "qfq",
+    data_root: str | Path = "data/market/a_share",
+) -> Path:
+    normalized_timeframe = normalize_timeframe(timeframe)
+    upper_exchange = exchange.upper()
+    root = Path(data_root)
+    return root / upper_exchange / symbol / f"{symbol}_{upper_exchange}_{normalized_timeframe}_{adjust}_latest.csv"
+
+
+def _daily_session_close(bar: Bar) -> datetime:
+    return datetime.combine(bar.trading_day, CHAN_SESSION_CLOSE)
+
+
+def _bar_datetime(bar: Bar) -> datetime:
+    return bar.timestamp or _daily_session_close(bar)
+
+
+class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
+    def __init__(
+        self,
+        symbol: str,
+        exchange: str = "SZSE",
+        min_bars: int = 60,
+        lookback: int = 160,
+        min_stroke_bars: int = 5,
+        min_rebound_pct: float = 0.03,
+        min_daily_score: float = 28.0,
+        min_confirm_score: float = 28.0,
+        min_risk_score: float = 28.0,
+        confirm_timeframe: str = "30m",
+        risk_timeframe: str = "15m",
+        lower_level_policy: str = "confirm_then_risk",
+        minute_missing_policy: str = "skip_entry",
+        minute_sell_mode: str = "reduce",
+        confirm_csv_path: str | Path | None = None,
+        risk_csv_path: str | Path | None = None,
+        data_root: str | Path = "data/market/a_share",
+        adjust: str = "qfq",
+        signal_mode: str = "all",
+        allowed_point_types: str = "all",
+        allowed_levels: str = "all",
+        max_holding_bars: int = 15,
+        watch_confirm_bars: int = 20,
+        low_confidence_gate: str = "divergence_or_trend",
+        low_confidence_min_score: float = 32.0,
+        range_max_units: int = 1,
+        position_cap_mode: str = "risk",
+        trend_cap_units: int = 2,
+        risk_drawdown_cap_pct: float = 8.0,
+        low_confidence_units: int = 1,
+        divergence_confirm_units: int = 2,
+        high_confidence_units: int = 3,
+        sell_confirm_units: int = 1,
+        trade_size: int = 100,
+    ) -> None:
+        if lower_level_policy not in CHAN_MULTI_LEVEL_POLICIES:
+            raise ValueError("lower_level_policy must be one of: confirm_only, confirm_then_risk")
+        if minute_missing_policy not in CHAN_MINUTE_MISSING_POLICIES:
+            raise ValueError("minute_missing_policy must be one of: daily_only, skip_entry")
+        if minute_sell_mode not in CHAN_MINUTE_SELL_MODES:
+            raise ValueError("minute_sell_mode must be one of: exit, reduce")
+        if min_daily_score < 0:
+            raise ValueError("min_daily_score must be non-negative")
+        if min_confirm_score < 0:
+            raise ValueError("min_confirm_score must be non-negative")
+        if min_risk_score < 0:
+            raise ValueError("min_risk_score must be non-negative")
+        if min_bars < 1:
+            raise ValueError("min_bars must be at least 1")
+        try:
+            confirm_timeframe = normalize_timeframe(confirm_timeframe)
+        except ValueError as exc:
+            raise ValueError("confirm_timeframe must be one of: 30m") from exc
+        if confirm_timeframe not in CHAN_CONFIRM_TIMEFRAMES:
+            raise ValueError("confirm_timeframe must be one of: 30m")
+        try:
+            risk_timeframe = normalize_timeframe(risk_timeframe)
+        except ValueError as exc:
+            raise ValueError("risk_timeframe must be one of: 15m") from exc
+        if risk_timeframe not in CHAN_RISK_TIMEFRAMES:
+            raise ValueError("risk_timeframe must be one of: 15m")
+
+        super().__init__(
+            symbol=symbol,
+            min_bars=max(min_bars, 3),
+            lookback=lookback,
+            min_stroke_bars=min_stroke_bars,
+            min_rebound_pct=min_rebound_pct,
+            min_signal_score=min_daily_score,
+            signal_mode=signal_mode,
+            allowed_point_types=allowed_point_types,
+            allowed_levels=allowed_levels,
+            max_holding_bars=max_holding_bars,
+            watch_confirm_bars=watch_confirm_bars,
+            low_confidence_gate=low_confidence_gate,
+            low_confidence_min_score=low_confidence_min_score,
+            range_max_units=range_max_units,
+            position_cap_mode=position_cap_mode,
+            trend_cap_units=trend_cap_units,
+            risk_drawdown_cap_pct=risk_drawdown_cap_pct,
+            low_confidence_units=low_confidence_units,
+            divergence_confirm_units=divergence_confirm_units,
+            high_confidence_units=high_confidence_units,
+            sell_confirm_units=sell_confirm_units,
+            trade_size=trade_size,
+        )
+        self.min_bars = min_bars
+        self.exchange = exchange.upper()
+        self.min_daily_score = min_daily_score
+        self.min_confirm_score = min_confirm_score
+        self.min_risk_score = min_risk_score
+        self.confirm_timeframe = confirm_timeframe
+        self.risk_timeframe = risk_timeframe
+        self.lower_level_policy = lower_level_policy
+        self.minute_missing_policy = minute_missing_policy
+        self.minute_sell_mode = minute_sell_mode
+        confirm_path = (
+            Path(confirm_csv_path)
+            if confirm_csv_path is not None
+            else _managed_level_csv_path(symbol, self.exchange, confirm_timeframe, adjust, data_root)
+        )
+        risk_path = (
+            Path(risk_csv_path)
+            if risk_csv_path is not None
+            else _managed_level_csv_path(symbol, self.exchange, risk_timeframe, adjust, data_root)
+        )
+        self.confirm_context = self._build_lower_level_context(confirm_timeframe, confirm_path)
+        self.risk_context = self._build_lower_level_context(risk_timeframe, risk_path)
+
+    def on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+
+        self.bar_index += 1
+        self.bars.append(bar)
+        daily_result = self.chan_analyzer.update_bar(bar)
+        cutoff = _daily_session_close(bar)
+        confirm_result = self._update_lower_level_context(self.confirm_context, cutoff)
+        risk_result = self._update_lower_level_context(self.risk_context, cutoff)
+
+        if self.in_position:
+            self.holding_bars += 1
+        if len(self.bars) < self.min_bars:
+            return []
+
+        risk_signal = self._best_signal(risk_result, bar, "sell", self.min_risk_score)
+        if self.in_position and risk_signal is not None and self.lower_level_policy == "confirm_then_risk":
+            target_units = 0 if self.minute_sell_mode == "exit" else max(0, self.position_units - 1)
+            return self._emit_position_delta(
+                target_units,
+                bar,
+                risk_signal.price,
+                f"chan_multilevel:RISK_15M:{risk_signal.kind}:{risk_signal.reason}",
+            )
+
+        daily_sell = self._best_signal(daily_result, bar, "sell", self.min_daily_score)
+        confirm_sell = self._best_signal(confirm_result, bar, "sell", self.min_confirm_score)
+        sell_signal = daily_sell or confirm_sell
+        if self.in_position and sell_signal is not None:
+            target_units = self._target_units_for_signal(sell_signal)
+            if sell_signal is confirm_sell and target_units >= self.position_units:
+                target_units = max(0, self.position_units - 1)
+            return self._emit_position_delta(
+                target_units,
+                bar,
+                sell_signal.price,
+                f"chan_multilevel:{'CONFIRM_30M' if sell_signal is confirm_sell else 'DAILY'}:{sell_signal.kind}:{sell_signal.reason}",
+            )
+
+        daily_buy = self._best_signal(daily_result, bar, "buy", self.min_daily_score)
+        if daily_buy is None:
+            return self._time_exit_if_needed(bar)
+
+        confirm_buy = self._best_signal(confirm_result, bar, "buy", self.min_confirm_score)
+        if confirm_buy is None:
+            if self.minute_missing_policy != "daily_only" or self.confirm_context.has_data:
+                return self._time_exit_if_needed(bar)
+            target_units = self._cap_target_units(daily_buy, daily_result, self._target_units_for_signal(daily_buy))
+            return self._emit_position_delta(
+                target_units,
+                bar,
+                daily_buy.price,
+                f"chan_multilevel:DAILY_FALLBACK:{daily_buy.kind}:{daily_buy.reason}",
+            )
+
+        if self.lower_level_policy == "confirm_then_risk" and risk_signal is not None:
+            return []
+        target_units = self._cap_target_units(daily_buy, daily_result, self._target_units_for_signal(daily_buy))
+        return self._emit_position_delta(
+            target_units,
+            bar,
+            confirm_buy.price,
+            f"chan_multilevel:CONFIRM_30M:{daily_buy.kind}+{confirm_buy.kind}:{daily_buy.reason}",
+        )
+
+    def _build_lower_level_context(self, timeframe: str, csv_path: Path) -> ChanLowerLevelContext:
+        bars: list[Bar] = []
+        if csv_path.exists():
+            loaded = read_bars_csv(csv_path)
+            bars = [
+                bar
+                for bar in loaded
+                if bar.symbol == self.symbol
+                and bar.exchange.upper() == self.exchange
+                and normalize_timeframe(bar.timeframe) == timeframe
+            ]
+            bars.sort(key=_bar_datetime)
+        return ChanLowerLevelContext(
+            timeframe=timeframe,
+            csv_path=csv_path,
+            analyzer=ChanCoreV2Analyzer(
+                min_stroke_bars=self.min_stroke_bars,
+                min_rebound_pct=self.min_rebound_pct,
+                lookback=self.lookback,
+            ),
+            bars=bars,
+        )
+
+    def _update_lower_level_context(self, context: ChanLowerLevelContext, cutoff: datetime):
+        while context.next_index < len(context.bars) and _bar_datetime(context.bars[context.next_index]) <= cutoff:
+            context.latest_result = context.analyzer.update_bar(context.bars[context.next_index])
+            context.next_index += 1
+        return context.latest_result
+
+    def _best_signal(self, result, bar: Bar, action: str, min_score: float):
+        if result is None:
+            return None
+        candidates = [
+            signal
+            for signal in getattr(result, "signals", []) or []
+            if signal.trading_day == bar.trading_day
+            and signal.action == action
+            and abs(signal.score) >= min_score
+            and self._signal_mode_allows(signal.kind)
+            and self._signal_filters_allow(signal)
+        ]
+        candidates.sort(key=lambda signal: abs(signal.score), reverse=True)
+        return candidates[0] if candidates else None
+
+    def _time_exit_if_needed(self, bar: Bar) -> list[Signal]:
+        if not self.in_position or self.max_holding_bars <= 0 or self.holding_bars < self.max_holding_bars:
+            return []
+        volume = self.position_units * self.trade_size
+        self.position_units = 0
+        self.average_entry_price = None
+        self.holding_bars = 0
+        self.armed_watch = None
+        return [
+            Signal(
+                "sell",
+                bar.symbol,
+                bar.close_price,
+                volume,
+                f"chan_multilevel:TIME_EXIT:max_holding_bars={self.max_holding_bars}",
+            )
+        ]
 
 
 class ChanVolumeFusionStrategy(ChanStructureStrategy):
