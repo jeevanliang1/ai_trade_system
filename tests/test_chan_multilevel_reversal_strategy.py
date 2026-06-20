@@ -200,7 +200,20 @@ def test_chan_multilevel_bearish_15m_blocks_confirmed_buy(monkeypatch, tmp_path)
     assert strategy.on_bar(make_daily_bar(0)) == []
 
 
-def test_chan_multilevel_15m_risk_signal_reduces_or_exits_existing_position(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("minute_sell_mode", "expected_sell_volume", "expected_position_units"),
+    [
+        ("reduce", 1, 2),
+        ("exit", 3, 0),
+    ],
+)
+def test_chan_multilevel_15m_risk_signal_reduces_or_exits_existing_position(
+    monkeypatch,
+    tmp_path,
+    minute_sell_mode,
+    expected_sell_volume,
+    expected_position_units,
+):
     day = date(2024, 1, 1)
     confirm_path = tmp_path / "confirm.csv"
     risk_path = tmp_path / "risk.csv"
@@ -223,16 +236,20 @@ def test_chan_multilevel_15m_risk_signal_reduces_or_exits_existing_position(monk
         min_daily_score=20,
         min_confirm_score=20,
         min_risk_score=20,
+        trade_size=1,
         confirm_csv_path=str(confirm_path),
         risk_csv_path=str(risk_path),
-        minute_sell_mode="exit",
+        minute_sell_mode=minute_sell_mode,
     )
 
     strategy.on_bar(make_daily_bar(0))
+    strategy.position_units = 3
     signals = strategy.on_bar(make_daily_bar(1))
 
     assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].volume == expected_sell_volume
     assert "RISK_15M" in signals[0].reason
+    assert strategy.position_units == expected_position_units
 
 
 def test_chan_multilevel_does_not_consume_future_minute_bars(monkeypatch, tmp_path):
@@ -247,6 +264,7 @@ def test_chan_multilevel_does_not_consume_future_minute_bars(monkeypatch, tmp_pa
         {
             "daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy")],
             "30m": [make_signal(day, "CHAN_STRUCT_BUY_CONFIRM", "buy", 36, "first-buy")],
+            "15m": [],
         },
         seen,
     )
@@ -265,3 +283,5 @@ def test_chan_multilevel_does_not_consume_future_minute_bars(monkeypatch, tmp_pa
 
     assert ("30m", datetime(2024, 1, 1, 10, 0)) in seen
     assert ("30m", datetime(2024, 1, 2, 10, 0)) not in seen
+    assert ("15m", datetime(2024, 1, 1, 10, 15)) in seen
+    assert ("15m", datetime(2024, 1, 2, 10, 15)) not in seen
