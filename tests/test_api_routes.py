@@ -19,6 +19,26 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     return TestClient(create_app())
 
 
+def test_app_lifespan_starts_and_stops_automation_scheduler(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    events: list[str] = []
+
+    class FakeScheduler:
+        def start(self) -> None:
+            events.append("start")
+
+        def stop(self) -> None:
+            events.append("stop")
+
+    monkeypatch.setattr(service, "get_automation_scheduler", lambda: FakeScheduler())
+
+    with TestClient(create_app()) as client:
+        assert events == ["start"]
+        assert client.get("/api/automation/status").status_code == 200
+
+    assert events == ["start", "stop"]
+
+
 def _strategy_payload() -> dict:
     return {
         "id": "builtin:dual_moving_average:DualMovingAverageStrategy",

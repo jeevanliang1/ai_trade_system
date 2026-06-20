@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from collections.abc import Callable
 from typing import Any
 
@@ -27,7 +28,16 @@ from .schemas import (
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AI Trade System API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        scheduler = service.get_automation_scheduler()
+        scheduler.start()
+        try:
+            yield
+        finally:
+            scheduler.stop()
+
+    app = FastAPI(title="AI Trade System API", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
