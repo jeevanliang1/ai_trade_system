@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import service
 from .schemas import (
     AIResearchRequest,
+    AutomationConfigRequest,
     BacktestRequest,
     DataRequest,
     DataUpdateWatchlistRequest,
@@ -70,6 +71,30 @@ def create_app() -> FastAPI:
     @app.post("/api/data/demo")
     def demo_data(request: DemoDataRequest) -> dict[str, Any]:
         return _handle(lambda: service.demo_data(request))
+
+    @app.get("/api/automation/status")
+    def automation_status() -> dict[str, Any]:
+        return _handle(service.automation_status)
+
+    @app.get("/api/automation/radar/top10")
+    def automation_top10() -> dict[str, Any]:
+        return _handle(service.automation_top10)
+
+    @app.get("/api/automation/judgments")
+    def automation_judgments(day: str | None = None) -> dict[str, Any]:
+        return _handle(lambda: service.automation_judgments(day))
+
+    @app.post("/api/automation/run-weekly")
+    def automation_run_weekly() -> dict[str, Any]:
+        return _handle(service.run_automation_weekly)
+
+    @app.post("/api/automation/run-daily")
+    def automation_run_daily() -> dict[str, Any]:
+        return _handle(service.run_automation_daily)
+
+    @app.put("/api/automation/config")
+    def automation_config(request: AutomationConfigRequest) -> dict[str, Any]:
+        return _handle(lambda: service.update_automation_config(request.model_dump(exclude_none=True)))
 
     @app.get("/api/strategies")
     def strategies() -> list[dict[str, Any]]:

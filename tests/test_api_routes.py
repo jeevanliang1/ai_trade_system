@@ -970,3 +970,39 @@ def test_strategy_source_and_data_paths_reject_traversal(tmp_path, monkeypatch):
         json={"settings": {**_settings_payload(), "csv_path": "../outside.csv"}},
     )
     assert data_response.status_code == 400
+
+
+def test_automation_status_route_returns_config_and_runs(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.get("/api/automation/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["config"]["enabled"] is True
+    assert payload["weekly_top10_count"] == 0
+    assert payload["latest_daily_judgment_count"] == 0
+
+
+def test_automation_config_route_updates_enabled_and_weights(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.put("/api/automation/config", json={"enabled": False, "top_n": 8, "volume_weight": 0.5})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enabled"] is False
+    assert payload["top_n"] == 8
+    assert payload["volume_weight"] == 0.5
+
+
+def test_automation_top10_and_judgments_routes_return_empty_defaults(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    top10 = client.get("/api/automation/radar/top10")
+    judgments = client.get("/api/automation/judgments")
+
+    assert top10.status_code == 200
+    assert top10.json()["top"] == []
+    assert judgments.status_code == 200
+    assert judgments.json()["judgments"] == []

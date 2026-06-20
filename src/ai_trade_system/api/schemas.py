@@ -147,6 +147,13 @@ class ResearchSignalBatchRequest(DataRequest):
     adjust: str | None = None
 
 
+class AutomationConfigRequest(BaseModel):
+    enabled: bool | None = None
+    top_n: int | None = Field(default=None, ge=1, le=50)
+    chan_weight: float | None = Field(default=None, ge=0, le=5)
+    volume_weight: float | None = Field(default=None, ge=0, le=5)
+
+
 class PaperRunRequest(DataRequest):
     strategy: StrategySelection | None = None
     portfolio: PortfolioRequest | None = None

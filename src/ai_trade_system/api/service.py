@@ -4,7 +4,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, timedelta
 import math
 from pathlib import Path
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import pandas as pd
 
@@ -60,6 +60,10 @@ from .schemas import (
     StrategySelection,
 )
 
+if TYPE_CHECKING:
+    from ai_trade_system.automation.scheduler import AutomationScheduler
+    from ai_trade_system.automation.service import AutomationService
+
 
 class ApiInputError(ValueError):
     """Raised for invalid API input that should be reported as HTTP 400."""
@@ -83,6 +87,8 @@ def default_settings(today: date | None = None) -> PlatformSettings:
 
 
 DEFAULT_SETTINGS = default_settings()
+_AUTOMATION_SERVICE: "AutomationService | None" = None
+_AUTOMATION_SCHEDULER: "AutomationScheduler | None" = None
 
 
 def bootstrap() -> dict[str, Any]:
@@ -134,6 +140,56 @@ def update_watchlist_data(request: DataUpdateWatchlistRequest) -> dict[str, Any]
         adjust=request.adjust or settings.adjust,
         if_stale=request.if_stale,
     )
+
+
+def get_automation_service() -> AutomationService:
+    from ai_trade_system.automation.service import AutomationService
+
+    global _AUTOMATION_SERVICE
+    if _AUTOMATION_SERVICE is None:
+        _AUTOMATION_SERVICE = AutomationService()
+    return _AUTOMATION_SERVICE
+
+
+def get_automation_scheduler(automation_service: AutomationService | None = None) -> AutomationScheduler:
+    from ai_trade_system.automation.scheduler import AutomationScheduler
+
+    global _AUTOMATION_SCHEDULER
+    if _AUTOMATION_SCHEDULER is None:
+        service_instance = automation_service or get_automation_service()
+        _AUTOMATION_SCHEDULER = AutomationScheduler(service=service_instance)
+    return _AUTOMATION_SCHEDULER
+
+
+def automation_status() -> dict[str, Any]:
+    return get_automation_service().status().as_dict()
+
+
+def automation_top10() -> dict[str, Any]:
+    weekly = get_automation_service().store.load_weekly_result()
+    if weekly is None:
+        return {"status": "missing", "generated_at": None, "top": []}
+    return weekly.as_dict()
+
+
+def automation_judgments(day: str | None = None) -> dict[str, Any]:
+    service_instance = get_automation_service()
+    target_day = day or date.today().isoformat()
+    judgments = service_instance.store.load_daily_judgments(target_day)
+    return {"date": target_day, "judgments": [judgment.as_dict() for judgment in judgments]}
+
+
+def run_automation_weekly() -> dict[str, Any]:
+    return get_automation_service().run_weekly_full_maintenance().as_dict()
+
+
+def run_automation_daily() -> dict[str, Any]:
+    judgments = get_automation_service().run_daily_top10_judgment()
+    return {"date": date.today().isoformat(), "judgments": [judgment.as_dict() for judgment in judgments]}
+
+
+def update_automation_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return get_automation_service().update_config(payload).as_dict()
 
 
 def list_strategies() -> list[dict[str, Any]]:
