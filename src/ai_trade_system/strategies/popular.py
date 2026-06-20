@@ -878,7 +878,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         min_rebound_pct: float = 0.03,
         min_daily_score: float = 28.0,
         min_confirm_score: float = 28.0,
-        min_risk_score: float = 28.0,
+        min_risk_score: float = 24.0,
         confirm_timeframe: str = "30m",
         risk_timeframe: str = "15m",
         lower_level_policy: str = "confirm_then_risk",
@@ -998,7 +998,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         risk_signal = self._best_signal(risk_result, bar, "sell", self.min_risk_score)
         if self.in_position and risk_signal is not None and self.lower_level_policy == "confirm_then_risk":
             target_units = 0 if self.minute_sell_mode == "exit" else max(0, self.position_units - 1)
-            return self._emit_position_delta(
+            return self._emit_position_delta_or_time_exit(
                 target_units,
                 bar,
                 risk_signal.price,
@@ -1012,7 +1012,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             target_units = self._target_units_for_signal(sell_signal)
             if sell_signal is confirm_sell and target_units >= self.position_units:
                 target_units = max(0, self.position_units - 1)
-            return self._emit_position_delta(
+            return self._emit_position_delta_or_time_exit(
                 target_units,
                 bar,
                 sell_signal.price,
@@ -1028,7 +1028,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             if self.minute_missing_policy != "daily_only" or self.confirm_context.has_data:
                 return self._time_exit_if_needed(bar)
             target_units = self._cap_target_units(daily_buy, daily_result, self._target_units_for_signal(daily_buy))
-            return self._emit_position_delta(
+            return self._emit_position_delta_or_time_exit(
                 target_units,
                 bar,
                 daily_buy.price,
@@ -1038,7 +1038,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         if self.lower_level_policy == "confirm_then_risk" and risk_signal is not None:
             return []
         target_units = self._cap_target_units(daily_buy, daily_result, self._target_units_for_signal(daily_buy))
-        return self._emit_position_delta(
+        return self._emit_position_delta_or_time_exit(
             target_units,
             bar,
             confirm_buy.price,
@@ -1088,6 +1088,12 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         ]
         candidates.sort(key=lambda signal: abs(signal.score), reverse=True)
         return candidates[0] if candidates else None
+
+    def _emit_position_delta_or_time_exit(self, target_units: int, bar: Bar, price: float, reason: str) -> list[Signal]:
+        signals = self._emit_position_delta(target_units, bar, price, reason)
+        if signals:
+            return signals
+        return self._time_exit_if_needed(bar)
 
     def _time_exit_if_needed(self, bar: Bar) -> list[Signal]:
         if not self.in_position or self.max_holding_bars <= 0 or self.holding_bars < self.max_holding_bars:

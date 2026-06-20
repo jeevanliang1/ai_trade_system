@@ -80,6 +80,15 @@ def patch_multilevel_analyzers(monkeypatch, scripts: dict[str, list[ResearchSign
 
 
 def test_chan_multilevel_strategy_rejects_invalid_configuration(tmp_path):
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        confirm_csv_path=tmp_path / "missing-30m.csv",
+        risk_csv_path=tmp_path / "missing-15m.csv",
+    )
+    assert strategy.min_daily_score == 28.0
+    assert strategy.min_confirm_score == 28.0
+    assert strategy.min_risk_score == 24.0
+
     with pytest.raises(ValueError, match="lower_level_policy"):
         ChanMultiLevelReversalStrategy("000001", lower_level_policy="bad")
     with pytest.raises(ValueError, match="minute_missing_policy"):
@@ -250,6 +259,40 @@ def test_chan_multilevel_15m_risk_signal_reduces_or_exits_existing_position(
     assert signals[0].volume == expected_sell_volume
     assert "RISK_15M" in signals[0].reason
     assert strategy.position_units == expected_position_units
+
+
+def test_chan_multilevel_same_target_signal_does_not_suppress_time_exit(monkeypatch):
+    day = date(2024, 1, 1)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [
+                make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy"),
+                make_signal(day + timedelta(days=1), "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy"),
+            ]
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        confirm_csv_path="/tmp/missing-30m.csv",
+        risk_csv_path="/tmp/missing-15m.csv",
+        minute_missing_policy="daily_only",
+        max_holding_bars=1,
+        trade_size=1,
+    )
+
+    strategy.on_bar(make_daily_bar(0))
+    signals = strategy.on_bar(make_daily_bar(1))
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].volume == 3
+    assert "TIME_EXIT" in signals[0].reason
+    assert strategy.position_units == 0
 
 
 def test_chan_multilevel_does_not_consume_future_minute_bars(monkeypatch, tmp_path):
