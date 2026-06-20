@@ -18,7 +18,7 @@ Each pending item below should be small enough to finish in one focused implemen
 
 - React + TypeScript + Vite frontend with default `./scripts/run_app.sh` entry.
 - FastAPI local API for bootstrap, data, strategies, signals, portfolio preview, backtest, AI research, paper run/events, and risk evaluation.
-- Nine React workspaces exist: overview, data center, strategy workshop, portfolio lab, backtest center, signal radar, AI researcher, paper trading, and risk.
+- Ten React workspaces exist: overview, data center, strategy workshop, portfolio lab, backtest center, signal radar, AI researcher, paper trading, risk, and automation tasks.
 - Screenshot-like shell exists with left navigation, top command bar, center work area, right inspector, and bottom status bar.
 - Strategy workshop has strategy list, parameter form, signal preview, K-line, volume, basic result metrics, and source editor state.
 - K-line chart has red-rise/green-fall candlesticks, MA20/MA60 overlays, visible volume bars, and no initial chart animation flicker.
@@ -67,6 +67,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Signal Radar Chan-structure ranking is complete for current scope: batch scans support `chan_structure` scoring mode, reuse `research.chan_structure`, render fractal/stroke/pivot diagnostics, export structure fields, and preserve local managed CSV-only scanning.
 - Signal Radar STAR auto-data maintenance is complete for current scope: batch scans accept `universe=star` for SSE `688*` 科创板 candidates, allow up to 300 candidates, optionally maintain candidate CSVs through `data_manager.update_stock_data` before scanning, return `data_update` plus per-row maintenance status, and React exposes the 科创板 range plus an explicit “扫描前自动更新数据” toggle.
 - Data maintenance freshness fallback is complete for current scope: incremental fetch exceptions with an existing local `latest.csv` now return a skipped maintenance status that preserves usable local rows and scan availability, while first-time no-local-data failures still surface as true failed updates.
+- Automation Radar Maintenance is complete for current scope: `ai_trade_system.automation` now owns config/state/run persistence, STAR plus watchlist weekly maintenance, weekly Chan-primary plus volume-price-assist Top N scanning, daily Top N judgment refresh, FastAPI automation routes, app-lifespan scheduler startup/shutdown, and a React `自动任务` workspace with config and manual run controls.
 - Strategy Workshop Chan-structure overlays are complete for current scope: `/api/research/signals/preview` returns chart-ready structure payloads, the K-line chart renders fractals, strokes, pivots, and T2/T3 structure markers, and the toolbar can hide or restore the overlay.
 - Chan core deepening first slice is complete for current scope: `research.chan_structure` now builds simplified line segments, stroke/segment recursive pivots, segment-energy divergence records, and divergence/confirmation signals, while preview, batch diagnostics, chart overlays, and `ChanStructureStrategy` consume the expanded structure.
 - Chan strict segment rules first slice is complete for current scope: `research.chan_structure` now builds non-overlapping stateful segments, extends active segments until confirmed breaks, records start/end/break stroke indexes, and preserves segment-level recursive pivots plus confirmation signals on explicit break/rebuild structures.
@@ -137,9 +138,13 @@ No current pending items.
 
 - Execute the reviewable commit split from `docs/runbooks/reviewable-commit-plan.md` after confirming whether the local launchd automation files should be included in version control.
 
+### Automation Business
+
+- Add recent run history and failure diagnostics to the `自动任务` workspace so weekly/daily scheduler outcomes, skipped maintenance, and failed data updates are visible without reading runtime JSON/JSONL files.
+
 ## Next Recommended Feature
 
-Start with "Engineering And Review Hygiene - Execute the reviewable commit split from `docs/runbooks/reviewable-commit-plan.md` after confirming whether the local launchd automation files should be included in version control".
+Start with "Automation Business - Add recent run history and failure diagnostics to the `自动任务` workspace so weekly/daily scheduler outcomes, skipped maintenance, and failed data updates are visible without reading runtime JSON/JSONL files".
 
 ## Update Rules
 
