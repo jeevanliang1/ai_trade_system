@@ -159,6 +159,16 @@ BUILTIN_STRATEGIES = [
         display_name="缠论量价融合",
         description="以缠论结构为主策略，使用量价动量确认低确定性买点、增强三买等高确定性买点，并在弱量价叠加趋势破坏、严重弱动量或缠论空头上下文时减仓或退出。",
     ),
+    StrategySpec(
+        id="builtin:popular:ChanMultiLevelReversalStrategy",
+        name="ChanMultiLevelReversalStrategy",
+        class_name="ChanMultiLevelReversalStrategy",
+        source="builtin",
+        path=None,
+        module_name="ai_trade_system.strategies.popular",
+        display_name="缠论多级别反转",
+        description="以日线结构作为主信号，用 30m 做入场确认、15m 做持仓风险控制；15m 不能独立开仓，只能减仓或退出。",
+    ),
 ]
 
 
@@ -309,6 +319,18 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         description="策略只处理这个股票代码的行情和信号。",
         increase_effect="股票代码不是数值参数，不能用调大理解；换代码等于换交易标的。",
         decrease_effect="股票代码不是数值参数，不能用调小理解；换代码等于换交易标的。",
+    ),
+    "exchange": ParameterGuidance(
+        display_name="交易所",
+        description="股票代码所属市场，用于区分同代码标的并定位本地行情数据。",
+        increase_effect="该参数不是数值大小；切换市场会改变读取的数据路径和交易标的归属。",
+        decrease_effect="该参数不是数值大小；修改前应确认代码、交易所和本地数据一致。",
+    ),
+    "adjust": ParameterGuidance(
+        display_name="复权方式",
+        description="读取行情时使用的复权口径，常用于区分前复权、后复权或不复权数据。",
+        increase_effect="该参数不是数值大小；切换复权口径会改变价格序列和回测可比性。",
+        decrease_effect="该参数不是数值大小；同一轮对比应保持复权方式一致。",
     ),
     "fast_window": ParameterGuidance(
         display_name="快线周期",
@@ -592,6 +614,71 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         description="顶背驰确认或同类卖出确认后保留的目标仓位单位；三卖仍会清仓。",
         increase_effect="调大后卖出确认更偏保留底仓，可能延续趋势收益但回撤也更大。",
         decrease_effect="调小后卖出确认更接近清仓，保护利润更积极但可能过早离场。",
+    ),
+    "confirm_timeframe": ParameterGuidance(
+        display_name="确认级别",
+        description="用于辅助确认主级别入场信号的下级别周期。",
+        increase_effect="该参数不是数值大小；切换周期会改变确认信号的节奏和可用数据。",
+        decrease_effect="该参数不是数值大小；应与策略支持的周期和本地行情文件保持一致。",
+        options=("30m",),
+    ),
+    "risk_timeframe": ParameterGuidance(
+        display_name="风控级别",
+        description="用于观察持仓风险和减仓/退出条件的下级别周期。",
+        increase_effect="该参数不是数值大小；切换周期会改变风险信号的触发节奏。",
+        decrease_effect="该参数不是数值大小；应与策略支持的周期和本地行情文件保持一致。",
+        options=("15m",),
+    ),
+    "confirm_csv_path": ParameterGuidance(
+        display_name="确认级别CSV",
+        description="确认级别行情 CSV 路径；留空时由策略按标的、交易所、周期和复权方式定位托管数据。",
+        increase_effect="该参数不是数值大小；改为指定文件会覆盖默认托管数据路径。",
+        decrease_effect="该参数不是数值大小；留空通常使用项目约定的数据目录。",
+    ),
+    "risk_csv_path": ParameterGuidance(
+        display_name="风控级别CSV",
+        description="风控级别行情 CSV 路径；留空时由策略按标的、交易所、周期和复权方式定位托管数据。",
+        increase_effect="该参数不是数值大小；改为指定文件会覆盖默认托管数据路径。",
+        decrease_effect="该参数不是数值大小；留空通常使用项目约定的数据目录。",
+    ),
+    "lower_level_policy": ParameterGuidance(
+        display_name="下级别使用方式",
+        description="控制下级别数据只用于入场确认，还是先确认入场再参与持仓风险控制。",
+        increase_effect="该参数不是数值大小；confirm_then_risk 会让下级别同时参与确认和风控。",
+        decrease_effect="该参数不是数值大小；confirm_only 更聚焦入场确认，持仓风控更依赖主级别。",
+        options=("confirm_only", "confirm_then_risk"),
+    ),
+    "minute_missing_policy": ParameterGuidance(
+        display_name="分钟数据缺失处理",
+        description="下级别行情缺失时的处理方式：跳过入场，或只按主级别日线逻辑运行。",
+        increase_effect="该参数不是数值大小；daily_only 会在缺少分钟数据时保留更多日线机会。",
+        decrease_effect="该参数不是数值大小；skip_entry 更保守，缺少确认数据时不新开仓。",
+        options=("skip_entry", "daily_only"),
+    ),
+    "minute_sell_mode": ParameterGuidance(
+        display_name="分钟风控卖出方式",
+        description="下级别风控触发时的处理方式：reduce 减仓，exit 清仓。",
+        increase_effect="该参数不是数值大小；exit 更保守，会在风控触发时清仓。",
+        decrease_effect="该参数不是数值大小；reduce 更偏保留底仓，只降低风险暴露。",
+        options=("reduce", "exit"),
+    ),
+    "min_daily_score": ParameterGuidance(
+        display_name="日线最低分",
+        description="主级别日线结构信号达到该分数后，才允许进入后续确认流程。",
+        increase_effect="调大后主级别信号更严格，交易更少。",
+        decrease_effect="调小后更多日线结构可进入确认流程，交易机会增加但质量可能下降。",
+    ),
+    "min_confirm_score": ParameterGuidance(
+        display_name="确认最低分",
+        description="确认级别信号达到该分数后，才允许辅助主级别入场。",
+        increase_effect="调大后下级别确认更严格，入场更少。",
+        decrease_effect="调小后下级别确认更宽松，入场更多但误判风险可能上升。",
+    ),
+    "min_risk_score": ParameterGuidance(
+        display_name="风控最低分",
+        description="风控级别信号达到该分数后，才触发对应的减仓或退出处理。",
+        increase_effect="调大后风险信号更严格，防守动作更少。",
+        decrease_effect="调小后风险信号更容易触发，防守更积极但可能过早离场。",
     ),
     "low_confidence_requires_volume": ParameterGuidance(
         display_name="低确定性需量价确认",

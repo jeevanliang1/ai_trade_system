@@ -268,6 +268,53 @@ def test_chan_volume_fusion_strategy_is_registered_with_guidance():
     assert parameters["volume_boost_units"].description
 
 
+def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
+    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
+    spec = next(strategy for strategy in specs if strategy.class_name == "ChanMultiLevelReversalStrategy")
+
+    assert spec.id == "builtin:popular:ChanMultiLevelReversalStrategy"
+    assert spec.module_name == "ai_trade_system.strategies.popular"
+    assert spec.display_name == "缠论多级别反转"
+    assert "日线结构" in spec.description
+    assert "30m" in spec.description
+    assert "15m" in spec.description
+    assert "15m 不能独立开仓" in spec.description
+
+    parameters = {parameter.name: parameter for parameter in inspect_strategy_parameters(spec)}
+    for name in (
+        "exchange",
+        "adjust",
+        "confirm_timeframe",
+        "risk_timeframe",
+        "confirm_csv_path",
+        "risk_csv_path",
+        "lower_level_policy",
+        "minute_missing_policy",
+        "minute_sell_mode",
+        "min_daily_score",
+        "min_confirm_score",
+        "min_risk_score",
+    ):
+        assert parameters[name].display_name
+        assert parameters[name].description
+
+    assert parameters["confirm_timeframe"].options == ("30m",)
+    assert parameters["risk_timeframe"].options == ("15m",)
+    assert parameters["lower_level_policy"].options == ("confirm_only", "confirm_then_risk")
+    assert parameters["minute_missing_policy"].options == ("skip_entry", "daily_only")
+    assert parameters["minute_sell_mode"].options == ("reduce", "exit")
+
+    defaults = {parameter.name: parameter.default for parameter in parameters.values()}
+    assert defaults["confirm_timeframe"] == "30m"
+    assert defaults["risk_timeframe"] == "15m"
+    assert defaults["lower_level_policy"] == "confirm_then_risk"
+    assert defaults["minute_missing_policy"] == "skip_entry"
+    assert defaults["minute_sell_mode"] == "reduce"
+    assert defaults["min_daily_score"] == 28.0
+    assert defaults["min_confirm_score"] == 28.0
+    assert defaults["min_risk_score"] == 24.0
+
+
 def test_save_strategy_source_validates_python_and_sanitizes_filename(tmp_path):
     path = save_strategy_source(tmp_path, "../bad name", create_strategy_template("ExampleStrategy"))
 
