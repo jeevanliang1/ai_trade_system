@@ -325,12 +325,14 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         description="股票代码所属市场，用于区分同代码标的并定位本地行情数据。",
         increase_effect="该参数不是数值大小；切换市场会改变读取的数据路径和交易标的归属。",
         decrease_effect="该参数不是数值大小；修改前应确认代码、交易所和本地数据一致。",
+        options=("SSE", "SZSE"),
     ),
     "adjust": ParameterGuidance(
         display_name="复权方式",
         description="读取行情时使用的复权口径，常用于区分前复权、后复权或不复权数据。",
         increase_effect="该参数不是数值大小；切换复权口径会改变价格序列和回测可比性。",
         decrease_effect="该参数不是数值大小；同一轮对比应保持复权方式一致。",
+        options=("qfq", "hfq", ""),
     ),
     "fast_window": ParameterGuidance(
         display_name="快线周期",

@@ -298,6 +298,8 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
         assert parameters[name].display_name
         assert parameters[name].description
 
+    assert parameters["exchange"].options == ("SSE", "SZSE")
+    assert parameters["adjust"].options == ("qfq", "hfq", "")
     assert parameters["confirm_timeframe"].options == ("30m",)
     assert parameters["risk_timeframe"].options == ("15m",)
     assert parameters["lower_level_policy"].options == ("confirm_only", "confirm_then_risk")
