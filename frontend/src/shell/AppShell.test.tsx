@@ -25,7 +25,8 @@ test("renders screenshot-inspired navigation and switches pages", async () => {
   expect(screen.queryByRole("button", { name: "收起" })).not.toBeInTheDocument();
   expect(screen.getByText("路径：data/000001_daily.csv")).toBeInTheDocument();
   expect(screen.getByText("滑点：0.01")).toBeInTheDocument();
-  expect(NAV_ITEMS).toHaveLength(10);
+  expect(NAV_ITEMS).toHaveLength(11);
+  expect(NAV_ITEMS.map((item) => item.id)).toContain("automation");
 
   await user.click(screen.getByRole("button", { name: "去回测中心" }));
   expect(screen.getByText("回测中心")).toHaveClass("active");
