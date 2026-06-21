@@ -57,8 +57,8 @@ CHAN_VOLUME_WEAK_EXIT_MODES = {"reduce", "exit", "ignore"}
 CHAN_MULTI_LEVEL_POLICIES = {"confirm_then_risk", "confirm_only"}
 CHAN_MINUTE_MISSING_POLICIES = {"skip_entry", "daily_only"}
 CHAN_MINUTE_SELL_MODES = {"reduce", "exit"}
-CHAN_CONFIRM_TIMEFRAMES = {"30m"}
-CHAN_RISK_TIMEFRAMES = {"15m"}
+CHAN_CONFIRM_TIMEFRAMES = ("60m", "30m")
+CHAN_RISK_TIMEFRAMES = ("30m", "15m")
 CHAN_SESSION_CLOSE = time(15, 0)
 
 
@@ -871,6 +871,14 @@ def _bar_datetime(bar: Bar) -> datetime:
     return bar.timestamp or _daily_session_close(bar)
 
 
+def _level_label(timeframe: str) -> str:
+    return normalize_timeframe(timeframe).upper()
+
+
+def _timeframe_options(options: tuple[str, ...]) -> str:
+    return ", ".join(options)
+
+
 class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
     def __init__(
         self,
@@ -926,15 +934,15 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         try:
             confirm_timeframe = normalize_timeframe(confirm_timeframe)
         except ValueError as exc:
-            raise ValueError("confirm_timeframe must be one of: 30m") from exc
+            raise ValueError(f"confirm_timeframe must be one of: {_timeframe_options(CHAN_CONFIRM_TIMEFRAMES)}") from exc
         if confirm_timeframe not in CHAN_CONFIRM_TIMEFRAMES:
-            raise ValueError("confirm_timeframe must be one of: 30m")
+            raise ValueError(f"confirm_timeframe must be one of: {_timeframe_options(CHAN_CONFIRM_TIMEFRAMES)}")
         try:
             risk_timeframe = normalize_timeframe(risk_timeframe)
         except ValueError as exc:
-            raise ValueError("risk_timeframe must be one of: 15m") from exc
+            raise ValueError(f"risk_timeframe must be one of: {_timeframe_options(CHAN_RISK_TIMEFRAMES)}") from exc
         if risk_timeframe not in CHAN_RISK_TIMEFRAMES:
-            raise ValueError("risk_timeframe must be one of: 15m")
+            raise ValueError(f"risk_timeframe must be one of: {_timeframe_options(CHAN_RISK_TIMEFRAMES)}")
 
         super().__init__(
             symbol=symbol,
@@ -1002,11 +1010,12 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         risk_signal = self._best_signal(risk_result, bar, "sell", self.min_risk_score)
         if self.in_position and risk_signal is not None and self.lower_level_policy == "confirm_then_risk":
             target_units = 0 if self.minute_sell_mode == "exit" else max(0, self.position_units - 1)
+            risk_label = _level_label(self.risk_timeframe)
             return self._emit_position_delta_or_time_exit(
                 target_units,
                 bar,
                 risk_signal.price,
-                f"chan_multilevel:RISK_15M:{risk_signal.kind}:{risk_signal.reason}",
+                f"chan_multilevel:RISK_{risk_label}:{risk_signal.kind}:{risk_signal.reason}",
             )
 
         daily_sell = self._best_signal(daily_result, bar, "sell", self.min_daily_score)
@@ -1016,11 +1025,12 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             target_units = self._target_units_for_signal(sell_signal)
             if sell_signal is confirm_sell and target_units >= self.position_units:
                 target_units = max(0, self.position_units - 1)
+            sell_level = f"CONFIRM_{_level_label(self.confirm_timeframe)}" if sell_signal is confirm_sell else "DAILY"
             return self._emit_position_delta_or_time_exit(
                 target_units,
                 bar,
                 sell_signal.price,
-                f"chan_multilevel:{'CONFIRM_30M' if sell_signal is confirm_sell else 'DAILY'}:{sell_signal.kind}:{sell_signal.reason}",
+                f"chan_multilevel:{sell_level}:{sell_signal.kind}:{sell_signal.reason}",
             )
 
         daily_buy = self._best_signal(daily_result, bar, "buy", self.min_daily_score)
@@ -1046,7 +1056,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             target_units,
             bar,
             confirm_buy.price,
-            f"chan_multilevel:CONFIRM_30M:{daily_buy.kind}+{confirm_buy.kind}:{daily_buy.reason}",
+            f"chan_multilevel:CONFIRM_{_level_label(self.confirm_timeframe)}:{daily_buy.kind}+{confirm_buy.kind}:{daily_buy.reason}",
         )
 
     def _build_lower_level_context(self, timeframe: str, csv_path: Path) -> ChanLowerLevelContext:

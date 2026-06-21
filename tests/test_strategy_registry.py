@@ -276,9 +276,10 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
     assert spec.module_name == "ai_trade_system.strategies.popular"
     assert spec.display_name == "缠论多级别反转"
     assert "日线结构" in spec.description
+    assert "60m" in spec.description
     assert "30m" in spec.description
     assert "15m" in spec.description
-    assert "15m 不能独立开仓" in spec.description
+    assert "15m 不能独立开仓" in spec.description or "低级别不能独立开仓" in spec.description
 
     parameters = {parameter.name: parameter for parameter in inspect_strategy_parameters(spec)}
     for name in (
@@ -300,8 +301,8 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
 
     assert parameters["exchange"].options == ("SSE", "SZSE")
     assert parameters["adjust"].options == ("qfq", "hfq", "")
-    assert parameters["confirm_timeframe"].options == ("30m",)
-    assert parameters["risk_timeframe"].options == ("15m",)
+    assert parameters["confirm_timeframe"].options == ("60m", "30m")
+    assert parameters["risk_timeframe"].options == ("30m", "15m")
     assert parameters["lower_level_policy"].options == ("confirm_only", "confirm_then_risk")
     assert parameters["minute_missing_policy"].options == ("skip_entry", "daily_only")
     assert parameters["minute_sell_mode"].options == ("reduce", "exit")

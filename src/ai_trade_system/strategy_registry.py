@@ -167,7 +167,7 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
         display_name="缠论多级别反转",
-        description="以日线结构作为主信号，用 30m 做入场确认、15m 做持仓风险控制；15m 不能独立开仓，只能减仓或退出。",
+        description="以日线结构作为主信号，可用 60m 或 30m 做入场确认，并用 30m 或 15m 做持仓风险控制；低级别不能独立开仓，只能过滤、减仓或退出。",
     ),
 ]
 
@@ -619,17 +619,17 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "confirm_timeframe": ParameterGuidance(
         display_name="确认级别",
-        description="用于辅助确认主级别入场信号的下级别周期。",
+        description="用于辅助确认主级别入场信号的下级别周期；日线的下一层优先用覆盖更长的 60m，也可回退到 30m。",
         increase_effect="该参数不是数值大小；切换周期会改变确认信号的节奏和可用数据。",
         decrease_effect="该参数不是数值大小；应与策略支持的周期和本地行情文件保持一致。",
-        options=("30m",),
+        options=("60m", "30m"),
     ),
     "risk_timeframe": ParameterGuidance(
         display_name="风控级别",
-        description="用于观察持仓风险和减仓/退出条件的下级别周期。",
+        description="用于观察持仓风险和减仓/退出条件的更低级别周期；可用 30m 或 15m，但不能单独开仓。",
         increase_effect="该参数不是数值大小；切换周期会改变风险信号的触发节奏。",
         decrease_effect="该参数不是数值大小；应与策略支持的周期和本地行情文件保持一致。",
-        options=("15m",),
+        options=("30m", "15m"),
     ),
     "confirm_csv_path": ParameterGuidance(
         display_name="确认级别CSV",
