@@ -279,7 +279,8 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
     assert "60m" in spec.description
     assert "30m" in spec.description
     assert "15m" in spec.description
-    assert "15m 不能独立开仓" in spec.description or "低级别不能独立开仓" in spec.description
+    assert "daily_anchor" in spec.description
+    assert "硬门槛" in spec.description
 
     parameters = {parameter.name: parameter for parameter in inspect_strategy_parameters(spec)}
     for name in (
@@ -293,6 +294,7 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
         "lower_level_policy",
         "minute_missing_policy",
         "minute_sell_mode",
+        "risk_profit_threshold_pct",
         "min_daily_score",
         "min_confirm_score",
         "min_risk_score",
@@ -302,7 +304,7 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
 
     assert parameters["exchange"].options == ("SSE", "SZSE")
     assert parameters["adjust"].options == ("qfq", "hfq", "")
-    assert parameters["entry_mode"].options == ("daily_confirmed", "lower_level_discovery")
+    assert parameters["entry_mode"].options == ("daily_confirmed", "lower_level_discovery", "daily_anchor")
     assert parameters["confirm_timeframe"].options == ("60m", "30m")
     assert parameters["risk_timeframe"].options == ("30m", "15m")
     assert parameters["lower_level_policy"].options == ("confirm_only", "confirm_then_risk")
@@ -316,6 +318,7 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
     assert defaults["lower_level_policy"] == "confirm_then_risk"
     assert defaults["minute_missing_policy"] == "skip_entry"
     assert defaults["minute_sell_mode"] == "reduce"
+    assert defaults["risk_profit_threshold_pct"] == 0.0
     assert defaults["min_daily_score"] == 28.0
     assert defaults["min_confirm_score"] == 28.0
     assert defaults["min_risk_score"] == 24.0

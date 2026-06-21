@@ -46,14 +46,22 @@ def make_minute_bar(index: int, timeframe: str, hour: int, minute: int, close: f
     )
 
 
-def make_signal(day: date, kind: str, action: str, score: float, point_type: str, level: str = "segment") -> ResearchSignal:
+def make_signal(
+    day: date,
+    kind: str,
+    action: str,
+    score: float,
+    point_type: str,
+    level: str = "segment",
+    price: float = 10.0,
+) -> ResearchSignal:
     return ResearchSignal(
         trading_day=day,
         symbol="000001",
         exchange="SZSE",
         kind=kind,
         action=action,
-        price=10.0,
+        price=price,
         strength=min(0.95, abs(score) / 100),
         score=score,
         title=kind,
@@ -411,6 +419,296 @@ def test_chan_multilevel_lower_level_discovery_respects_risk_reversal(monkeypatc
     )
 
     assert strategy.on_bar(make_daily_bar(0)) == []
+    assert strategy.position_units == 0
+
+
+def test_chan_multilevel_daily_anchor_preserves_daily_buy_without_minute_confirmation(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy")],
+            "60m": [],
+            "30m": [],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        min_confirm_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+        trade_size=1,
+    )
+
+    signals = strategy.on_bar(make_daily_bar(0))
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].volume == 3
+    assert "DAILY_ANCHOR" in signals[0].reason
+    assert strategy.position_units == 3
+    assert ("60m", datetime(2024, 1, 1, 14, 0)) in seen
+    assert ("30m", datetime(2024, 1, 1, 14, 30)) in seen
+
+
+def test_chan_multilevel_daily_anchor_uses_better_lower_level_buy_price(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0, close=9.8)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy", price=10.0)],
+            "60m": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 44, "third-buy", price=9.8)],
+            "30m": [],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        min_confirm_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+        trade_size=1,
+    )
+
+    signals = strategy.on_bar(make_daily_bar(0, close=10.0))
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].price == 9.8
+    assert "BUY_EXEC_60M" in signals[0].reason
+    assert strategy.average_entry_price == 9.8
+
+
+def test_chan_multilevel_daily_anchor_uses_better_lower_level_sell_price(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0), make_minute_bar(1, "60m", 14, 0)], confirm_path)
+    write_bars_csv(
+        [
+            make_minute_bar(0, "30m", 14, 30),
+            make_minute_bar(1, "30m", 14, 30, close=10.5),
+        ],
+        risk_path,
+    )
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [
+                make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy", price=10.0),
+                make_signal(day + timedelta(days=1), "CHAN_STRUCT_SELL_T3", "sell", -44, "third-sell", price=10.0),
+            ],
+            "60m": [],
+            "30m": [make_signal(day + timedelta(days=1), "CHAN_STRUCT_SELL_T3", "sell", -44, "third-sell", price=10.5)],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        min_risk_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+        trade_size=1,
+    )
+
+    strategy.on_bar(make_daily_bar(0, close=10.0))
+    signals = strategy.on_bar(make_daily_bar(1, close=10.0))
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].price == 10.5
+    assert "SELL_EXEC_LOWER" in signals[0].reason
+
+
+def test_chan_multilevel_daily_anchor_does_not_chase_lower_level_buy_without_daily_anchor(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [],
+            "60m": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 44, "third-buy")],
+            "30m": [],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_confirm_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+        trade_size=1,
+    )
+
+    assert strategy.on_bar(make_daily_bar(0)) == []
+    assert strategy.position_units == 0
+
+
+def test_chan_multilevel_daily_anchor_ignores_low_confidence_lower_level_t2(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [],
+            "60m": [make_signal(day, "CHAN_STRUCT_BUY_T2", "buy", 28, "second-buy")],
+            "30m": [],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_confirm_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+    )
+
+    assert strategy.on_bar(make_daily_bar(0)) == []
+    assert strategy.position_units == 0
+
+
+def test_chan_multilevel_daily_anchor_profit_risk_waits_for_profit_threshold(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0), make_minute_bar(1, "60m", 14, 0)], confirm_path)
+    write_bars_csv(
+        [
+            make_minute_bar(0, "30m", 14, 30),
+            make_minute_bar(1, "30m", 14, 30, close=10.4),
+        ],
+        risk_path,
+    )
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy")],
+            "60m": [],
+            "30m": [make_signal(day + timedelta(days=1), "CHAN_STRUCT_SELL_T3", "sell", -44, "third-sell", price=10.4)],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        min_risk_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+        lower_level_policy="confirm_then_risk",
+        risk_profit_threshold_pct=5.0,
+        trade_size=1,
+    )
+
+    strategy.on_bar(make_daily_bar(0, close=10.0))
+    assert strategy.on_bar(make_daily_bar(1, close=10.4)) == []
+    assert strategy.position_units == 3
+
+    strategy.average_entry_price = 9.0
+    signals = strategy.on_bar(make_daily_bar(1, close=10.4))
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].volume == 1
+    assert "PROFIT_RISK_30M" in signals[0].reason
+    assert strategy.position_units == 2
+
+
+def test_chan_multilevel_daily_anchor_risk_signal_cuts_drawdown_after_threshold(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0), make_minute_bar(1, "60m", 14, 0)], confirm_path)
+    write_bars_csv(
+        [
+            make_minute_bar(0, "30m", 14, 30),
+            make_minute_bar(1, "30m", 14, 30, close=9.0),
+        ],
+        risk_path,
+    )
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy")],
+            "60m": [],
+            "30m": [make_signal(day + timedelta(days=1), "CHAN_STRUCT_SELL_T3", "sell", -44, "third-sell", price=9.0)],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        min_risk_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="daily_anchor",
+        lower_level_policy="confirm_then_risk",
+        risk_profit_threshold_pct=999.0,
+        risk_drawdown_cap_pct=8.0,
+        minute_sell_mode="exit",
+        trade_size=1,
+    )
+
+    strategy.on_bar(make_daily_bar(0, close=10.0))
+    signals = strategy.on_bar(make_daily_bar(1, close=9.0))
+
+    assert [signal.action for signal in signals] == ["sell"]
+    assert signals[0].volume == 3
+    assert "PROFIT_RISK_30M" in signals[0].reason
     assert strategy.position_units == 0
 
 

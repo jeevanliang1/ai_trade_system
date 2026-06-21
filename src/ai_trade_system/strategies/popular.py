@@ -57,7 +57,7 @@ CHAN_VOLUME_WEAK_EXIT_MODES = {"reduce", "exit", "ignore"}
 CHAN_MULTI_LEVEL_POLICIES = {"confirm_then_risk", "confirm_only"}
 CHAN_MINUTE_MISSING_POLICIES = {"skip_entry", "daily_only"}
 CHAN_MINUTE_SELL_MODES = {"reduce", "exit"}
-CHAN_ENTRY_MODES = ("daily_confirmed", "lower_level_discovery")
+CHAN_ENTRY_MODES = ("daily_confirmed", "lower_level_discovery", "daily_anchor")
 CHAN_CONFIRM_TIMEFRAMES = ("60m", "30m")
 CHAN_RISK_TIMEFRAMES = ("30m", "15m")
 CHAN_SESSION_CLOSE = time(15, 0)
@@ -898,6 +898,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         lower_level_policy: str = "confirm_then_risk",
         minute_missing_policy: str = "skip_entry",
         minute_sell_mode: str = "reduce",
+        risk_profit_threshold_pct: float = 0.0,
         confirm_csv_path: str | Path | None = None,
         risk_csv_path: str | Path | None = None,
         data_root: str | Path = "data/market/a_share",
@@ -933,6 +934,8 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             raise ValueError("min_confirm_score must be non-negative")
         if min_risk_score < 0:
             raise ValueError("min_risk_score must be non-negative")
+        if risk_profit_threshold_pct < 0:
+            raise ValueError("risk_profit_threshold_pct must be non-negative")
         if min_bars < 1:
             raise ValueError("min_bars must be at least 1")
         try:
@@ -983,6 +986,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         self.lower_level_policy = lower_level_policy
         self.minute_missing_policy = minute_missing_policy
         self.minute_sell_mode = minute_sell_mode
+        self.risk_profit_threshold_pct = risk_profit_threshold_pct
         confirm_path = (
             Path(confirm_csv_path)
             if confirm_csv_path is not None
@@ -997,6 +1001,8 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         self.risk_context = self._build_lower_level_context(risk_timeframe, risk_path)
 
     def on_bar(self, bar: Bar) -> list[Signal]:
+        if self.entry_mode == "daily_anchor":
+            return self._daily_anchor_on_bar(bar)
         if bar.symbol != self.symbol:
             return []
 
@@ -1082,6 +1088,107 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             confirm_buy.price,
             f"chan_multilevel:DISCOVERY_{_level_label(self.confirm_timeframe)}:{confirm_buy.kind}:{confirm_buy.reason}",
         )
+
+    def _daily_anchor_on_bar(self, bar: Bar) -> list[Signal]:
+        if bar.symbol != self.symbol:
+            return []
+
+        cutoff = _daily_session_close(bar)
+        confirm_result = self._update_lower_level_context(self.confirm_context, cutoff)
+        risk_result = self._update_lower_level_context(self.risk_context, cutoff)
+        confirm_buy = self._best_signal(confirm_result, bar, "buy", self.min_confirm_score)
+        confirm_sell = self._best_signal(confirm_result, bar, "sell", self.min_confirm_score)
+        risk_signal = self._best_signal(risk_result, bar, "sell", self.min_risk_score)
+
+        position_units_before = self.position_units
+        average_entry_before = self.average_entry_price
+        daily_signals = super().on_bar(bar)
+        if daily_signals:
+            return self._daily_anchor_improve_execution_prices(
+                daily_signals,
+                confirm_buy=confirm_buy,
+                confirm_sell=confirm_sell,
+                risk_signal=risk_signal,
+                position_units_before=position_units_before,
+                average_entry_before=average_entry_before,
+            )
+        if len(self.bars) < self.min_bars:
+            return []
+
+        if (
+            self.in_position
+            and risk_signal is not None
+            and self.lower_level_policy == "confirm_then_risk"
+            and self._profit_risk_allows(risk_signal)
+        ):
+            target_units = 0 if self.minute_sell_mode == "exit" else max(0, self.position_units - 1)
+            return self._emit_position_delta_or_time_exit(
+                target_units,
+                bar,
+                risk_signal.price,
+                f"chan_multilevel:PROFIT_RISK_{_level_label(self.risk_timeframe)}:{risk_signal.kind}:{risk_signal.reason}",
+            )
+
+        return []
+
+    def _daily_anchor_improve_execution_prices(
+        self,
+        daily_signals: list[Signal],
+        *,
+        confirm_buy,
+        confirm_sell,
+        risk_signal,
+        position_units_before: int,
+        average_entry_before: float | None,
+    ) -> list[Signal]:
+        improved: list[Signal] = []
+        for signal in daily_signals:
+            price = signal.price
+            reason = f"chan_multilevel:DAILY_ANCHOR:{signal.reason}"
+            if signal.action == "buy" and confirm_buy is not None and confirm_buy.price < price:
+                price = confirm_buy.price
+                reason = f"chan_multilevel:DAILY_ANCHOR:BUY_EXEC_{_level_label(self.confirm_timeframe)}:{signal.reason}"
+                self._adjust_average_entry_after_buy_price_improvement(
+                    signal,
+                    price,
+                    position_units_before,
+                    average_entry_before,
+                )
+            elif signal.action == "sell":
+                sell_prices = [candidate.price for candidate in (confirm_sell, risk_signal) if candidate is not None]
+                if sell_prices:
+                    best_price = max([price, *sell_prices])
+                    if best_price > price:
+                        price = best_price
+                        reason = f"chan_multilevel:DAILY_ANCHOR:SELL_EXEC_LOWER:{signal.reason}"
+            improved.append(Signal(signal.action, signal.symbol, price, signal.volume, reason))
+        return improved
+
+    def _adjust_average_entry_after_buy_price_improvement(
+        self,
+        signal: Signal,
+        improved_price: float,
+        position_units_before: int,
+        average_entry_before: float | None,
+    ) -> None:
+        bought_units = signal.volume // self.trade_size
+        if bought_units <= 0:
+            return
+        if position_units_before <= 0 or average_entry_before is None:
+            self.average_entry_price = improved_price
+            return
+        total_units = position_units_before + bought_units
+        self.average_entry_price = (
+            average_entry_before * position_units_before + improved_price * bought_units
+        ) / total_units
+
+    def _profit_risk_allows(self, risk_signal) -> bool:
+        if risk_signal.kind not in {"CHAN_STRUCT_SELL_T1_DIVERGENCE", "CHAN_STRUCT_SELL_CONFIRM", "CHAN_STRUCT_SELL_T3"}:
+            return False
+        if self.average_entry_price is None or self.average_entry_price <= 0:
+            return False
+        profit_pct = (risk_signal.price / self.average_entry_price - 1) * 100
+        return profit_pct >= self.risk_profit_threshold_pct or profit_pct <= -self.risk_drawdown_cap_pct
 
     def _build_lower_level_context(self, timeframe: str, csv_path: Path) -> ChanLowerLevelContext:
         bars: list[Bar] = []

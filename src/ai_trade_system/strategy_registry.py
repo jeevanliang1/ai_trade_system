@@ -167,7 +167,7 @@ BUILTIN_STRATEGIES = [
         path=None,
         module_name="ai_trade_system.strategies.popular",
         display_name="缠论多级别反转",
-        description="以日线结构作为主信号，可用 60m 或 30m 做入场确认，并用 30m 或 15m 做持仓风险控制；低级别不能独立开仓，只能过滤、减仓或退出。",
+        description="以日线结构作为主锚点，可用 60m 或 30m 做入场确认、高确定性提前发现和执行价优化，并用 30m 或 15m 做持仓风险控制；daily_anchor 模式保留日线买点，不把低级别确认当成硬门槛。",
     ),
 ]
 
@@ -595,9 +595,9 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "risk_drawdown_cap_pct": ParameterGuidance(
         display_name="浮亏加仓阈值",
-        description="当前价格相对策略平均入场价浮亏达到该百分比后，禁止继续加仓但不强制卖出。",
-        increase_effect="调大后允许更深浮亏时继续加仓，交易更激进。",
-        decrease_effect="调小后更早停止加仓，风险预算更保守。",
+        description="当前价格相对策略平均入场价浮亏达到该百分比后，禁止继续加仓；daily_anchor 模式遇到低级别强卖点时也可按该阈值防守退出。",
+        increase_effect="调大后允许更深浮亏时继续加仓或等待低级别防守确认，交易更激进。",
+        decrease_effect="调小后更早停止加仓并更早允许低级别防守退出，风险预算更保守。",
     ),
     "divergence_confirm_units": ParameterGuidance(
         display_name="背驰确认目标仓位",
@@ -633,10 +633,10 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "entry_mode": ParameterGuidance(
         display_name="入场模式",
-        description="控制多级别入场语义：daily_confirmed 要求日线先出买点再由下级别确认；lower_level_discovery 允许下级别高确定性买点在日线未出买点但背景未转空时先开试探仓。",
-        increase_effect="该参数不是数值大小；lower_level_discovery 更进攻，可能更早发现反转机会并增加交易。",
+        description="控制多级别入场语义：daily_confirmed 要求日线先出买点再由下级别确认；lower_level_discovery 允许下级别高确定性买点提前试探；daily_anchor 保留日线原始买卖点，并用低级别改善执行价和辅助防守。",
+        increase_effect="该参数不是数值大小；daily_anchor 更贴近大级别定方向、小级别找买卖点，lower_level_discovery 更偏纯进攻发现。",
         decrease_effect="该参数不是数值大小；daily_confirmed 更保守，更偏过滤日线买点。",
-        options=("daily_confirmed", "lower_level_discovery"),
+        options=("daily_confirmed", "lower_level_discovery", "daily_anchor"),
     ),
     "confirm_csv_path": ParameterGuidance(
         display_name="确认级别CSV",
@@ -670,6 +670,12 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         increase_effect="该参数不是数值大小；exit 更保守，会在风控触发时清仓。",
         decrease_effect="该参数不是数值大小；reduce 更偏保留底仓，只降低风险暴露。",
         options=("reduce", "exit"),
+    ),
+    "risk_profit_threshold_pct": ParameterGuidance(
+        display_name="浮盈风控阈值",
+        description="daily_anchor 模式下，低级别卖点只有在相对平均入场价达到该浮盈百分比后才触发防守减仓或退出。",
+        increase_effect="调大后低级别防守更少介入，主级别趋势运行空间更大。",
+        decrease_effect="调小后更早用低级别风险信号保护利润，但也更可能提前卖出。",
     ),
     "min_daily_score": ParameterGuidance(
         display_name="日线最低分",
