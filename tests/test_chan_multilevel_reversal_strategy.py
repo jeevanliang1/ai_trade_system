@@ -146,6 +146,59 @@ def test_chan_multilevel_daily_only_fallback_preserves_daily_buy_when_configured
     assert "DAILY_FALLBACK" in signals[0].reason
 
 
+def test_chan_multilevel_daily_only_fallback_when_minute_fixture_starts_later(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm.csv"
+    risk_path = tmp_path / "risk.csv"
+    write_bars_csv([make_minute_bar(1, "30m", 10, 0)], confirm_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {"daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy")]},
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        minute_missing_policy="daily_only",
+    )
+
+    signals = strategy.on_bar(make_daily_bar(0))
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert "DAILY_FALLBACK" in signals[0].reason
+    assert ("30m", datetime(2024, 1, 2, 10, 0)) not in seen
+
+
+def test_chan_multilevel_skip_entry_still_blocks_when_minute_fixture_starts_later(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm.csv"
+    risk_path = tmp_path / "risk.csv"
+    write_bars_csv([make_minute_bar(1, "30m", 10, 0)], confirm_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {"daily": [make_signal(day, "CHAN_STRUCT_BUY_T3", "buy", 42, "third-buy")]},
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        minute_missing_policy="skip_entry",
+    )
+
+    assert strategy.on_bar(make_daily_bar(0)) == []
+    assert ("30m", datetime(2024, 1, 2, 10, 0)) not in seen
+
+
 def test_chan_multilevel_daily_buy_requires_30m_confirmation(monkeypatch, tmp_path):
     day = date(2024, 1, 1)
     confirm_path = tmp_path / "confirm.csv"

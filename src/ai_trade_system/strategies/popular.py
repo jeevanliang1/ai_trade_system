@@ -86,6 +86,10 @@ class ChanLowerLevelContext:
     def has_data(self) -> bool:
         return bool(self.bars)
 
+    @property
+    def has_consumed_data(self) -> bool:
+        return self.next_index > 0
+
 
 class RsiMeanReversionStrategy(Strategy):
     def __init__(
@@ -1025,7 +1029,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
 
         confirm_buy = self._best_signal(confirm_result, bar, "buy", self.min_confirm_score)
         if confirm_buy is None:
-            if self.minute_missing_policy != "daily_only" or self.confirm_context.has_data:
+            if self.minute_missing_policy != "daily_only" or self.confirm_context.has_consumed_data:
                 return self._time_exit_if_needed(bar)
             target_units = self._cap_target_units(daily_buy, daily_result, self._target_units_for_signal(daily_buy))
             return self._emit_position_delta_or_time_exit(
