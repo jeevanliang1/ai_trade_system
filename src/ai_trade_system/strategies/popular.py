@@ -57,6 +57,7 @@ CHAN_VOLUME_WEAK_EXIT_MODES = {"reduce", "exit", "ignore"}
 CHAN_MULTI_LEVEL_POLICIES = {"confirm_then_risk", "confirm_only"}
 CHAN_MINUTE_MISSING_POLICIES = {"skip_entry", "daily_only"}
 CHAN_MINUTE_SELL_MODES = {"reduce", "exit"}
+CHAN_ENTRY_MODES = ("daily_confirmed", "lower_level_discovery")
 CHAN_CONFIRM_TIMEFRAMES = ("60m", "30m")
 CHAN_RISK_TIMEFRAMES = ("30m", "15m")
 CHAN_SESSION_CLOSE = time(15, 0)
@@ -893,6 +894,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         min_risk_score: float = 24.0,
         confirm_timeframe: str = "30m",
         risk_timeframe: str = "15m",
+        entry_mode: str = "daily_confirmed",
         lower_level_policy: str = "confirm_then_risk",
         minute_missing_policy: str = "skip_entry",
         minute_sell_mode: str = "reduce",
@@ -917,6 +919,8 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         sell_confirm_units: int = 1,
         trade_size: int = 100,
     ) -> None:
+        if entry_mode not in CHAN_ENTRY_MODES:
+            raise ValueError(f"entry_mode must be one of: {_timeframe_options(CHAN_ENTRY_MODES)}")
         if lower_level_policy not in CHAN_MULTI_LEVEL_POLICIES:
             raise ValueError("lower_level_policy must be one of: confirm_only, confirm_then_risk")
         if minute_missing_policy not in CHAN_MINUTE_MISSING_POLICIES:
@@ -975,6 +979,7 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
         self.min_risk_score = min_risk_score
         self.confirm_timeframe = confirm_timeframe
         self.risk_timeframe = risk_timeframe
+        self.entry_mode = entry_mode
         self.lower_level_policy = lower_level_policy
         self.minute_missing_policy = minute_missing_policy
         self.minute_sell_mode = minute_sell_mode
@@ -1033,11 +1038,19 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
                 f"chan_multilevel:{sell_level}:{sell_signal.kind}:{sell_signal.reason}",
             )
 
+        confirm_buy = self._best_signal(confirm_result, bar, "buy", self.min_confirm_score)
         daily_buy = self._best_signal(daily_result, bar, "buy", self.min_daily_score)
         if daily_buy is None:
+            if self.entry_mode == "lower_level_discovery":
+                return self._lower_level_discovery_buy(
+                    daily_sell=daily_sell,
+                    confirm_buy=confirm_buy,
+                    risk_signal=risk_signal,
+                    confirm_result=confirm_result,
+                    bar=bar,
+                )
             return self._time_exit_if_needed(bar)
 
-        confirm_buy = self._best_signal(confirm_result, bar, "buy", self.min_confirm_score)
         if confirm_buy is None:
             if self.minute_missing_policy != "daily_only" or self.confirm_context.has_consumed_data:
                 return self._time_exit_if_needed(bar)
@@ -1057,6 +1070,17 @@ class ChanMultiLevelReversalStrategy(ChanStructureStrategy):
             bar,
             confirm_buy.price,
             f"chan_multilevel:CONFIRM_{_level_label(self.confirm_timeframe)}:{daily_buy.kind}+{confirm_buy.kind}:{daily_buy.reason}",
+        )
+
+    def _lower_level_discovery_buy(self, daily_sell, confirm_buy, risk_signal, confirm_result, bar: Bar) -> list[Signal]:
+        if daily_sell is not None or confirm_buy is None or risk_signal is not None:
+            return self._time_exit_if_needed(bar)
+        target_units = self._cap_target_units(confirm_buy, confirm_result, self._target_units_for_signal(confirm_buy))
+        return self._emit_position_delta_or_time_exit(
+            target_units,
+            bar,
+            confirm_buy.price,
+            f"chan_multilevel:DISCOVERY_{_level_label(self.confirm_timeframe)}:{confirm_buy.kind}:{confirm_buy.reason}",
         )
 
     def _build_lower_level_context(self, timeframe: str, csv_path: Path) -> ChanLowerLevelContext:

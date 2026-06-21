@@ -289,6 +289,7 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
         "risk_timeframe",
         "confirm_csv_path",
         "risk_csv_path",
+        "entry_mode",
         "lower_level_policy",
         "minute_missing_policy",
         "minute_sell_mode",
@@ -301,6 +302,7 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
 
     assert parameters["exchange"].options == ("SSE", "SZSE")
     assert parameters["adjust"].options == ("qfq", "hfq", "")
+    assert parameters["entry_mode"].options == ("daily_confirmed", "lower_level_discovery")
     assert parameters["confirm_timeframe"].options == ("60m", "30m")
     assert parameters["risk_timeframe"].options == ("30m", "15m")
     assert parameters["lower_level_policy"].options == ("confirm_only", "confirm_then_risk")
@@ -308,6 +310,7 @@ def test_chan_multilevel_reversal_strategy_is_registered_with_guidance():
     assert parameters["minute_sell_mode"].options == ("reduce", "exit")
 
     defaults = {parameter.name: parameter.default for parameter in parameters.values()}
+    assert defaults["entry_mode"] == "daily_confirmed"
     assert defaults["confirm_timeframe"] == "30m"
     assert defaults["risk_timeframe"] == "15m"
     assert defaults["lower_level_policy"] == "confirm_then_risk"

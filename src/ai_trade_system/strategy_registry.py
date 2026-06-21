@@ -631,6 +631,13 @@ PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
         decrease_effect="该参数不是数值大小；应与策略支持的周期和本地行情文件保持一致。",
         options=("30m", "15m"),
     ),
+    "entry_mode": ParameterGuidance(
+        display_name="入场模式",
+        description="控制多级别入场语义：daily_confirmed 要求日线先出买点再由下级别确认；lower_level_discovery 允许下级别高确定性买点在日线未出买点但背景未转空时先开试探仓。",
+        increase_effect="该参数不是数值大小；lower_level_discovery 更进攻，可能更早发现反转机会并增加交易。",
+        decrease_effect="该参数不是数值大小；daily_confirmed 更保守，更偏过滤日线买点。",
+        options=("daily_confirmed", "lower_level_discovery"),
+    ),
     "confirm_csv_path": ParameterGuidance(
         display_name="确认级别CSV",
         description="确认级别行情 CSV 路径；留空时由策略按标的、交易所、周期和复权方式定位托管数据。",

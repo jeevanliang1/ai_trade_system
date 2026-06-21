@@ -95,6 +95,8 @@ def test_chan_multilevel_strategy_rejects_invalid_configuration(tmp_path):
         ChanMultiLevelReversalStrategy("000001", minute_missing_policy="bad")
     with pytest.raises(ValueError, match="minute_sell_mode"):
         ChanMultiLevelReversalStrategy("000001", minute_sell_mode="bad")
+    with pytest.raises(ValueError, match="entry_mode"):
+        ChanMultiLevelReversalStrategy("000001", entry_mode="bad")
     with pytest.raises(ValueError, match="min_confirm_score"):
         ChanMultiLevelReversalStrategy("000001", min_confirm_score=-1)
     with pytest.raises(ValueError, match="confirm_timeframe"):
@@ -305,6 +307,111 @@ def test_chan_multilevel_bearish_30m_blocks_60m_confirmed_buy(monkeypatch, tmp_p
     assert strategy.on_bar(make_daily_bar(0)) == []
     assert ("60m", datetime(2024, 1, 1, 14, 0)) in seen
     assert ("30m", datetime(2024, 1, 1, 14, 30)) in seen
+
+
+def test_chan_multilevel_lower_level_discovery_buys_without_daily_buy(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [],
+            "60m": [make_signal(day, "CHAN_STRUCT_BUY_CONFIRM", "buy", 38, "first-buy")],
+            "30m": [],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_confirm_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="lower_level_discovery",
+        trade_size=1,
+    )
+
+    signals = strategy.on_bar(make_daily_bar(0))
+
+    assert [signal.action for signal in signals] == ["buy"]
+    assert signals[0].volume == 2
+    assert "DISCOVERY_60M" in signals[0].reason
+    assert strategy.position_units == 2
+    assert ("60m", datetime(2024, 1, 1, 14, 0)) in seen
+    assert ("30m", datetime(2024, 1, 1, 14, 30)) in seen
+
+
+def test_chan_multilevel_lower_level_discovery_respects_daily_bearish_background(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [make_signal(day, "CHAN_STRUCT_SELL_T3", "sell", -42, "third-sell")],
+            "60m": [make_signal(day, "CHAN_STRUCT_BUY_CONFIRM", "buy", 38, "first-buy")],
+            "30m": [],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_daily_score=20,
+        min_confirm_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="lower_level_discovery",
+    )
+
+    assert strategy.on_bar(make_daily_bar(0)) == []
+    assert strategy.position_units == 0
+
+
+def test_chan_multilevel_lower_level_discovery_respects_risk_reversal(monkeypatch, tmp_path):
+    day = date(2024, 1, 1)
+    confirm_path = tmp_path / "confirm-60m.csv"
+    risk_path = tmp_path / "risk-30m.csv"
+    write_bars_csv([make_minute_bar(0, "60m", 14, 0)], confirm_path)
+    write_bars_csv([make_minute_bar(0, "30m", 14, 30)], risk_path)
+    seen: list[tuple[str, object]] = []
+    patch_multilevel_analyzers(
+        monkeypatch,
+        {
+            "daily": [],
+            "60m": [make_signal(day, "CHAN_STRUCT_BUY_CONFIRM", "buy", 38, "first-buy")],
+            "30m": [make_signal(day, "CHAN_STRUCT_SELL_T3", "sell", -35, "third-sell")],
+        },
+        seen,
+    )
+    strategy = ChanMultiLevelReversalStrategy(
+        "000001",
+        min_bars=1,
+        lookback=5,
+        min_confirm_score=20,
+        min_risk_score=20,
+        confirm_timeframe="60m",
+        risk_timeframe="30m",
+        confirm_csv_path=str(confirm_path),
+        risk_csv_path=str(risk_path),
+        entry_mode="lower_level_discovery",
+    )
+
+    assert strategy.on_bar(make_daily_bar(0)) == []
+    assert strategy.position_units == 0
 
 
 def test_chan_multilevel_bearish_15m_blocks_confirmed_buy(monkeypatch, tmp_path):
