@@ -8,6 +8,7 @@ import type {
   PlatformSettings,
   PortfolioPreset,
   PortfolioRequest,
+  RealtimeMonitorState,
   ResearchSignalPreview,
   RiskStatus,
   SignalsResponse,
@@ -34,6 +35,7 @@ export type PlatformState = {
   aiPrompt: string | null;
   riskStatus: RiskStatus | null;
   paper: PaperResponse | null;
+  realtime: RealtimeMonitorState | null;
   message: string;
   busy: boolean;
   activeBacktestMode: "single" | "portfolio" | null;
@@ -60,6 +62,9 @@ export type PlatformActions = {
   runPaper: (mode?: "single" | "portfolio") => Promise<void>;
   loadPaperEvents: () => Promise<void>;
   evaluateRisk: () => Promise<void>;
+  startRealtimeMonitor: (pollIntervalSeconds?: number) => Promise<void>;
+  stopRealtimeMonitor: () => Promise<void>;
+  refreshRealtimeMonitor: () => Promise<void>;
 };
 
 export type PageProps = {

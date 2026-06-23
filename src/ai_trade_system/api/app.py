@@ -10,6 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import service
 from .schemas import (
     AIResearchRequest,
+    AgentApprovalRequest,
+    AgentMemoryPatchRequest,
+    AgentMemoryRequest,
+    AgentPlanPreviewRequest,
+    AgentPlannerPolicyRequest,
+    AgentSkillPatchRequest,
+    AgentSkillRequest,
+    AgentTaskRequest,
     AutomationConfigRequest,
     BacktestRequest,
     DataRequest,
@@ -17,6 +25,7 @@ from .schemas import (
     DemoDataRequest,
     PaperRunRequest,
     PortfolioPreviewRequest,
+    RealtimeStartRequest,
     ResearchSignalBatchRequest,
     ResearchSignalsRequest,
     RiskEvaluateRequest,
@@ -71,8 +80,8 @@ def create_app() -> FastAPI:
         return _handle(lambda: service.download_data(request))
 
     @app.get("/api/data/managed")
-    def managed_data() -> dict[str, Any]:
-        return _handle(service.list_managed_data)
+    def managed_data(adjust: str = "qfq", timeframe: str = "daily") -> dict[str, Any]:
+        return _handle(lambda: service.list_managed_data(adjust=adjust, timeframe=timeframe))
 
     @app.post("/api/data/update-watchlist")
     def update_watchlist_data(request: DataUpdateWatchlistRequest) -> dict[str, Any]:
@@ -105,6 +114,90 @@ def create_app() -> FastAPI:
     @app.put("/api/automation/config")
     def automation_config(request: AutomationConfigRequest) -> dict[str, Any]:
         return _handle(lambda: service.update_automation_config(request.model_dump(exclude_none=True)))
+
+    @app.post("/api/realtime/start")
+    def realtime_start(request: RealtimeStartRequest) -> dict[str, Any]:
+        return _handle(lambda: service.start_realtime_monitor(request))
+
+    @app.post("/api/realtime/stop")
+    def realtime_stop() -> dict[str, Any]:
+        return _handle(service.stop_realtime_monitor)
+
+    @app.get("/api/realtime/status")
+    def realtime_status() -> dict[str, Any]:
+        return _handle(service.realtime_monitor_status)
+
+    @app.get("/api/realtime/events")
+    def realtime_events(limit: int = 100) -> dict[str, Any]:
+        return _handle(lambda: service.realtime_monitor_events(limit))
+
+    @app.get("/api/agent/tools")
+    def agent_tools() -> dict[str, Any]:
+        return _handle(service.agent_tools)
+
+    @app.get("/api/agent/tasks")
+    def agent_tasks(limit: int = 50) -> dict[str, Any]:
+        return _handle(lambda: service.agent_tasks(limit))
+
+    @app.post("/api/agent/tasks")
+    def agent_create_task(request: AgentTaskRequest) -> dict[str, Any]:
+        return _handle(lambda: service.create_agent_task(request.prompt, request.source, request.context))
+
+    @app.get("/api/agent/tasks/{task_id}")
+    def agent_task(task_id: str) -> dict[str, Any]:
+        return _handle(lambda: service.agent_task(task_id))
+
+    @app.get("/api/agent/tasks/{task_id}/trace")
+    def agent_trace(task_id: str) -> dict[str, Any]:
+        return _handle(lambda: service.agent_trace(task_id))
+
+    @app.post("/api/agent/tasks/{task_id}/approve")
+    def agent_approve_task(task_id: str, request: AgentApprovalRequest) -> dict[str, Any]:
+        return _handle(lambda: service.approve_agent_task(task_id, request.approval))
+
+    @app.get("/api/agent/governance/memories")
+    def agent_memories() -> dict[str, Any]:
+        return _handle(service.agent_memories)
+
+    @app.post("/api/agent/governance/memories")
+    def agent_create_memory(request: AgentMemoryRequest) -> dict[str, Any]:
+        return _handle(lambda: service.create_agent_memory(request.model_dump()))
+
+    @app.put("/api/agent/governance/memories/{memory_id}")
+    def agent_update_memory(memory_id: str, request: AgentMemoryPatchRequest) -> dict[str, Any]:
+        return _handle(lambda: service.update_agent_memory(memory_id, request.model_dump(exclude_none=True)))
+
+    @app.delete("/api/agent/governance/memories/{memory_id}")
+    def agent_delete_memory(memory_id: str) -> dict[str, Any]:
+        return _handle(lambda: service.delete_agent_memory(memory_id))
+
+    @app.get("/api/agent/governance/skills")
+    def agent_skills() -> dict[str, Any]:
+        return _handle(service.agent_skills)
+
+    @app.post("/api/agent/governance/skills")
+    def agent_create_skill(request: AgentSkillRequest) -> dict[str, Any]:
+        return _handle(lambda: service.create_agent_skill(request.model_dump()))
+
+    @app.put("/api/agent/governance/skills/{skill_id}")
+    def agent_update_skill(skill_id: str, request: AgentSkillPatchRequest) -> dict[str, Any]:
+        return _handle(lambda: service.update_agent_skill(skill_id, request.model_dump(exclude_none=True)))
+
+    @app.delete("/api/agent/governance/skills/{skill_id}")
+    def agent_delete_skill(skill_id: str) -> dict[str, Any]:
+        return _handle(lambda: service.delete_agent_skill(skill_id))
+
+    @app.get("/api/agent/governance/policy")
+    def agent_policy() -> dict[str, Any]:
+        return _handle(service.agent_policy)
+
+    @app.put("/api/agent/governance/policy")
+    def agent_update_policy(request: AgentPlannerPolicyRequest) -> dict[str, Any]:
+        return _handle(lambda: service.update_agent_policy(request.model_dump(exclude_none=True)))
+
+    @app.post("/api/agent/governance/plan-preview")
+    def agent_plan_preview(request: AgentPlanPreviewRequest) -> dict[str, Any]:
+        return _handle(lambda: service.agent_plan_preview(request.prompt, request.context))
 
     @app.get("/api/strategies")
     def strategies() -> list[dict[str, Any]]:

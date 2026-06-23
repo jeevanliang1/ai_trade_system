@@ -3,11 +3,14 @@ import {
   ArrowRight,
   BarChart3,
   Bot,
+  BrainCircuit,
+  Command,
   Database,
   Gauge,
   Home,
   Layers3,
   NotebookTabs,
+  RadioTower,
   Radar,
   ShieldCheck,
   SlidersHorizontal,
@@ -21,6 +24,8 @@ import { InspectorPanel } from "../components/InspectorPanel";
 import { StockQuickSelect } from "../components/StockQuickSelect";
 import { ToolbarButton } from "../components/ToolbarButton";
 import { AIPage } from "../pages/AIPage";
+import { AgentGovernancePage } from "../pages/AgentGovernancePage";
+import { AgentPage } from "../pages/AgentPage";
 import { AutomationPage } from "../pages/AutomationPage";
 import { BacktestPage } from "../pages/BacktestPage";
 import { DataPage } from "../pages/DataPage";
@@ -28,6 +33,7 @@ import { OverviewPage } from "../pages/OverviewPage";
 import { PaperPage } from "../pages/PaperPage";
 import { PortfolioPage } from "../pages/PortfolioPage";
 import { RiskPage } from "../pages/RiskPage";
+import { RealtimePage } from "../pages/RealtimePage";
 import { SignalRadarPage } from "../pages/SignalRadarPage";
 import { StockConfigPage } from "../pages/StockConfigPage";
 import { StrategyPage } from "../pages/StrategyPage";
@@ -57,12 +63,15 @@ export const NAV_GROUPS = [
     label: "验证",
     items: [
       { id: "backtest", label: "回测中心", icon: BarChart3 },
+      { id: "realtime", label: "实时盯盘", icon: RadioTower },
       { id: "paper", label: "纸面交易", icon: NotebookTabs }
     ]
   },
   {
     label: "辅助",
     items: [
+      { id: "agent", label: "AI指挥台", icon: Command },
+      { id: "agent-governance", label: "Agent治理", icon: BrainCircuit },
       { id: "ai", label: "AI研究员", icon: Bot },
       { id: "risk", label: "风控", icon: ShieldCheck },
       { id: "automation", label: "自动任务", icon: TimerReset }
@@ -87,6 +96,7 @@ const DEFAULT_SETTINGS: PlatformSettings = {
   start_date: DEFAULT_RANGE.start_date,
   end_date: DEFAULT_RANGE.end_date,
   adjust: "qfq",
+  timeframe: "daily",
   csv_path: "data/000001_daily.csv",
   log_path: "logs/paper_events.jsonl",
   initial_cash: 100000,
@@ -138,6 +148,7 @@ function initialState(): PlatformState {
     aiPrompt: null,
     riskStatus: { ok: true, warnings: [], enabled: true },
     paper: null,
+    realtime: null,
     message: "准备就绪",
     busy: false,
     activeBacktestMode: null,
@@ -190,9 +201,10 @@ export function AppShell() {
             start_date: current.settings.start_date,
             end_date: current.settings.end_date,
             adjust: current.settings.adjust,
+            timeframe: current.settings.timeframe,
             if_stale: true
           });
-          const managed = await api.managedData();
+          const managed = await api.managedData(current.settings.timeframe, current.settings.adjust);
           return { managedData: managed.files };
         }),
       setSelectedStrategyId: (id) => {
@@ -230,7 +242,7 @@ export function AppShell() {
           return { bars: data.bars, dataSummary: data.summary };
         }),
       downloadData: () =>
-        runTask(setState, "下载日线数据", async (current) => {
+        runTask(setState, "下载行情数据", async (current) => {
           const data = await api.downloadData(current.settings);
           const patch: Partial<PlatformState> = { bars: data.bars, dataSummary: data.summary };
           if (data.managed_file) {
@@ -269,7 +281,24 @@ export function AppShell() {
       evaluateRisk: () =>
         runTask(setState, "检查风控", async (current) => ({
           riskStatus: await api.evaluateRisk({ max_drawdown_pct: current.backtest?.metrics.max_drawdown_pct ?? 0 }, current.settings)
-        }))
+        })),
+      startRealtimeMonitor: (pollIntervalSeconds = 30) =>
+        runTask(setState, "启动实时盯盘", async (current) => {
+          const status = await api.startRealtimeMonitor(current.settings, currentSelection(current), pollIntervalSeconds);
+          const events = await api.realtimeEvents(100);
+          return { realtime: { status, events: events.events } };
+        }),
+      stopRealtimeMonitor: () =>
+        runTask(setState, "停止实时盯盘", async () => {
+          const status = await api.stopRealtimeMonitor();
+          const events = await api.realtimeEvents(100);
+          return { realtime: { status, events: events.events } };
+        }),
+      refreshRealtimeMonitor: () =>
+        runTask(setState, "刷新实时盯盘", async () => {
+          const [status, events] = await Promise.all([api.realtimeStatus(), api.realtimeEvents(100)]);
+          return { realtime: { status, events: events.events } };
+        })
     }),
     [state.strategies]
   );
@@ -283,6 +312,9 @@ export function AppShell() {
     portfolio: <PortfolioPage {...pageProps} />,
     backtest: <BacktestPage {...pageProps} />,
     radar: <SignalRadarPage {...pageProps} />,
+    realtime: <RealtimePage {...pageProps} />,
+    agent: <AgentPage />,
+    "agent-governance": <AgentGovernancePage />,
     ai: <AIPage {...pageProps} />,
     paper: <PaperPage {...pageProps} />,
     risk: <RiskPage {...pageProps} />,
@@ -379,7 +411,10 @@ function nextStepFor(page: PageId): { label: string; page: PageId } {
   if (page === "radar") return { label: "去数据中心", page: "data" };
   if (page === "strategies") return { label: "去回测中心", page: "backtest" };
   if (page === "portfolio") return { label: "去回测中心", page: "backtest" };
-  if (page === "backtest") return { label: "去纸面交易", page: "paper" };
+  if (page === "backtest") return { label: "去实时盯盘", page: "realtime" };
+  if (page === "realtime") return { label: "去纸面交易", page: "paper" };
+  if (page === "agent") return { label: "去AI研究员", page: "ai" };
+  if (page === "agent-governance") return { label: "去AI指挥台", page: "agent" };
   if (page === "ai") return { label: "去风控", page: "risk" };
   if (page === "risk") return { label: "去纸面交易", page: "paper" };
   if (page === "automation") return { label: "去数据中心", page: "data" };
@@ -392,6 +427,7 @@ function StatusBar({ state }: { state: PlatformState }) {
   return (
     <footer className="statusbar">
       <span>数据：本地CSV</span>
+      <span>周期：{state.settings.timeframe}</span>
       <span>路径：{state.settings.csv_path}</span>
       <span>健康：{health}</span>
       <span>{state.message}</span>
@@ -435,6 +471,7 @@ function applySettings(current: PlatformState, settings: PlatformSettings): Plat
     researchSignals: null,
     backtest: null,
     paper: null,
+    realtime: null,
     message: `已切换数据目标：${settings.symbol} ${settings.exchange}，请加载或下载行情`
   };
 }
@@ -444,7 +481,7 @@ function applyStockSelection(current: PlatformState, stock: Stock): PlatformStat
     ...current.settings,
     symbol: stock.code,
     exchange: stock.exchange,
-    csv_path: managedCsvPath(stock, current.settings.adjust)
+    csv_path: managedCsvPath(stock, current.settings.adjust, current.settings.timeframe)
   };
   const next = applySettings(current, settings);
   return {
@@ -464,14 +501,15 @@ function applyStockSelection(current: PlatformState, stock: Stock): PlatformStat
   };
 }
 
-function managedCsvPath(stock: Stock, adjust: string): string {
+function managedCsvPath(stock: Stock, adjust: string, timeframe: string): string {
   const cleanAdjust = (adjust || "qfq").toLowerCase();
-  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_daily_${cleanAdjust}_latest.csv`;
+  const cleanTimeframe = normalizeTimeframe(timeframe);
+  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_${cleanTimeframe}_${cleanAdjust}_latest.csv`;
 }
 
 function upsertManagedData(files: PlatformState["managedData"], file: PlatformState["managedData"][number]) {
-  const key = `${file.exchange}:${file.code}:${file.adjust}`;
-  const others = files.filter((item) => `${item.exchange}:${item.code}:${item.adjust}` !== key);
+  const key = `${file.exchange}:${file.code}:${file.adjust}:${file.timeframe}`;
+  const others = files.filter((item) => `${item.exchange}:${item.code}:${item.adjust}:${item.timeframe}` !== key);
   return [...others, file];
 }
 
@@ -517,8 +555,24 @@ function dataRequestChanged(previous: PlatformSettings, next: PlatformSettings):
     previous.start_date !== next.start_date ||
     previous.end_date !== next.end_date ||
     previous.adjust !== next.adjust ||
+    previous.timeframe !== next.timeframe ||
     previous.csv_path !== next.csv_path
   );
+}
+
+function normalizeTimeframe(timeframe: string): string {
+  return timeframe || "daily";
+}
+
+function timeframeLabel(timeframe: string): string {
+  return {
+    daily: "日线",
+    "1m": "1分钟",
+    "5m": "5分钟",
+    "15m": "15分钟",
+    "30m": "30分钟",
+    "60m": "60分钟"
+  }[timeframe] ?? timeframe;
 }
 
 async function runTask(

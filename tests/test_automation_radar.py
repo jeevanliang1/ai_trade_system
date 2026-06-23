@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from ai_trade_system.automation import radar
 from ai_trade_system.automation.models import AutomationConfig
 from ai_trade_system.automation.radar import scan_star_radar_candidates
 from ai_trade_system.data import write_bars_csv
@@ -50,3 +51,39 @@ def test_scan_star_radar_candidates_ranks_by_chan_primary_volume_assist(tmp_path
     assert result.top[0].rank == 1
     assert result.top[0].composite_score >= result.top[1].composite_score
     assert result.top[0].reason
+
+
+def test_scan_star_radar_candidates_uses_chan_multilevel_daily_anchor_score(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    stock = StockInfo("688001", "华兴源创", "SSE")
+    _write_stock(stock, [10 + index * 0.05 for index in range(80)], [1000.0] * 80)
+    calls: list[tuple[int, int, int]] = []
+
+    def fake_score(bars, min_bars, lookback):
+        calls.append((len(bars), min_bars, lookback))
+        score = {
+            "total_score": 88.0,
+            "direction": "bullish",
+            "confidence": 0.92,
+            "chan_score": 88.0,
+            "rsi_score": 0,
+            "summary": "多级别日线锚定买入",
+        }
+        latest_signal = {
+            "title": "缠论多级别日线锚定买入",
+            "kind": "CHAN_MULTILEVEL_DAILY_ANCHOR_BUY",
+            "action": "buy",
+            "trading_day": "2026-03-21",
+            "price": 13.95,
+            "reason": "chan_multilevel:DAILY_ANCHOR",
+        }
+        return score, latest_signal, [], {"strategy": {"entry_mode": "daily_anchor"}}
+
+    monkeypatch.setattr(radar, "_chan_multilevel_daily_anchor_score", fake_score, raising=False)
+
+    result = scan_star_radar_candidates([stock], AutomationConfig(top_n=1, min_bars=60, lookback=120))
+
+    assert calls == [(80, 60, 120)]
+    assert result.top[0].chan_signal_title == "缠论多级别日线锚定买入"
+    assert result.top[0].chan_signal_action == "buy"
+    assert result.top[0].composite_score == 88.0

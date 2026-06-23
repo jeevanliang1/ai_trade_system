@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from time import monotonic, sleep
 
 from ai_trade_system import data_manager
 from ai_trade_system.api import service
@@ -16,6 +17,14 @@ from ai_trade_system.stock_catalog import StockInfo, write_stock_catalog
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AI_TRADE_OPENCLAW_RESEARCH_COMMAND", "")
+    monkeypatch.setenv("AI_TRADE_OPENCLAW_NOTIFY_COMMAND", "")
+    monkeypatch.setenv("AI_TRADE_LLM_PROVIDER", "mock")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    service._AGENT_ORCHESTRATOR = None
+    service._AGENT_QUEUE = None
+    service._AGENT_GOVERNANCE = None
+    service._REALTIME_MONITOR = None
     return TestClient(create_app())
 
 
@@ -53,6 +62,7 @@ def _settings_payload() -> dict:
         "start_date": "20220101",
         "end_date": "20250516",
         "adjust": "qfq",
+        "timeframe": "daily",
         "csv_path": "data/000001_daily.csv",
         "log_path": "logs/paper_events.jsonl",
         "initial_cash": 100000.0,
@@ -63,6 +73,78 @@ def _settings_payload() -> dict:
         "min_cash_balance": 0.0,
         "max_position_shares": 50000,
     }
+
+
+def test_realtime_routes_start_status_events_and_stop(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    class FakeRealtimeMonitor:
+        def __init__(self):
+            self.started = False
+            self.started_payload = None
+
+        def start(self, **kwargs):
+            self.started = True
+            self.started_payload = kwargs
+            return self.status()
+
+        def stop(self):
+            self.started = False
+            return self.status()
+
+        def status(self):
+            return {
+                "running": self.started,
+                "started_at": "2026-06-22T10:00:00" if self.started else None,
+                "stopped_at": None if self.started else "2026-06-22T10:01:00",
+                "strategy_id": "builtin:dual_moving_average:DualMovingAverageStrategy" if self.started else None,
+                "symbols": ["000001.SZSE"] if self.started else [],
+                "timeframe": "1m" if self.started else None,
+                "poll_interval_seconds": 1 if self.started else None,
+                "event_count": 1 if self.started else 0,
+                "last_event_at": "2026-06-22T10:00:00" if self.started else None,
+                "last_bar_time": None,
+                "last_error": None,
+            }
+
+        def events(self, limit=100):
+            assert limit == 25
+            return [
+                {
+                    "id": "evt-1",
+                    "event": "monitor_started",
+                    "created_at": "2026-06-22T10:00:00",
+                    "symbols": ["000001.SZSE"],
+                    "timeframe": "1m",
+                }
+            ]
+
+    fake = FakeRealtimeMonitor()
+    monkeypatch.setattr(service, "get_realtime_monitor_service", lambda: fake)
+
+    start_response = client.post(
+        "/api/realtime/start",
+        json={
+            "settings": {**_settings_payload(), "timeframe": "1m"},
+            "strategy": _strategy_payload(),
+            "poll_interval_seconds": 1,
+        },
+    )
+    assert start_response.status_code == 200
+    assert start_response.json()["running"] is True
+    assert fake.started_payload["stocks"][0].code == "000001"
+
+    status_response = client.get("/api/realtime/status")
+    assert status_response.status_code == 200
+    assert status_response.json()["symbols"] == ["000001.SZSE"]
+
+    events_response = client.get("/api/realtime/events?limit=25")
+    assert events_response.status_code == 200
+    assert events_response.json()["events"][0]["event"] == "monitor_started"
+
+    stop_response = client.post("/api/realtime/stop")
+    assert stop_response.status_code == 200
+    assert stop_response.json()["running"] is False
 
 
 def _bar(symbol: str, exchange: str, day: date, close: float, volume: float = 1000) -> Bar:
@@ -163,6 +245,163 @@ def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch)
     assert "短期均线" in fast_window["description"]
     assert "更平滑" in fast_window["increase_effect"]
     assert "更敏感" in fast_window["decrease_effect"]
+
+
+def test_agent_routes_create_list_show_and_approve_tasks(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    tools_response = client.get("/api/agent/tools")
+    assert tools_response.status_code == 200
+    assert {tool["name"] for tool in tools_response.json()["tools"]} >= {
+        "system.snapshot",
+        "research.fundamental",
+        "data.update",
+        "radar.scan",
+        "backtest.run",
+        "risk.evaluate",
+        "paper.run",
+        "agent.report",
+    }
+
+    create_response = client.post(
+        "/api/agent/tasks",
+        json={
+            "prompt": "帮我研究 000001 最近是否值得关注",
+            "source": "weixin",
+            "context": {"symbol": "000001", "exchange": "SZSE"},
+        },
+    )
+    assert create_response.status_code == 200
+    task = create_response.json()["task"]
+    assert task["status"] in {"queued", "running", "waiting_confirmation"}
+    assert task["source"] == "weixin"
+    task = _wait_for_agent_status(client, task["task_id"], {"waiting_confirmation"})
+    assert task["confirmations"][0]["tool_name"] == "research.fundamental"
+
+    approve_research = client.post(f"/api/agent/tasks/{task['task_id']}/approve", json={"approval": "approved"})
+    assert approve_research.status_code == 200
+    task = _wait_for_agent_status(client, task["task_id"], {"completed"})
+    assert task["report_path"].startswith("reports/")
+
+    list_response = client.get("/api/agent/tasks")
+    assert list_response.status_code == 200
+    assert list_response.json()["tasks"][0]["task_id"] == task["task_id"]
+
+    detail_response = client.get(f"/api/agent/tasks/{task['task_id']}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["task"]["prompt"] == "帮我研究 000001 最近是否值得关注"
+
+    trace_response = client.get(f"/api/agent/tasks/{task['task_id']}/trace")
+    assert trace_response.status_code == 200
+    trace_payload = trace_response.json()
+    assert trace_payload["task_id"] == task["task_id"]
+    assert "request_received" in [event["type"] for event in trace_payload["events"]]
+    assert any(event["type"] == "tool_finished" and event["tool_name"] == "agent.report" for event in trace_payload["events"])
+
+    blocked_response = client.post(
+        "/api/agent/tasks",
+        json={"prompt": "帮我实盘买入 000001 一万块", "source": "openclaw"},
+    )
+    blocked = blocked_response.json()["task"]
+    assert blocked["status"] == "blocked"
+    assert blocked["confirmations"][0]["code"] == "LIVE_TRADING_BLOCKED"
+
+    approve_response = client.post(f"/api/agent/tasks/{blocked['task_id']}/approve", json={"approval": "rejected"})
+    assert approve_response.status_code == 200
+    assert approve_response.json()["task"]["confirmations"][0]["status"] == "blocked"
+
+
+def test_agent_governance_routes_manage_memory_skill_policy_and_preview(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    memories_response = client.get("/api/agent/governance/memories")
+    assert memories_response.status_code == 200
+    assert any(memory["id"] == "mem_weekly_scan_reuse" for memory in memories_response.json()["memories"])
+
+    create_memory = client.post(
+        "/api/agent/governance/memories",
+        json={
+            "id": "mem_user_pref_top3",
+            "type": "preference",
+            "scope": "agent",
+            "title": "默认看前三",
+            "content": "用户默认关注周榜前三。",
+            "tags": ["weekly", "preference"],
+            "source": "user",
+            "confidence": "high",
+            "enabled": True,
+        },
+    )
+    assert create_memory.status_code == 200
+    assert create_memory.json()["memory"]["title"] == "默认看前三"
+
+    update_memory = client.put(
+        "/api/agent/governance/memories/mem_user_pref_top3",
+        json={"title": "默认看前五", "enabled": False},
+    )
+    assert update_memory.status_code == 200
+    assert update_memory.json()["memory"]["title"] == "默认看前五"
+    assert update_memory.json()["memory"]["enabled"] is False
+
+    skills_response = client.get("/api/agent/governance/skills")
+    assert skills_response.status_code == 200
+    assert any(skill["id"] == "weekly_scan_share" for skill in skills_response.json()["skills"])
+
+    create_skill = client.post(
+        "/api/agent/governance/skills",
+        json={
+            "id": "risk_first_review",
+            "title": "先风控复核",
+            "description": "对输入指标先做风险检查。",
+            "trigger_terms": ["先风控", "风险复核"],
+            "steps": ["risk.evaluate"],
+            "allowed_tools": ["risk.evaluate"],
+            "required_confirmations": [],
+            "output_format": "risk_report",
+            "enabled": True,
+        },
+    )
+    assert create_skill.status_code == 200
+    assert create_skill.json()["skill"]["steps"] == ["risk.evaluate"]
+
+    policy_response = client.get("/api/agent/governance/policy")
+    assert policy_response.status_code == 200
+    assert policy_response.json()["policy"]["tool_permissions"]["research.batch_fundamental"] == "confirm"
+
+    update_policy = client.put(
+        "/api/agent/governance/policy",
+        json={"max_steps": 6, "tool_permissions": {"share.weixin": "confirm"}},
+    )
+    assert update_policy.status_code == 200
+    assert update_policy.json()["policy"]["max_steps"] == 6
+    assert update_policy.json()["policy"]["tool_permissions"]["share.weixin"] == "confirm"
+
+    preview_response = client.post(
+        "/api/agent/governance/plan-preview",
+        json={"prompt": "给我这周股票扫描结果并完成分享的最终结果", "context": {"source": "weixin"}},
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()["preview"]
+    assert preview["selected_skill"]["id"] == "weekly_scan_share"
+    assert [step["tool"] for step in preview["steps"]] == ["automation.weekly_result", "research.batch_fundamental", "share.weixin"]
+    assert preview["steps"][1]["permission"] == "confirm"
+
+    delete_response = client.delete("/api/agent/governance/memories/mem_user_pref_top3")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+
+
+def _wait_for_agent_status(client: TestClient, task_id: str, statuses: set[str]) -> dict:
+    deadline = monotonic() + 3
+    latest: dict | None = None
+    while monotonic() < deadline:
+        response = client.get(f"/api/agent/tasks/{task_id}")
+        assert response.status_code == 200
+        latest = response.json()["task"]
+        if latest["status"] in statuses:
+            return latest
+        sleep(0.05)
+    raise AssertionError(f"Agent task {task_id} did not reach {statuses}; latest={latest}")
 
 
 def test_bootstrap_returns_portfolio_presets_for_strategy_combinations(tmp_path, monkeypatch):
@@ -610,6 +849,48 @@ def test_demo_data_contains_mixed_rising_and_falling_candles(tmp_path, monkeypat
     assert len(falling) >= 20
 
 
+def test_download_data_route_supports_minute_timeframe(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    def fake_fetch(symbol: str, start_date: str, end_date: str, exchange: str, adjust: str, timeframe: str):
+        assert (symbol, start_date, end_date, exchange, adjust, timeframe) == ("000001", "20240102", "20240102", "SZSE", "qfq", "5m")
+        return [
+            Bar(
+                symbol=symbol,
+                exchange=exchange,
+                trading_day=date(2024, 1, 2),
+                open_price=10,
+                high_price=10.2,
+                low_price=9.9,
+                close_price=10.1,
+                volume=1000,
+                turnover=10100,
+                timestamp=datetime(2024, 1, 2, 9, 31),
+                timeframe="5m",
+            )
+        ]
+
+    monkeypatch.setattr(service, "fetch_akshare_bars", fake_fetch)
+    settings = {
+        **_settings_payload(),
+        "start_date": "20240102",
+        "end_date": "20240102",
+        "timeframe": "5m",
+        "csv_path": "data/market/a_share/SZSE/000001/000001_SZSE_5m_qfq_latest.csv",
+    }
+
+    response = client.post("/api/data/download", json={"settings": settings})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["timeframe"] == "5m"
+    assert payload["summary"]["start"] == "2024-01-02 09:31:00"
+    assert payload["bars"][0]["timestamp"] == "2024-01-02T09:31:00"
+    assert payload["bars"][0]["timeframe"] == "5m"
+    assert payload["managed_file"]["timeframe"] == "5m"
+    assert Path(settings["csv_path"]).exists()
+
+
 def test_research_signals_preview_route_returns_blocker_for_short_demo_data(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     settings = _settings_payload()
@@ -645,7 +926,7 @@ def test_research_signals_batch_route_scans_local_csv_catalog(tmp_path, monkeypa
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["score_mode"] == "research"
+    assert payload["score_mode"] == "chan_multilevel_daily_anchor"
     assert payload["scanned"] == 3
     assert payload["available"] == 2
     assert payload["missing"] == 1
@@ -964,6 +1245,36 @@ def test_research_signals_batch_route_ranks_chan_structure_from_managed_csv(tmp_
     assert payload["rows"][0]["score"]["total_score"] > abs(payload["rows"][1]["score"]["total_score"])
 
 
+def test_research_signals_batch_route_accepts_chan_multilevel_daily_anchor_mode(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    data_dir = tmp_path / "data"
+    strong = StockInfo("688981", "中芯国际", "SSE")
+    weak = StockInfo("000858", "五粮液", "SZSE")
+    write_stock_catalog([weak, strong], data_dir / "a_share_stocks.csv")
+    _write_managed_bars(strong, _chan_structure_closes())
+    _write_managed_bars(weak, _momentum_closes(20.0, 20.8, 82))
+
+    response = client.post(
+        "/api/research/signals/batch",
+        json={
+            "settings": _settings_payload(),
+            "query": "",
+            "limit": 2,
+            "min_bars": 60,
+            "lookback": 82,
+            "universe": "catalog",
+            "score_mode": "chan_multilevel_daily_anchor",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["score_mode"] == "chan_multilevel_daily_anchor"
+    assert payload["available"] == 2
+    assert payload["rows"][0]["score"]["summary"]
+    assert payload["rows"][0]["preview"]["strategy"]["entry_mode"] == "daily_anchor"
+
+
 def test_research_signals_preview_route_returns_signals_for_demo_data(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     settings = _settings_payload()
@@ -1002,6 +1313,8 @@ def test_automation_status_route_returns_config_and_runs(tmp_path, monkeypatch):
     assert payload["config"]["enabled"] is True
     assert payload["weekly_top10_count"] == 0
     assert payload["latest_daily_judgment_count"] == 0
+    assert payload["recent_runs"] == []
+    assert payload["diagnostics"]
 
 
 def test_automation_config_route_updates_enabled_and_weights(tmp_path, monkeypatch):

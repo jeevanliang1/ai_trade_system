@@ -20,6 +20,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
       start_date: "20240618",
       end_date: "20260618",
       adjust: "qfq",
+      timeframe: "daily",
       csv_path: "data/000001_daily.csv",
       log_path: "logs/paper_events.jsonl",
       initial_cash: 100000,
@@ -39,6 +40,7 @@ function makeProps(overrides: Partial<PlatformState> = {}, actionOverrides: Part
         name: "平安银行",
         exchange: "SZSE",
         adjust: "qfq",
+        timeframe: "daily",
         latest_path: "data/market/a_share/SZSE/000001/000001_SZSE_daily_qfq_latest.csv",
         manifest_path: "data/market/a_share/SZSE/000001/manifest.json",
         exists: true,
@@ -140,7 +142,7 @@ test("StockConfigPage shows managed data status and triggers watchlist data upda
   render(<StockConfigPage {...makeProps({}, { updateWatchlistData })} />);
 
   expect(screen.getByText("数据已更新至 2026-06-18")).toBeInTheDocument();
-  expect(screen.getByText("488 行")).toBeInTheDocument();
+  expect(screen.getByText("488 行 · daily")).toBeInTheDocument();
   expect(screen.getByText("data/market/a_share/SZSE/000001/000001_SZSE_daily_qfq_latest.csv")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "更新全部自选股数据" }));

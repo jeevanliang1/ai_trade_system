@@ -34,12 +34,13 @@ class PaperTradingService:
         self.strategy.on_start()
         try:
             for bar in bars:
+                bar_time = bar.timestamp or bar.trading_day
                 marks[bar.symbol] = bar.close_price
                 for signal in self.strategy.on_bar(bar):
                     if signal.action == "buy":
-                        result = self.broker.buy(signal.symbol, signal.price, signal.volume, trading_day=bar.trading_day)
+                        result = self.broker.buy(signal.symbol, signal.price, signal.volume, trading_day=bar_time)
                     else:
-                        result = self.broker.sell(signal.symbol, signal.price, signal.volume, trading_day=bar.trading_day)
+                        result = self.broker.sell(signal.symbol, signal.price, signal.volume, trading_day=bar_time)
 
                     events.append(
                         {
@@ -49,14 +50,14 @@ class PaperTradingService:
                             "price": result.price,
                             "volume": result.volume,
                             "reason": result.reason,
-                            "trading_day": bar.trading_day.isoformat(),
+                            "trading_day": bar_time.isoformat(),
                         }
                     )
 
                 events.append(
                     {
                         "event": "equity",
-                        "trading_day": bar.trading_day.isoformat(),
+                        "trading_day": bar_time.isoformat(),
                         "equity": self.broker.equity(marks),
                         "cash": self.broker.cash,
                     }

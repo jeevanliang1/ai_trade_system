@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class Trade:
     price: float
     volume: int
     commission: float
-    trading_day: date | None = None
+    trading_day: date | datetime | None = None
 
 
 @dataclass
@@ -44,7 +44,7 @@ class PaperBroker:
     def __post_init__(self) -> None:
         self.cash = float(self.initial_cash)
 
-    def buy(self, symbol: str, price: float, volume: int, trading_day: date | None = None) -> OrderResult:
+    def buy(self, symbol: str, price: float, volume: int, trading_day: date | datetime | None = None) -> OrderResult:
         execution_price = price + self.slippage
         notional = execution_price * volume
         commission = notional * self.commission_rate
@@ -60,7 +60,7 @@ class PaperBroker:
         self.trades.append(Trade("buy", symbol, execution_price, volume, commission, trading_day))
         return OrderResult(True, "buy", symbol, execution_price, volume)
 
-    def sell(self, symbol: str, price: float, volume: int, trading_day: date | None = None) -> OrderResult:
+    def sell(self, symbol: str, price: float, volume: int, trading_day: date | datetime | None = None) -> OrderResult:
         held = self.position(symbol)
         if held <= 0:
             return OrderResult(False, "sell", symbol, price, volume, "no position")

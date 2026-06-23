@@ -9,8 +9,17 @@ from typing import TYPE_CHECKING, Any, Iterable
 import pandas as pd
 
 from ai_trade_system.analytics import calculate_backtest_metrics, calculate_signal_attribution, drawdown_series
+from ai_trade_system.agent import AgentOrchestrator
+from ai_trade_system.agent.governance import (
+    AgentGovernanceService,
+    AgentGovernanceStore,
+    AgentMemory,
+    AgentPlannerPolicy,
+    AgentSkill,
+)
+from ai_trade_system.agent.queue import AgentTaskQueue
 from ai_trade_system.backtest import BacktestConfig, run_backtest
-from ai_trade_system.data import fetch_akshare_daily_bars, read_bars_csv, write_bars_csv
+from ai_trade_system.data import fetch_akshare_bars, normalize_timeframe, read_bars_csv, write_bars_csv
 from ai_trade_system.data_manager import (
     data_file_for_stock,
     list_watchlist_data_status,
@@ -19,11 +28,12 @@ from ai_trade_system.data_manager import (
 )
 from ai_trade_system.indicators import latest_indicator_snapshot
 from ai_trade_system.llm import LLMResearchRequest as CoreAIResearchRequest
-from ai_trade_system.llm import MockLLMProvider, build_research_prompt
+from ai_trade_system.llm import build_research_prompt, provider_from_env
 from ai_trade_system.market import Bar
 from ai_trade_system.paper_service import PaperTradingService
 from ai_trade_system.portfolio import PortfolioStrategy, StrategyAllocation
 from ai_trade_system.portfolio_presets import portfolio_preset_views
+from ai_trade_system.realtime import RealtimeMonitorService
 from ai_trade_system.research import preview_research_signals as build_research_signal_preview
 from ai_trade_system.research.chan_structure import scan_chan_structure
 from ai_trade_system.research.dataframe import bars_to_frame
@@ -38,6 +48,11 @@ from ai_trade_system.strategy_registry import (
     instantiate_strategy,
     read_strategy_source,
     save_strategy_source,
+)
+from ai_trade_system.strategy_defaults import (
+    CHAN_DAILY_ANCHOR_SCAN_PARAMS,
+    DEFAULT_SCAN_SCORE_MODE,
+    DEFAULT_SCAN_STRATEGY_ID,
 )
 from ai_trade_system.watchlist import load_watchlist, save_watchlist
 from ai_trade_system.web.view_models import (
@@ -54,6 +69,7 @@ from .schemas import (
     PaperRunRequest,
     PlatformSettings,
     PortfolioRequest,
+    RealtimeStartRequest,
     ResearchSignalBatchRequest,
     ResearchSignalsRequest,
     RiskConfigView,
@@ -89,6 +105,10 @@ def default_settings(today: date | None = None) -> PlatformSettings:
 DEFAULT_SETTINGS = default_settings()
 _AUTOMATION_SERVICE: "AutomationService | None" = None
 _AUTOMATION_SCHEDULER: "AutomationScheduler | None" = None
+_AGENT_ORCHESTRATOR: AgentOrchestrator | None = None
+_AGENT_QUEUE: AgentTaskQueue | None = None
+_AGENT_GOVERNANCE: AgentGovernanceService | None = None
+_REALTIME_MONITOR: RealtimeMonitorService | None = None
 
 
 def bootstrap() -> dict[str, Any]:
@@ -108,7 +128,7 @@ def bootstrap() -> dict[str, Any]:
         "limits": {
             "live_trading": False,
             "broker_gateway": "not_configured",
-            "provider": "MockLLMProvider",
+            "provider": provider_from_env().name,
         },
     }
 
@@ -125,8 +145,8 @@ def put_watchlist(stocks: Iterable[Any]) -> dict[str, Any]:
     return {"stocks": [_stock_view(stock) for stock in save_watchlist(stocks)]}
 
 
-def list_managed_data(adjust: str = "qfq") -> dict[str, Any]:
-    return {"files": list_watchlist_data_status(load_watchlist(), adjust=adjust, as_of=date.today())}
+def list_managed_data(adjust: str = "qfq", timeframe: str = "daily") -> dict[str, Any]:
+    return {"files": list_watchlist_data_status(load_watchlist(), adjust=adjust, timeframe=timeframe, as_of=date.today())}
 
 
 def update_watchlist_data(request: DataUpdateWatchlistRequest) -> dict[str, Any]:
@@ -138,6 +158,7 @@ def update_watchlist_data(request: DataUpdateWatchlistRequest) -> dict[str, Any]
         start_date=start_date,
         end_date=end_date,
         adjust=request.adjust or settings.adjust,
+        timeframe=request.timeframe or settings.timeframe,
         if_stale=request.if_stale,
     )
 
@@ -192,6 +213,144 @@ def update_automation_config(payload: dict[str, Any]) -> dict[str, Any]:
     return get_automation_service().update_config(payload).as_dict()
 
 
+def get_realtime_monitor_service() -> RealtimeMonitorService:
+    global _REALTIME_MONITOR
+    if _REALTIME_MONITOR is None:
+        _REALTIME_MONITOR = RealtimeMonitorService()
+    return _REALTIME_MONITOR
+
+
+def start_realtime_monitor(request: RealtimeStartRequest) -> dict[str, Any]:
+    stock = StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)
+    strategy = _build_strategy(request.strategy)
+    return get_realtime_monitor_service().start(
+        strategy=strategy,
+        strategy_id=request.strategy.id,
+        stocks=[stock],
+        start_date=request.settings.start_date,
+        adjust=request.settings.adjust,
+        timeframe=normalize_timeframe(request.settings.timeframe),
+        poll_interval_seconds=request.poll_interval_seconds,
+    )
+
+
+def stop_realtime_monitor() -> dict[str, Any]:
+    return get_realtime_monitor_service().stop()
+
+
+def realtime_monitor_status() -> dict[str, Any]:
+    return get_realtime_monitor_service().status()
+
+
+def realtime_monitor_events(limit: int = 100) -> dict[str, Any]:
+    return {"events": get_realtime_monitor_service().events(limit=limit)}
+
+
+def get_agent_orchestrator() -> AgentOrchestrator:
+    global _AGENT_ORCHESTRATOR
+    if _AGENT_ORCHESTRATOR is None:
+        _AGENT_ORCHESTRATOR = AgentOrchestrator()
+    return _AGENT_ORCHESTRATOR
+
+
+def get_agent_queue() -> AgentTaskQueue:
+    global _AGENT_QUEUE
+    if _AGENT_QUEUE is None:
+        _AGENT_QUEUE = AgentTaskQueue(orchestrator=get_agent_orchestrator())
+    return _AGENT_QUEUE
+
+
+def get_agent_governance() -> AgentGovernanceService:
+    global _AGENT_GOVERNANCE
+    if _AGENT_GOVERNANCE is None:
+        _AGENT_GOVERNANCE = AgentGovernanceService(store=AgentGovernanceStore())
+    return _AGENT_GOVERNANCE
+
+
+def agent_tools() -> dict[str, Any]:
+    return {"tools": get_agent_orchestrator().list_tools()}
+
+
+def agent_tasks(limit: int = 50) -> dict[str, Any]:
+    return {"tasks": [_serialize(task) for task in get_agent_orchestrator().list_tasks(limit)]}
+
+
+def create_agent_task(prompt: str, source: str = "frontend", context: dict[str, Any] | None = None) -> dict[str, Any]:
+    task = get_agent_queue().submit(prompt, source=source, context=context or {})
+    return {"task": _serialize(task)}
+
+
+def agent_task(task_id: str) -> dict[str, Any]:
+    return {"task": _serialize(get_agent_orchestrator().get_task(task_id))}
+
+
+def agent_trace(task_id: str) -> dict[str, Any]:
+    return {"task_id": task_id, "events": get_agent_orchestrator().trace_task(task_id)}
+
+
+def approve_agent_task(task_id: str, approval: str = "approved") -> dict[str, Any]:
+    return {"task": _serialize(get_agent_queue().approve(task_id, approval))}
+
+
+def agent_memories() -> dict[str, Any]:
+    return {"memories": [memory.as_dict() for memory in get_agent_governance().store.list_memories()]}
+
+
+def create_agent_memory(payload: dict[str, Any]) -> dict[str, Any]:
+    memory = get_agent_governance().store.save_memory(AgentMemory.from_dict(payload))
+    return {"memory": memory.as_dict()}
+
+
+def update_agent_memory(memory_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    current = get_agent_governance().store.get_memory(memory_id).as_dict()
+    current.update({key: value for key, value in patch.items() if value is not None})
+    current["id"] = memory_id
+    memory = get_agent_governance().store.save_memory(AgentMemory.from_dict(current))
+    return {"memory": memory.as_dict()}
+
+
+def delete_agent_memory(memory_id: str) -> dict[str, Any]:
+    get_agent_governance().store.delete_memory(memory_id)
+    return {"deleted": True, "id": memory_id}
+
+
+def agent_skills() -> dict[str, Any]:
+    return {"skills": [skill.as_dict() for skill in get_agent_governance().store.list_skills()]}
+
+
+def create_agent_skill(payload: dict[str, Any]) -> dict[str, Any]:
+    skill = get_agent_governance().store.save_skill(AgentSkill.from_dict(payload))
+    return {"skill": skill.as_dict()}
+
+
+def update_agent_skill(skill_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+    current = get_agent_governance().store.get_skill(skill_id).as_dict()
+    current.update({key: value for key, value in patch.items() if value is not None})
+    current["id"] = skill_id
+    skill = get_agent_governance().store.save_skill(AgentSkill.from_dict(current))
+    return {"skill": skill.as_dict()}
+
+
+def delete_agent_skill(skill_id: str) -> dict[str, Any]:
+    get_agent_governance().store.delete_skill(skill_id)
+    return {"deleted": True, "id": skill_id}
+
+
+def agent_policy() -> dict[str, Any]:
+    return {"policy": get_agent_governance().store.load_policy().as_dict()}
+
+
+def update_agent_policy(patch: dict[str, Any]) -> dict[str, Any]:
+    current = get_agent_governance().store.load_policy().as_dict()
+    current.update({key: value for key, value in patch.items() if value is not None})
+    policy = get_agent_governance().store.save_policy(AgentPlannerPolicy.from_dict(current))
+    return {"policy": policy.as_dict()}
+
+
+def agent_plan_preview(prompt: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {"preview": get_agent_governance().preview_plan(prompt, context or {})}
+
+
 def list_strategies() -> list[dict[str, Any]]:
     return [_strategy_view(spec) for spec in discover_strategies()]
 
@@ -218,12 +377,13 @@ def load_data(request: DataRequest) -> dict[str, Any]:
 
 def download_data(request: DataRequest) -> dict[str, Any]:
     settings = request.settings
-    bars = fetch_akshare_daily_bars(
+    bars = fetch_akshare_bars(
         symbol=settings.symbol,
         start_date=settings.start_date,
         end_date=settings.end_date,
         exchange=settings.exchange,
         adjust=settings.adjust,
+        timeframe=settings.timeframe,
     )
     write_bars_csv(bars, _safe_data_path(settings.csv_path))
     payload = _data_payload(bars, settings)
@@ -232,7 +392,7 @@ def download_data(request: DataRequest) -> dict[str, Any]:
 
 
 def demo_data(request: DemoDataRequest) -> dict[str, Any]:
-    bars = _demo_bars(request.settings.symbol, request.settings.exchange, request.count)
+    bars = _demo_bars(request.settings.symbol, request.settings.exchange, request.count, request.settings.timeframe)
     write_bars_csv(bars, _safe_data_path(request.settings.csv_path))
     return _data_payload(bars, request.settings)
 
@@ -307,7 +467,7 @@ def research_ai(request) -> dict[str, Any]:
         },
         prompt_mode=request.prompt_mode,
     )
-    insight = MockLLMProvider().generate_insight(core_request)
+    insight = provider_from_env().generate_insight(core_request)
     return {
         "snapshot": _serialize(snapshot),
         "prompt": build_research_prompt(core_request),
@@ -362,6 +522,9 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
             update={"symbol": stock.code, "exchange": stock.exchange, "adjust": batch_adjust, "csv_path": csv_path.as_posix()}
         )
         bars = _load_bars(settings)
+        if request.score_mode == DEFAULT_SCAN_SCORE_MODE:
+            rows.append(_chan_multilevel_daily_anchor_batch_row(base_row, bars, request, index))
+            continue
         if request.score_mode == "volume_momentum":
             rows.append(_volume_momentum_batch_row(base_row, bars, request, index))
             continue
@@ -384,7 +547,7 @@ def batch_research_signals(request: ResearchSignalBatchRequest) -> dict[str, Any
             }
         )
 
-    if request.score_mode == "volume_momentum":
+    if request.score_mode in {"volume_momentum", DEFAULT_SCAN_SCORE_MODE}:
         rows.sort(key=lambda row: (0 if row["status"] == "scanned" else 1, -((row["score"] or {}).get("total_score", 0)), row["_order"]))
     else:
         rows.sort(key=lambda row: (0 if row["status"] == "scanned" else 1, -abs((row["score"] or {}).get("total_score", 0)), row["_order"]))
@@ -433,7 +596,7 @@ def _batch_adjust(request: ResearchSignalBatchRequest) -> str:
 
 
 def _batch_stock_csv_path(stock: StockInfo, settings: PlatformSettings, adjust: str | None = None) -> Path:
-    return data_file_for_stock(stock, adjust=adjust or settings.adjust).latest_path
+    return data_file_for_stock(stock, adjust=adjust or settings.adjust, timeframe=settings.timeframe).latest_path
 
 
 def _update_batch_candidate_data(request: ResearchSignalBatchRequest, candidates: list[StockInfo], adjust: str) -> dict[str, Any]:
@@ -447,15 +610,17 @@ def _update_batch_candidate_data(request: ResearchSignalBatchRequest, candidates
                 start_date=request.settings.start_date,
                 end_date=request.settings.end_date,
                 adjust=adjust,
+                timeframe=request.settings.timeframe,
                 if_stale=request.if_stale,
             ).as_dict()
         except Exception as exc:
-            data_file = data_file_for_stock(stock, adjust=adjust)
+            data_file = data_file_for_stock(stock, adjust=adjust, timeframe=request.settings.timeframe)
             result = {
                 "code": stock.code,
                 "name": stock.name,
                 "exchange": stock.exchange,
                 "adjust": adjust,
+                "timeframe": request.settings.timeframe,
                 "status": "failed",
                 "requested_start": request.settings.start_date,
                 "requested_end": request.settings.end_date,
@@ -485,6 +650,7 @@ def _update_batch_candidate_data(request: ResearchSignalBatchRequest, candidates
             "skipped": skipped,
             "failed": failed,
             "adjust": adjust,
+            "timeframe": request.settings.timeframe,
             "start_date": request.settings.start_date,
             "end_date": request.settings.end_date,
         },
@@ -501,6 +667,7 @@ def _disabled_data_update_summary(request: ResearchSignalBatchRequest, total: in
         "skipped": 0,
         "failed": 0,
         "adjust": adjust,
+        "timeframe": request.settings.timeframe,
         "start_date": request.settings.start_date,
         "end_date": request.settings.end_date,
     }
@@ -514,7 +681,162 @@ def _data_status_from_update_result(result: dict[str, Any]) -> dict[str, Any]:
         "start": result.get("latest_start"),
         "end": result.get("latest_end"),
         "path": result.get("latest_path", ""),
+        "timeframe": result.get("timeframe", "daily"),
     }
+
+
+def _chan_multilevel_daily_anchor_batch_row(
+    base_row: dict[str, Any],
+    bars: list[Bar],
+    request: ResearchSignalBatchRequest,
+    order: int,
+) -> dict[str, Any]:
+    score, latest_signal, blockers, preview = _chan_multilevel_daily_anchor_score(
+        bars,
+        request.min_bars,
+        request.lookback,
+    )
+    return {
+        **base_row,
+        "status": "scanned",
+        "score": score,
+        "latest_signal": latest_signal,
+        "preview": preview,
+        "momentum": None,
+        "blockers": blockers,
+        "_order": order,
+    }
+
+
+def _chan_multilevel_daily_anchor_score(
+    bars: list[Bar],
+    min_bars: int,
+    lookback: int,
+) -> tuple[dict[str, Any], dict[str, Any] | None, list[dict[str, str]], dict[str, Any]]:
+    latest = bars[-1] if bars else None
+    if latest is None or len(bars) < min_bars:
+        blockers = [{"code": "INSUFFICIENT_BARS", "message": f"至少需要 {min_bars} 根K线，当前 {len(bars)} 根"}]
+        score = _chan_multilevel_score_payload(0.0, "neutral", 0.0, "缠论多级别日线锚定样本不足")
+        preview = _chan_multilevel_preview(bars, [], score, blockers)
+        return score, None, blockers, preview
+
+    chan_score, chan_latest, chan_blockers, chan_preview = _chan_structure_score(bars, min_bars, lookback)
+    chan_total = float(chan_score.get("total_score", 0) or 0)
+    chan_diagnostics = chan_score.get("chan_structure")
+    latest_signal = _chan_multilevel_signal_from_chan_snapshot(chan_latest, chan_total)
+    serialized_signals = [latest_signal] if latest_signal else []
+    if latest_signal is None:
+        total_score = round(max(0.0, chan_total) * 0.4, 4)
+        direction = "bullish" if total_score > 0 else "neutral"
+        summary = "缠论多级别日线锚定暂无当前策略买卖点"
+        score = _chan_multilevel_score_payload(total_score, direction, _confidence_from_score(total_score), summary)
+        blockers = chan_blockers or [{"code": "NO_CHAN_MULTILEVEL_SIGNAL", "message": summary}]
+    else:
+        total_score = float(latest_signal["score"])
+        direction = "bullish" if total_score > 0 else "bearish" if total_score < 0 else "neutral"
+        summary = f"{latest_signal['title']}，价格 {latest_signal['price']:.2f}，{latest_signal['reason']}"
+        score = _chan_multilevel_score_payload(total_score, direction, _confidence_from_score(total_score), summary)
+        blockers = [] if latest_signal["action"] == "buy" else [{"code": "CHAN_MULTILEVEL_RISK", "message": summary}]
+    if chan_diagnostics is not None:
+        score["chan_structure"] = chan_diagnostics
+
+    preview = _chan_multilevel_preview(bars, serialized_signals, score, blockers, evaluation_bars=1)
+    if chan_preview.get("chan_structure") is not None:
+        preview["chan_structure"] = chan_preview["chan_structure"]
+    return score, latest_signal, blockers, preview
+
+
+def _chan_multilevel_signal_from_chan_snapshot(chan_signal: dict[str, Any] | None, chan_total: float) -> dict[str, Any] | None:
+    if not chan_signal:
+        return None
+    action = str(chan_signal.get("action") or "").lower()
+    if action not in {"buy", "sell"}:
+        return None
+    signed_score = _chan_multilevel_snapshot_score(action, chan_signal, chan_total)
+    reason = (
+        f"chan_multilevel:DAILY_ANCHOR:chan_structure:{chan_signal.get('kind')}:{chan_signal.get('reason')}"
+    )
+    return {
+        "trading_day": chan_signal.get("trading_day"),
+        "symbol": chan_signal.get("symbol"),
+        "exchange": chan_signal.get("exchange"),
+        "kind": _chan_multilevel_signal_kind(action, reason),
+        "action": action,
+        "price": float(chan_signal.get("price") or 0.0),
+        "strength": _confidence_from_score(signed_score),
+        "score": signed_score,
+        "title": _chan_multilevel_signal_title(action, reason),
+        "reason": reason,
+        "tags": ["chan_multilevel", "daily_anchor"],
+        "metadata": {
+            "entry_mode": "daily_anchor",
+            "confirm_timeframe": CHAN_DAILY_ANCHOR_SCAN_PARAMS["confirm_timeframe"],
+            "risk_timeframe": CHAN_DAILY_ANCHOR_SCAN_PARAMS["risk_timeframe"],
+            "source_kind": chan_signal.get("kind"),
+        },
+    }
+
+
+def _chan_multilevel_snapshot_score(action: str, chan_signal: dict[str, Any], chan_total: float) -> float:
+    raw_score = abs(float(chan_signal.get("score") or chan_total or 0.0))
+    scaled = round(min(100.0, max(35.0, 50.0 + raw_score)), 4)
+    return scaled if action == "buy" else -scaled
+
+
+def _chan_multilevel_signal_kind(action: str, reason: str) -> str:
+    if action == "buy":
+        return "CHAN_MULTILEVEL_DAILY_ANCHOR_BUY_EXEC" if "BUY_EXEC" in reason else "CHAN_MULTILEVEL_DAILY_ANCHOR_BUY"
+    if "PROFIT_RISK" in reason:
+        return "CHAN_MULTILEVEL_DAILY_ANCHOR_RISK_SELL"
+    return "CHAN_MULTILEVEL_DAILY_ANCHOR_SELL_EXEC" if "SELL_EXEC" in reason else "CHAN_MULTILEVEL_DAILY_ANCHOR_SELL"
+
+
+def _chan_multilevel_signal_title(action: str, reason: str) -> str:
+    if action == "buy":
+        return "缠论多级别日线锚定买入" if "BUY_EXEC" not in reason else "缠论多级别低级别优化买入"
+    if "PROFIT_RISK" in reason:
+        return "缠论多级别低级别风险卖出"
+    return "缠论多级别日线锚定卖出" if "SELL_EXEC" not in reason else "缠论多级别低级别优化卖出"
+
+
+def _chan_multilevel_score_payload(total_score: float, direction: str, confidence: float, summary: str) -> dict[str, Any]:
+    return {
+        "total_score": round(total_score, 4),
+        "direction": direction,
+        "confidence": round(confidence, 4),
+        "chan_score": round(total_score, 4),
+        "rsi_score": 0,
+        "summary": summary,
+    }
+
+
+def _chan_multilevel_preview(
+    bars: list[Bar],
+    signals: list[dict[str, Any]],
+    score: dict[str, Any],
+    blockers: list[dict[str, str]],
+    *,
+    evaluation_bars: int | None = None,
+) -> dict[str, Any]:
+    latest = bars[-1] if bars else None
+    return {
+        "symbol": latest.symbol if latest else "",
+        "exchange": latest.exchange if latest else "",
+        "bars": len(bars),
+        "signals": signals,
+        "score": score,
+        "blockers": blockers,
+        "strategy": {
+            "id": DEFAULT_SCAN_STRATEGY_ID,
+            **CHAN_DAILY_ANCHOR_SCAN_PARAMS,
+            "evaluation_method": "chan_structure_snapshot",
+            "evaluation_bars": evaluation_bars if evaluation_bars is not None else len(bars),
+        },
+    }
+
+
+def _confidence_from_score(score: float) -> float:
+    return round(min(1.0, max(0.35, 0.35 + abs(score) / 120.0)), 4)
 
 
 def _volume_momentum_batch_row(base_row: dict[str, Any], bars: list[Bar], request: ResearchSignalBatchRequest, order: int) -> dict[str, Any]:
@@ -893,10 +1215,11 @@ def _data_payload(bars: list[Bar], settings: PlatformSettings) -> dict[str, Any]
     summary = {
         "rows": len(bars),
         "csv_path": settings.csv_path,
+        "timeframe": normalize_timeframe(settings.timeframe),
         "symbol": bars[-1].symbol if bars else settings.symbol,
         "exchange": bars[-1].exchange if bars else settings.exchange,
-        "start": bars[0].trading_day.isoformat() if bars else None,
-        "end": bars[-1].trading_day.isoformat() if bars else None,
+        "start": _bar_label(bars[0]) if bars else None,
+        "end": _bar_label(bars[-1]) if bars else None,
         "latest_close": bars[-1].close_price if bars else None,
         "latest_volume": bars[-1].volume if bars else None,
         "latest_turnover": bars[-1].turnover if bars else None,
@@ -905,7 +1228,11 @@ def _data_payload(bars: list[Bar], settings: PlatformSettings) -> dict[str, Any]
 
 
 def _managed_file_for_settings(settings: PlatformSettings) -> dict[str, Any] | None:
-    data_file = data_file_for_stock({"code": settings.symbol, "name": settings.symbol, "exchange": settings.exchange}, adjust=settings.adjust)
+    data_file = data_file_for_stock(
+        {"code": settings.symbol, "name": settings.symbol, "exchange": settings.exchange},
+        adjust=settings.adjust,
+        timeframe=settings.timeframe,
+    )
     if Path(settings.csv_path).as_posix() != data_file.latest_path.as_posix():
         return None
     return data_file.status(as_of=date.today())
@@ -964,8 +1291,11 @@ def _safe_path(value: str | Path, root: Path, suffix: str | None = None) -> Path
     return resolved
 
 
-def _demo_bars(symbol: str, exchange: str, count: int = 260) -> list[Bar]:
+def _demo_bars(symbol: str, exchange: str, count: int = 260, timeframe: str = "daily") -> list[Bar]:
+    clean_timeframe = normalize_timeframe(timeframe)
     start = date(2024, 1, 2)
+    start_ts = pd.Timestamp("2024-01-02 09:31:00").to_pydatetime()
+    minute_delta = timedelta(minutes=_timeframe_minutes(clean_timeframe)) if clean_timeframe != "daily" else None
     bars: list[Bar] = []
     close = 10.0
     for index in range(max(1, count)):
@@ -979,20 +1309,36 @@ def _demo_bars(symbol: str, exchange: str, count: int = 260) -> list[Bar]:
         high_price = max(open_price, close) + wick
         low_price = min(open_price, close) - wick
         volume = 1_000_000 + index * 2500 + abs(math.sin(index / 6)) * 120_000 + (40_000 if direction < 0 else 0)
+        timestamp = start_ts + minute_delta * index if minute_delta else None
+        trading_day = timestamp.date() if timestamp else start + timedelta(days=index)
         bars.append(
             Bar(
                 symbol=symbol,
                 exchange=exchange,
-                trading_day=start + timedelta(days=index),
+                trading_day=trading_day,
                 open_price=round(open_price, 2),
                 high_price=round(high_price, 2),
                 low_price=round(low_price, 2),
                 close_price=round(close, 2),
                 volume=round(volume, 2),
                 turnover=round(volume * close, 2),
+                timestamp=timestamp,
+                timeframe=clean_timeframe,
             )
         )
     return bars
+
+
+def _timeframe_minutes(timeframe: str) -> int:
+    if timeframe == "daily":
+        return 0
+    return int(timeframe.removesuffix("m"))
+
+
+def _bar_label(bar: Bar) -> str:
+    if bar.timestamp:
+        return bar.timestamp.isoformat(sep=" ")
+    return bar.trading_day.isoformat()
 
 
 def _frame_records(frame: pd.DataFrame) -> list[dict[str, Any]]:

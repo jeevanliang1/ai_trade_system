@@ -5,6 +5,9 @@ from ai_trade_system.automation.models import (
     AutomationRunRecord,
     DailyJudgment,
     RadarCandidateScore,
+    WeeklyAnalysisItem,
+    WeeklyAnalysisResult,
+    WeeklyAnalysisSection,
     WeeklyRadarResult,
 )
 from ai_trade_system.automation.store import AutomationStore
@@ -75,11 +78,48 @@ def test_automation_store_round_trips_config_top10_judgments_and_runs(tmp_path):
 
     store.save_config(config)
     store.save_weekly_result(weekly)
+    store.save_weekly_analysis(
+        WeeklyAnalysisResult(
+            run_id="analysis-2026-W25",
+            weekly_run_id="weekly-1",
+            generated_at="2026-06-20T09:40:00+08:00",
+            status="success",
+            delivery_channel="weixin",
+            sections=[
+                WeeklyAnalysisSection(
+                    key="star",
+                    label="科创板 Top10",
+                    status="success",
+                    summary="科创板候选已完成深度分析。",
+                    items=[
+                        WeeklyAnalysisItem(
+                            rank=1,
+                            code="688001",
+                            name="华兴源创",
+                            exchange="SSE",
+                            board="star",
+                            scan_score=70.1,
+                            latest_day="2026-06-18",
+                            scan_signal_title="缠论三买",
+                            scan_reason="三买结构，量能不足",
+                            analysis_status="ok",
+                            summary="基本面和信息面分析摘要。",
+                            confidence="high",
+                            evidence_status="verified",
+                            sources=[{"url": "https://example.com/report"}],
+                        )
+                    ],
+                )
+            ],
+        )
+    )
     store.save_daily_judgments("2026-06-23", [judgment])
     store.append_run(run)
 
     assert store.load_config().top_n == 5
     assert store.load_config().enabled is False
     assert store.load_weekly_result().top[0].code == "688001"
+    assert store.load_weekly_analysis("2026-W25").sections[0].items[0].code == "688001"
+    assert store.load_latest_weekly_analysis().weekly_run_id == "weekly-1"
     assert store.load_daily_judgments("2026-06-23")[0].judgment == "watch_only"
     assert store.load_runs()[-1].task == "weekly"

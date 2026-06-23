@@ -185,6 +185,52 @@ export function AutomationPage(_props: PageProps) {
 
       <section className="main-column">
         <MetricStrip metrics={metrics} />
+        <section className="automation-ops-grid">
+          <section className="panel automation-diagnostics">
+            <div className="panel-title between">
+              <span>运行诊断</span>
+              <AlertTriangle size={16} />
+            </div>
+            {status?.diagnostics.length ? (
+              <div className="automation-diagnostic-list">
+                {status.diagnostics.map((item) => (
+                  <article className={`automation-diagnostic severity-${item.severity}`} key={`${item.code}-${item.run_id ?? item.message}`}>
+                    <header>
+                      <strong>{diagnosticLabel(item.severity)}</strong>
+                      <span>{item.code}</span>
+                    </header>
+                    <p>{item.message}</p>
+                    <small>{item.suggestion}</small>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="暂无运行异常，最近自动任务状态正常。" />
+            )}
+          </section>
+
+          <section className="panel automation-runs">
+            <div className="panel-title between">
+              <span>最近运行</span>
+              <span className="caption">{status?.recent_runs.length ?? 0} 条</span>
+            </div>
+            {status?.recent_runs.length ? (
+              <div className="automation-run-list">
+                {status.recent_runs.map((run) => (
+                  <div className={`automation-run-row status-${run.status}`} key={run.run_id}>
+                    <strong>{run.run_id}</strong>
+                    <span>{taskLabel(run.task)} · {run.status}</span>
+                    <small>{formatDateTime(run.started_at)} - {run.finished_at ? formatDateTime(run.finished_at) : "运行中"}</small>
+                    <p>{run.message}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="尚无自动任务运行记录。" />
+            )}
+          </section>
+        </section>
+
         <section className="panel automation-weekly">
           <div className="panel-title between">
             <span>周六全量雷达 Top10</span>
@@ -299,4 +345,14 @@ function judgmentTone(judgment: string): string {
   if (judgment === "aggressive_add" || judgment === "build_position") return "positive";
   if (judgment === "clear_exit" || judgment === "reduce_position") return "negative";
   return "neutral";
+}
+
+function taskLabel(task: string): string {
+  return task === "weekly" ? "周扫描" : task === "daily" ? "日判断" : task;
+}
+
+function diagnosticLabel(severity: string): string {
+  if (severity === "high") return "高优先级";
+  if (severity === "medium") return "需要关注";
+  return "提示";
 }

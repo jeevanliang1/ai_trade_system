@@ -4,6 +4,7 @@ export type PlatformSettings = {
   start_date: string;
   end_date: string;
   adjust: string;
+  timeframe: "daily" | "1m" | "5m" | "15m" | "30m" | "60m" | string;
   csv_path: string;
   log_path: string;
   initial_cash: number;
@@ -51,6 +52,8 @@ export type Bar = {
   symbol: string;
   exchange: string;
   trading_day: string;
+  timestamp?: string | null;
+  timeframe?: string;
   open_price: number;
   high_price: number;
   low_price: number;
@@ -61,11 +64,57 @@ export type Bar = {
 
 export type SignalRow = {
   trading_day: string;
+  timestamp?: string | null;
+  timeframe?: string;
   action: "buy" | "sell";
   symbol: string;
   price: number;
   volume: number;
   reason: string;
+};
+
+export type RealtimeMonitorStatus = {
+  running: boolean;
+  started_at: string | null;
+  stopped_at: string | null;
+  strategy_id: string | null;
+  symbols: string[];
+  timeframe: string | null;
+  poll_interval_seconds: number | null;
+  event_count: number;
+  last_event_at: string | null;
+  last_bar_time: string | null;
+  last_error: string | null;
+};
+
+export type RealtimeMonitorEvent = {
+  id: string;
+  event: string;
+  created_at: string;
+  symbol?: string;
+  name?: string;
+  exchange?: string;
+  timeframe?: string;
+  bar_time?: string;
+  close_price?: number;
+  volume?: number;
+  side?: "buy" | "sell" | string;
+  price?: number;
+  reason?: string;
+  warmup?: boolean;
+  message?: string;
+  symbols?: string[];
+  updated_bars?: number;
+  signals?: number;
+};
+
+export type RealtimeMonitorEventsResponse = {
+  events: RealtimeMonitorEvent[];
+};
+
+export type RealtimeMonitorState = {
+  status: RealtimeMonitorStatus;
+  events: RealtimeMonitorEvent[];
 };
 
 export type ResearchSignal = {
@@ -226,7 +275,7 @@ export type ResearchSignalPreview = {
   chan_structure?: ResearchSignalChanStructure | null;
 };
 
-export type ResearchSignalBatchScoreMode = "research" | "volume_momentum" | "chan_structure";
+export type ResearchSignalBatchScoreMode = "research" | "volume_momentum" | "chan_structure" | "chan_multilevel_daily_anchor";
 
 export type ResearchSignalBatchDataStatus = {
   status: string;
@@ -389,6 +438,7 @@ export type ManagedDataFile = {
   name: string;
   exchange: string;
   adjust: string;
+  timeframe: string;
   latest_path: string;
   manifest_path: string;
   exists: boolean;
@@ -406,6 +456,7 @@ export type WatchlistDataUpdateRequest = {
   start_date?: string;
   end_date?: string;
   adjust?: string;
+  timeframe?: string;
   if_stale?: boolean;
 };
 
@@ -414,6 +465,7 @@ export type WatchlistDataUpdateResult = {
   name: string;
   exchange: string;
   adjust: string;
+  timeframe: string;
   status: "updated" | "skipped" | "failed" | string;
   requested_start: string;
   requested_end: string;
@@ -451,9 +503,25 @@ export type AutomationConfig = {
   lookback: number;
   chan_weight: number;
   volume_weight: number;
+  weekly_analysis_enabled: boolean;
+  weekly_analysis_top_n: number;
+  weekly_delivery_enabled: boolean;
+  weekly_delivery_channel: string;
 };
 
-export type AutomationConfigRequest = Partial<Pick<AutomationConfig, "enabled" | "top_n" | "chan_weight" | "volume_weight">>;
+export type AutomationConfigRequest = Partial<
+  Pick<
+    AutomationConfig,
+    | "enabled"
+    | "top_n"
+    | "chan_weight"
+    | "volume_weight"
+    | "weekly_analysis_enabled"
+    | "weekly_analysis_top_n"
+    | "weekly_delivery_enabled"
+    | "weekly_delivery_channel"
+  >
+>;
 
 export type AutomationRunRecord = {
   run_id: string;
@@ -462,6 +530,16 @@ export type AutomationRunRecord = {
   started_at: string;
   finished_at: string | null;
   message: string;
+};
+
+export type AutomationDiagnostic = {
+  code: string;
+  severity: "info" | "medium" | "high" | string;
+  task: string;
+  message: string;
+  suggestion: string;
+  run_id: string | null;
+  created_at: string | null;
 };
 
 export type RadarCandidateScore = {
@@ -516,8 +594,13 @@ export type AutomationStatus = {
   last_daily_run: AutomationRunRecord | null;
   weekly_top10_count: number;
   latest_daily_judgment_count: number;
+  weekly_analysis_status: string | null;
+  weekly_analysis_run_id: string | null;
+  weekly_delivery_status: string | null;
   next_weekly_run: string | null;
   next_daily_run: string | null;
+  recent_runs: AutomationRunRecord[];
+  diagnostics: AutomationDiagnostic[];
 };
 
 export type StrategySelection = {
@@ -554,6 +637,7 @@ export type PortfolioPreset = {
 export type DataSummary = {
   rows: number;
   csv_path: string;
+  timeframe: string;
   symbol: string;
   exchange: string;
   start: string | null;
@@ -627,4 +711,151 @@ export type PaperResponse = {
   orders: Record<string, unknown>[];
   equity: Record<string, unknown>[];
   summary: Record<string, unknown>;
+};
+
+export type AgentTool = {
+  name: string;
+  description: string;
+  permission: "auto" | "confirm" | "blocked" | string;
+  category: string;
+};
+
+export type AgentStep = {
+  tool_name: string;
+  title: string;
+  status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  summary: string;
+  output: Record<string, unknown>;
+};
+
+export type AgentConfirmation = {
+  code: string;
+  message: string;
+  risk_level: string;
+  status: string;
+  tool_name?: string | null;
+  created_at: string;
+  resolved_at?: string | null;
+};
+
+export type AgentTask = {
+  task_id: string;
+  source: string;
+  prompt: string;
+  status: "pending" | "queued" | "running" | "completed" | "waiting_confirmation" | "blocked" | "failed" | string;
+  context: Record<string, unknown>;
+  plan: string[];
+  steps: AgentStep[];
+  evidence: Record<string, unknown>[];
+  result_summary: string;
+  confirmations: AgentConfirmation[];
+  report_path?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentTraceEvent = {
+  event_id: string;
+  task_id: string;
+  type: string;
+  created_at: string;
+  tool_name?: string | null;
+  status?: string | null;
+  summary: string;
+  payload: Record<string, unknown>;
+};
+
+export type AgentToolsResponse = {
+  tools: AgentTool[];
+};
+
+export type AgentTasksResponse = {
+  tasks: AgentTask[];
+};
+
+export type AgentTaskResponse = {
+  task: AgentTask;
+};
+
+export type AgentTraceResponse = {
+  task_id: string;
+  events: AgentTraceEvent[];
+};
+
+export type AgentMemory = {
+  id: string;
+  type: string;
+  scope: string;
+  title: string;
+  content: string;
+  tags: string[];
+  source: string;
+  confidence: string;
+  enabled: boolean;
+  expires_at?: string | null;
+};
+
+export type AgentSkill = {
+  id: string;
+  title: string;
+  description: string;
+  trigger_terms: string[];
+  steps: string[];
+  allowed_tools: string[];
+  required_confirmations: string[];
+  output_format: string;
+  enabled: boolean;
+};
+
+export type AgentPlannerPolicy = {
+  max_steps: number;
+  blocked_intents: string[];
+  tool_permissions: Record<string, string>;
+  default_output_format: string;
+};
+
+export type AgentPlanPreviewStep = {
+  index: number;
+  tool: string;
+  title?: string;
+  permission: string;
+  reason: string;
+};
+
+export type AgentPlanPreview = {
+  status: string;
+  intent: string;
+  selected_skill: Partial<AgentSkill> | null;
+  matched_memories: Partial<AgentMemory>[];
+  steps: AgentPlanPreviewStep[];
+  stop_conditions: string[];
+  final_output: string;
+  blocked_reason?: string | null;
+  ignored_tools: string[];
+};
+
+export type AgentMemoriesResponse = {
+  memories: AgentMemory[];
+};
+
+export type AgentMemoryResponse = {
+  memory: AgentMemory;
+};
+
+export type AgentSkillsResponse = {
+  skills: AgentSkill[];
+};
+
+export type AgentSkillResponse = {
+  skill: AgentSkill;
+};
+
+export type AgentPlannerPolicyResponse = {
+  policy: AgentPlannerPolicy;
+};
+
+export type AgentPlanPreviewResponse = {
+  preview: AgentPlanPreview;
 };

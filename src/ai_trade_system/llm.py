@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Mapping
+from typing import Any, Mapping
+
+from ai_trade_system.config import env_value
+from ai_trade_system.deepseek import DeepSeekClient
 
 from ai_trade_system.indicators import IndicatorSnapshot
 
@@ -102,6 +105,48 @@ class MockLLMProvider:
         )
 
 
+class DeepSeekLLMProvider:
+    name = "DeepSeekLLMProvider"
+
+    def __init__(self, client: Any | None = None):
+        self.client = client or DeepSeekClient()
+
+    def generate_insight(self, request: LLMResearchRequest) -> LLMInsight:
+        prompt = build_research_prompt(request)
+        response = self.client.chat_json(
+            system_prompt=(
+                "你是 A 股量化研究员。只输出 JSON 对象，字段为 "
+                "direction, confidence, suggested_action, technical_evidence, "
+                "information_evidence, risk_warnings。不要输出实盘下单指令。"
+            ),
+            user_prompt=prompt,
+            max_tokens=1200,
+        )
+        if response.get("status") != "ok":
+            return _failed_deepseek_insight(request, str(response.get("summary") or response.get("status")))
+        data = response.get("data", {})
+        return LLMInsight(
+            symbol=request.symbol,
+            horizon=request.horizon,
+            direction=_choice(str(data.get("direction", "neutral")), {"bullish", "bearish", "neutral"}, "neutral"),
+            confidence=_clamp_int(data.get("confidence"), 0, 100, 50),
+            suggested_action=_choice(str(data.get("suggested_action", "hold")), {"buy", "hold", "reduce", "sell"}, "hold"),
+            technical_evidence=_string_list(data.get("technical_evidence")) or ["DeepSeek 未返回技术证据。"],
+            information_evidence=_string_list(data.get("information_evidence")) or ["DeepSeek 未返回信息面证据。"],
+            risk_warnings=_string_list(data.get("risk_warnings")) or ["DeepSeek 未返回风险提示。"],
+            prompt_version=PROMPT_VERSION,
+            provider=self.name,
+            created_at=_utc_created_at(),
+        )
+
+
+def provider_from_env():
+    provider = (env_value("AI_TRADE_LLM_PROVIDER", "mock") or "mock").lower()
+    if provider == "deepseek" and env_value("DEEPSEEK_API_KEY"):
+        return DeepSeekLLMProvider()
+    return MockLLMProvider()
+
+
 def _technical_score(snapshot: IndicatorSnapshot) -> int:
     score = 0
     if snapshot.trend == "bullish":
@@ -157,3 +202,43 @@ def _technical_evidence(snapshot: IndicatorSnapshot) -> list[str]:
 
 def _format_optional(value: float | None) -> str:
     return "无" if value is None else f"{value:.2f}"
+
+
+def _failed_deepseek_insight(request: LLMResearchRequest, reason: str) -> LLMInsight:
+    return LLMInsight(
+        symbol=request.symbol,
+        horizon=request.horizon,
+        direction="neutral",
+        confidence=35,
+        suggested_action="hold",
+        technical_evidence=["DeepSeek 研究生成失败，保留中性判断。"],
+        information_evidence=request.information_notes or ["未提供信息面输入。"],
+        risk_warnings=[f"DeepSeek provider 状态：{reason}"],
+        prompt_version=PROMPT_VERSION,
+        provider=DeepSeekLLMProvider.name,
+        created_at=_utc_created_at(),
+    )
+
+
+def _utc_created_at() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _clamp_int(value: object, minimum: int, maximum: int, default: int) -> int:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+def _choice(value: str, allowed: set[str], default: str) -> str:
+    return value if value in allowed else default
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []

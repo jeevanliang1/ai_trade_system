@@ -1,8 +1,13 @@
 {
   "stocks": [
     {
-      "code": "601318",
-      "name": "中国平安",
+      "code": "688733",
+      "name": "壹石通",
+      "exchange": "SSE"
+    },
+    {
+      "code": "688072",
+      "name": "拓荆科技",
       "exchange": "SSE"
     }
   ]

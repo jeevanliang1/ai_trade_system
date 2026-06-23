@@ -98,7 +98,43 @@ beforeEach(() => {
     },
     running: false,
     last_weekly_run: null,
-    last_daily_run: null,
+    last_daily_run: {
+      run_id: "daily-failed",
+      task: "daily",
+      status: "failed",
+      started_at: "2026-06-20T09:45:00",
+      finished_at: "2026-06-20T09:46:00",
+      message: "AKShare timeout"
+    },
+    recent_runs: [
+      {
+        run_id: "daily-failed",
+        task: "daily",
+        status: "failed",
+        started_at: "2026-06-20T09:45:00",
+        finished_at: "2026-06-20T09:46:00",
+        message: "AKShare timeout"
+      },
+      {
+        run_id: "weekly-ok",
+        task: "weekly",
+        status: "success",
+        started_at: "2026-06-20T09:30:00",
+        finished_at: "2026-06-20T09:31:00",
+        message: "success"
+      }
+    ],
+    diagnostics: [
+      {
+        code: "RUN_FAILED",
+        severity: "high",
+        task: "daily",
+        message: "日判断失败：AKShare timeout",
+        suggestion: "检查行情源网络后重跑日判断",
+        run_id: "daily-failed",
+        created_at: "2026-06-20T09:46:00"
+      }
+    ],
     weekly_top10_count: 1,
     latest_daily_judgment_count: 1,
     next_weekly_run: null,
@@ -180,6 +216,10 @@ test("AutomationPage loads automation status, weekly top10, and daily judgments"
   expect(screen.getByText("三买结构，量价确认")).toBeVisible();
   expect(screen.getByText("三买延续且背驰确认，量价动量保持")).toBeVisible();
   expect(screen.getByText("周六 09:30")).toBeVisible();
+  expect(screen.getByText("运行诊断")).toBeVisible();
+  expect(screen.getByText("日判断失败：AKShare timeout")).toBeVisible();
+  expect(screen.getByText("最近运行")).toBeVisible();
+  expect(screen.getByText("daily-failed")).toBeVisible();
 });
 
 test("AutomationPage saves config and runs manual automation tasks", async () => {

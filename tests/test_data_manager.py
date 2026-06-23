@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from ai_trade_system.data import read_bars_csv, write_bars_csv
@@ -22,6 +22,22 @@ def _bar(symbol: str, exchange: str, day: date, close: float) -> Bar:
     )
 
 
+def _minute_bar(symbol: str, exchange: str, timestamp: datetime, close: float) -> Bar:
+    return Bar(
+        symbol=symbol,
+        exchange=exchange,
+        trading_day=timestamp.date(),
+        open_price=close - 0.2,
+        high_price=close + 0.4,
+        low_price=close - 0.5,
+        close_price=close,
+        volume=1000,
+        turnover=close * 1000,
+        timestamp=timestamp,
+        timeframe="5m",
+    )
+
+
 def test_data_file_for_stock_uses_canonical_market_directory(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
@@ -34,6 +50,18 @@ def test_data_file_for_stock_uses_canonical_market_directory(tmp_path: Path, mon
         "data/market/a_share/SSE/601318/increments/601318_SSE_daily_qfq_20260618_from_20260617_to_20260618.csv"
     )
     assert data_file.manifest_path == Path("data/market/a_share/SSE/601318/manifest.json")
+
+
+def test_data_file_for_stock_uses_timeframe_specific_paths(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    data_file = data_file_for_stock({"code": "601318", "name": "中国平安", "exchange": "sse"}, adjust="qfq", timeframe="5m")
+
+    assert data_file.timeframe == "5m"
+    assert data_file.latest_path == Path("data/market/a_share/SSE/601318/601318_SSE_5m_qfq_latest.csv")
+    assert data_file.increment_path("20260618", "20260617", "20260618") == Path(
+        "data/market/a_share/SSE/601318/increments/601318_SSE_5m_qfq_20260618_from_20260617_to_20260618.csv"
+    )
 
 
 def test_update_stock_data_merges_latest_csv_and_writes_increment_manifest(tmp_path: Path, monkeypatch):
@@ -69,6 +97,43 @@ def test_update_stock_data_merges_latest_csv_and_writes_increment_manifest(tmp_p
     assert manifest["latest_end"] == "2026-06-18"
     assert manifest["latest_rows"] == 3
     assert manifest["last_increment_path"] == result.increment_path
+
+
+def test_update_stock_data_merges_minute_bars_by_timestamp(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    stock = {"code": "601318", "name": "中国平安", "exchange": "SSE"}
+    data_file = data_file_for_stock(stock, timeframe="5m")
+    write_bars_csv(
+        [
+            _minute_bar("601318", "SSE", datetime(2026, 6, 18, 9, 31), 50.0),
+            _minute_bar("601318", "SSE", datetime(2026, 6, 18, 9, 36), 51.0),
+        ],
+        data_file.latest_path,
+    )
+
+    def fake_fetch(symbol: str, start_date: str, end_date: str, exchange: str, adjust: str, timeframe: str):
+        assert (symbol, start_date, end_date, exchange, adjust, timeframe) == ("601318", "20260619", "20260619", "SSE", "qfq", "5m")
+        return [
+            _minute_bar(symbol, exchange, datetime(2026, 6, 18, 9, 36), 52.0),
+            _minute_bar(symbol, exchange, datetime(2026, 6, 19, 9, 31), 53.0),
+        ]
+
+    result = update_stock_data(stock, start_date="20260618", end_date="20260619", timeframe="5m", fetcher=fake_fetch)
+
+    assert result.timeframe == "5m"
+    assert result.latest_rows == 3
+    assert result.latest_start == "2026-06-18 09:31:00"
+    assert result.latest_end == "2026-06-19 09:31:00"
+    rows = read_bars_csv(data_file.latest_path)
+    assert [bar.timestamp for bar in rows] == [
+        datetime(2026, 6, 18, 9, 31),
+        datetime(2026, 6, 18, 9, 36),
+        datetime(2026, 6, 19, 9, 31),
+    ]
+    assert rows[1].close_price == 52.0
+    manifest = data_file.load_manifest()
+    assert manifest["timeframe"] == "5m"
+    assert manifest["latest_end"] == "2026-06-19 09:31:00"
 
 
 def test_update_stock_data_keeps_existing_csv_when_increment_fetch_fails(tmp_path: Path, monkeypatch):

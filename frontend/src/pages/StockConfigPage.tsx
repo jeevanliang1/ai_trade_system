@@ -98,7 +98,7 @@ export function StockConfigPage({ state, actions }: PageProps) {
           {state.watchlist.length ? (
             <div className="watchlist-grid">
               {state.watchlist.map((stock) => {
-                const status = dataStatusFor(stock, state.managedData);
+                const status = dataStatusFor(stock, state.managedData, state.settings.timeframe);
                 return (
                   <article className={stockKey(stock) === stockKey(state.settings) ? "watchlist-card active" : "watchlist-card"} key={stockKey(stock)}>
                     <header>
@@ -110,8 +110,8 @@ export function StockConfigPage({ state, actions }: PageProps) {
                       <Database size={14} />
                       <div>
                         <strong>{dataStatusLabel(status)}</strong>
-                        <span>{status?.latest_rows ?? 0} 行</span>
-                        <small>{status?.latest_path ?? managedCsvPath(stock)}</small>
+                        <span>{status?.latest_rows ?? 0} 行 · {status?.timeframe ?? state.settings.timeframe}</span>
+                        <small>{status?.latest_path ?? managedCsvPath(stock, state.settings.timeframe)}</small>
                       </div>
                     </div>
                     <div className="watchlist-actions">
@@ -154,8 +154,8 @@ function stockKey(stock: { code?: string; symbol?: string; exchange: string }): 
   return `${stock.exchange}:${stock.code ?? stock.symbol ?? ""}`;
 }
 
-function dataStatusFor(stock: Stock, files: PageProps["state"]["managedData"]) {
-  return files.find((file) => file.code === stock.code && file.exchange === stock.exchange);
+function dataStatusFor(stock: Stock, files: PageProps["state"]["managedData"], timeframe: string) {
+  return files.find((file) => file.code === stock.code && file.exchange === stock.exchange && file.timeframe === timeframe);
 }
 
 function dataStatusLabel(status: ReturnType<typeof dataStatusFor>): string {
@@ -165,6 +165,6 @@ function dataStatusLabel(status: ReturnType<typeof dataStatusFor>): string {
   return "本地数据状态未知";
 }
 
-function managedCsvPath(stock: Stock): string {
-  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_daily_qfq_latest.csv`;
+function managedCsvPath(stock: Stock, timeframe: string): string {
+  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_${timeframe || "daily"}_qfq_latest.csv`;
 }

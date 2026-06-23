@@ -26,7 +26,7 @@ type ScanHistoryEntry = {
 export function SignalRadarPage({ state, actions }: PageProps) {
   const [query, setQuery] = useState("");
   const [universe, setUniverse] = useState<ScanUniverse>("catalog");
-  const [scoreMode, setScoreMode] = useState<ResearchSignalBatchScoreMode>("research");
+  const [scoreMode, setScoreMode] = useState<ResearchSignalBatchScoreMode>("chan_multilevel_daily_anchor");
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [minBars, setMinBars] = useState(DEFAULT_MIN_BARS);
   const [lookback, setLookback] = useState(DEFAULT_LOOKBACK);
@@ -109,6 +109,7 @@ export function SignalRadarPage({ state, actions }: PageProps) {
         <label className="field">
           评分模式
           <select aria-label="评分模式" value={scoreMode} onChange={(event) => setScoreMode(event.currentTarget.value as ResearchSignalBatchScoreMode)}>
+            <option value="chan_multilevel_daily_anchor">缠论多级别日线锚定</option>
             <option value="research">Chan/RSI研究分</option>
             <option value="volume_momentum">量价动量</option>
             <option value="chan_structure">缠论结构</option>
@@ -420,6 +421,7 @@ function universeLabel(universe: string): string {
 }
 
 function scoreModeTitle(mode: string | null | undefined): string {
+  if (mode === "chan_multilevel_daily_anchor") return "缠论多级别日线锚定";
   if (mode === "chan_structure") return "缠论结构";
   if (mode === "volume_momentum") return "量价动量";
   return "研究评分";

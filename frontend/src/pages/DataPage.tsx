@@ -111,6 +111,17 @@ export function DataPage({ state, actions }: PageProps) {
           </select>
         </label>
         <label className="field">
+          <span>行情周期</span>
+          <select aria-label="行情周期" value={state.settings.timeframe} onChange={(event) => updateTimeframe(state.settings, event.currentTarget.value, actions.setSettings)}>
+            <option value="daily">日线</option>
+            <option value="1m">1分钟</option>
+            <option value="5m">5分钟</option>
+            <option value="15m">15分钟</option>
+            <option value="30m">30分钟</option>
+            <option value="60m">60分钟</option>
+          </select>
+        </label>
+        <label className="field">
           <span>开始日期</span>
           <input value={state.settings.start_date} onChange={(event) => update("start_date", event.currentTarget.value)} />
         </label>
@@ -137,7 +148,7 @@ export function DataPage({ state, actions }: PageProps) {
             生成演示数据
           </ToolbarButton>
           <ToolbarButton icon={<Download size={16} />} disabled={hasErrors || state.busy} onClick={() => runWhenValid(actions.downloadData)}>
-            下载日线数据
+            下载{timeframeLabel(state.settings.timeframe)}数据
           </ToolbarButton>
         </div>
         {state.busy && <div className="data-status">正在处理数据请求...</div>}
@@ -158,6 +169,7 @@ export function DataPage({ state, actions }: PageProps) {
         <MetricStrip
           metrics={[
             { label: "K线数量", value: state.bars.length },
+            { label: "周期", value: state.dataSummary?.timeframe ?? state.settings.timeframe },
             { label: "最新收盘", value: state.bars.at(-1)?.close_price.toFixed(2) ?? "-" },
             { label: "成交量", value: state.bars.at(-1)?.volume.toLocaleString() ?? "-" },
             { label: "成交额", value: state.bars.at(-1)?.turnover.toLocaleString() ?? "-" }
@@ -168,6 +180,7 @@ export function DataPage({ state, actions }: PageProps) {
           <div className="data-health-grid">
             <HealthItem label="行数" value={`${health.rows} 行`} />
             <HealthItem label="覆盖区间" value={health.coverage} />
+            <HealthItem label="行情周期" value={health.timeframe} />
             <HealthItem label="缺失值" value={`${health.missingValues} 处`} tone={health.missingValues > 0 ? "warning" : "ok"} />
             <HealthItem label="最新收盘" value={formatOptionalNumber(health.latestClose, 2)} />
             <HealthItem label="本地路径" value={health.csvPath} />
@@ -198,6 +211,9 @@ function validateDataSettings(settings: PlatformSettings): string[] {
   if (!settings.csv_path.trim()) {
     errors.push("CSV路径不能为空");
   }
+  if (!["daily", "1m", "5m", "15m", "30m", "60m"].includes(settings.timeframe)) {
+    errors.push("行情周期需为 daily、1m、5m、15m、30m 或 60m");
+  }
   if (!isDateKey(settings.start_date) || !isDateKey(settings.end_date)) {
     errors.push("日期格式需为 YYYYMMDD");
   } else if (settings.start_date > settings.end_date) {
@@ -221,11 +237,37 @@ function buildDataHealth(bars: Bar[], settings: PlatformSettings, summary: PageP
   return {
     rows: summary?.rows ?? bars.length,
     coverage: start && end ? `${start} 至 ${end}` : "-",
+    timeframe: summary?.timeframe ?? settings.timeframe,
     missingValues: countMissingValues(bars),
     latestClose: summary?.latest_close ?? lastBar?.close_price ?? null,
     csvPath,
     pathStatus: loadedPath !== csvPath ? "待加载新路径" : pathLooksValid ? "可用路径" : "待检查路径"
   };
+}
+
+function updateTimeframe(settings: PlatformSettings, timeframe: string, setSettings: (settings: PlatformSettings) => void) {
+  setSettings({
+    ...settings,
+    timeframe,
+    csv_path: managedCsvPath(settings.symbol, settings.exchange, settings.adjust, timeframe)
+  });
+}
+
+function managedCsvPath(symbol: string, exchange: string, adjust: string, timeframe: string): string {
+  const cleanAdjust = (adjust || "qfq").toLowerCase();
+  const cleanTimeframe = timeframe || "daily";
+  return `data/market/a_share/${exchange}/${symbol}/${symbol}_${exchange}_${cleanTimeframe}_${cleanAdjust}_latest.csv`;
+}
+
+function timeframeLabel(timeframe: string): string {
+  return {
+    daily: "日线",
+    "1m": "1分钟",
+    "5m": "5分钟",
+    "15m": "15分钟",
+    "30m": "30分钟",
+    "60m": "60分钟"
+  }[timeframe] ?? timeframe;
 }
 
 function countMissingValues(bars: Bar[]): number {

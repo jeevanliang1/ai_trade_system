@@ -55,6 +55,7 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
       start_date: "20240101",
       end_date: "20241231",
       adjust: "qfq",
+      timeframe: "daily",
       csv_path: "data/000001_daily.csv",
       log_path: "logs/paper_events.jsonl",
       initial_cash: 100000,
@@ -84,7 +85,8 @@ function makeProps(overrides: Partial<PlatformState> = {}): PageProps {
       end: "2024-01-04",
       latest_close: 10.7,
       latest_volume: 1300,
-      latest_turnover: 13910
+      latest_turnover: 13910,
+      timeframe: "daily"
     },
     signals: null,
     portfolio: { allocations: [], mode: "weighted_vote", ai_adjust: false, ai_direction: null },
@@ -218,4 +220,33 @@ test("DataPage health panel shows the current target CSV path when settings diff
 
   expect(screen.getByText("data/601318_daily.csv")).toBeInTheDocument();
   expect(screen.getByText("待加载新路径")).toBeInTheDocument();
+});
+
+test("DataPage lets users select minute timeframe and labels download action", async () => {
+  const user = userEvent.setup();
+  const props = makeProps({
+    settings: {
+      ...makeProps().state.settings,
+      timeframe: "5m",
+      csv_path: "data/market/a_share/SZSE/000001/000001_SZSE_5m_qfq_latest.csv"
+    },
+    dataSummary: {
+      ...makeProps().state.dataSummary!,
+      timeframe: "5m"
+    }
+  });
+
+  render(<DataPage {...props} />);
+
+  expect(screen.getByLabelText("行情周期")).toHaveValue("5m");
+  expect(screen.getByRole("button", { name: "下载5分钟数据" })).toBeInTheDocument();
+  expect(screen.getAllByText("5m").length).toBeGreaterThanOrEqual(2);
+
+  await user.selectOptions(screen.getByLabelText("行情周期"), "15m");
+
+  expect(props.actions.setSettings).toHaveBeenCalledWith({
+    ...props.state.settings,
+    timeframe: "15m",
+    csv_path: "data/market/a_share/SZSE/000001/000001_SZSE_15m_qfq_latest.csv"
+  });
 });

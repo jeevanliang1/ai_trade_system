@@ -76,7 +76,7 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
 	  vi.mocked(api.batchResearchSignals).mockResolvedValue({
 	    query: "",
 	    universe: "catalog",
-      score_mode: "research",
+      score_mode: "chan_multilevel_daily_anchor",
 	    scanned: 2,
     available: 1,
     missing: 1,
@@ -131,6 +131,8 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
 
   render(<SignalRadarPage {...makeProps()} />);
 
+  expect(screen.getByLabelText("评分模式")).toHaveValue("chan_multilevel_daily_anchor");
+
   await user.click(screen.getByRole("button", { name: "批量扫描" }));
 
   expect(api.batchResearchSignals).toHaveBeenCalledWith(
@@ -141,7 +143,7 @@ test("SignalRadarPage runs a batch scan and renders ranked local CSV results", a
       min_bars: 60,
       lookback: 120,
       universe: "catalog",
-      score_mode: "research",
+      score_mode: "chan_multilevel_daily_anchor",
       auto_update_data: false
     })
   );

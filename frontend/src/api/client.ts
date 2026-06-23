@@ -1,5 +1,18 @@
 import type {
   AIResearchResponse,
+  AgentMemoriesResponse,
+  AgentMemory,
+  AgentMemoryResponse,
+  AgentPlanPreviewResponse,
+  AgentPlannerPolicy,
+  AgentPlannerPolicyResponse,
+  AgentSkill,
+  AgentSkillResponse,
+  AgentSkillsResponse,
+  AgentTaskResponse,
+  AgentTasksResponse,
+  AgentTraceResponse,
+  AgentToolsResponse,
   AutomationConfig,
   AutomationConfigRequest,
   AutomationStatus,
@@ -11,6 +24,8 @@ import type {
   PaperResponse,
   PlatformSettings,
   PortfolioRequest,
+  RealtimeMonitorEventsResponse,
+  RealtimeMonitorStatus,
   ResearchSignalBatchScoreMode,
   ResearchSignalBatchResponse,
   ResearchSignalPreview,
@@ -61,7 +76,8 @@ export const api = {
   stocks: (query: string, limit = 20) => apiRequest<Stock[]>(`/api/stocks?query=${encodeURIComponent(query)}&limit=${limit}`),
   watchlist: () => apiRequest<WatchlistResponse>("/api/watchlist"),
   saveWatchlist: (stocks: Stock[]) => apiRequest<WatchlistResponse>("/api/watchlist", { method: "PUT", body: JSON.stringify({ stocks }) }),
-  managedData: () => apiRequest<ManagedDataResponse>("/api/data/managed"),
+  managedData: (timeframe = "daily", adjust = "qfq") =>
+    apiRequest<ManagedDataResponse>(`/api/data/managed?timeframe=${encodeURIComponent(timeframe)}&adjust=${encodeURIComponent(adjust)}`),
   updateWatchlistData: (request: WatchlistDataUpdateRequest = {}) =>
     apiRequest<WatchlistDataUpdateResponse>("/api/data/update-watchlist", { method: "POST", body: JSON.stringify(request) }),
   automationStatus: () => apiRequest<AutomationStatus>("/api/automation/status"),
@@ -70,6 +86,47 @@ export const api = {
     apiRequest<DailyJudgmentResponse>(`/api/automation/judgments${day ? `?day=${encodeURIComponent(day)}` : ""}`),
   updateAutomationConfig: (request: AutomationConfigRequest) =>
     apiRequest<AutomationConfig>("/api/automation/config", { method: "PUT", body: JSON.stringify(request) }),
+  agentTools: () => apiRequest<AgentToolsResponse>("/api/agent/tools"),
+  agentTasks: (limit = 50) => apiRequest<AgentTasksResponse>(`/api/agent/tasks?limit=${limit}`),
+  createAgentTask: (prompt: string, source = "frontend", context: Record<string, unknown> = {}) =>
+    apiRequest<AgentTaskResponse>("/api/agent/tasks", {
+      method: "POST",
+      body: JSON.stringify({ prompt, source, context })
+    }),
+  approveAgentTask: (taskId: string, approval = "approved") =>
+    apiRequest<AgentTaskResponse>(`/api/agent/tasks/${encodeURIComponent(taskId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ approval })
+    }),
+  agentTaskTrace: (taskId: string) => apiRequest<AgentTraceResponse>(`/api/agent/tasks/${encodeURIComponent(taskId)}/trace`),
+  agentMemories: () => apiRequest<AgentMemoriesResponse>("/api/agent/governance/memories"),
+  createAgentMemory: (memory: AgentMemory) =>
+    apiRequest<AgentMemoryResponse>("/api/agent/governance/memories", { method: "POST", body: JSON.stringify(memory) }),
+  updateAgentMemory: (memoryId: string, patch: Partial<AgentMemory>) =>
+    apiRequest<AgentMemoryResponse>(`/api/agent/governance/memories/${encodeURIComponent(memoryId)}`, {
+      method: "PUT",
+      body: JSON.stringify(patch)
+    }),
+  deleteAgentMemory: (memoryId: string) =>
+    apiRequest<{ deleted: boolean; id: string }>(`/api/agent/governance/memories/${encodeURIComponent(memoryId)}`, { method: "DELETE" }),
+  agentSkills: () => apiRequest<AgentSkillsResponse>("/api/agent/governance/skills"),
+  createAgentSkill: (skill: AgentSkill) =>
+    apiRequest<AgentSkillResponse>("/api/agent/governance/skills", { method: "POST", body: JSON.stringify(skill) }),
+  updateAgentSkill: (skillId: string, patch: Partial<AgentSkill>) =>
+    apiRequest<AgentSkillResponse>(`/api/agent/governance/skills/${encodeURIComponent(skillId)}`, {
+      method: "PUT",
+      body: JSON.stringify(patch)
+    }),
+  deleteAgentSkill: (skillId: string) =>
+    apiRequest<{ deleted: boolean; id: string }>(`/api/agent/governance/skills/${encodeURIComponent(skillId)}`, { method: "DELETE" }),
+  agentPolicy: () => apiRequest<AgentPlannerPolicyResponse>("/api/agent/governance/policy"),
+  updateAgentPolicy: (policy: Partial<AgentPlannerPolicy>) =>
+    apiRequest<AgentPlannerPolicyResponse>("/api/agent/governance/policy", { method: "PUT", body: JSON.stringify(policy) }),
+  previewAgentPlan: (prompt: string, context: Record<string, unknown> = {}) =>
+    apiRequest<AgentPlanPreviewResponse>("/api/agent/governance/plan-preview", {
+      method: "POST",
+      body: JSON.stringify({ prompt, context })
+    }),
   runAutomationWeekly: () => apiRequest<WeeklyRadarResult>("/api/automation/run-weekly", { method: "POST" }),
   runAutomationDaily: () => apiRequest<DailyJudgmentResponse>("/api/automation/run-daily", { method: "POST" }),
   strategies: () => apiRequest<StrategySpec[]>("/api/strategies"),
@@ -92,6 +149,14 @@ export const api = {
     apiRequest<DataResponse>("/api/data/download", { method: "POST", body: JSON.stringify({ settings }) }),
   previewSignals: (settings: PlatformSettings, strategy: StrategySelection) =>
     apiRequest<SignalsResponse>("/api/signals/preview", { method: "POST", body: JSON.stringify({ settings, strategy }) }),
+  startRealtimeMonitor: (settings: PlatformSettings, strategy: StrategySelection, poll_interval_seconds = 30) =>
+    apiRequest<RealtimeMonitorStatus>("/api/realtime/start", {
+      method: "POST",
+      body: JSON.stringify({ settings, strategy, poll_interval_seconds })
+    }),
+  stopRealtimeMonitor: () => apiRequest<RealtimeMonitorStatus>("/api/realtime/stop", { method: "POST" }),
+  realtimeStatus: () => apiRequest<RealtimeMonitorStatus>("/api/realtime/status"),
+  realtimeEvents: (limit = 100) => apiRequest<RealtimeMonitorEventsResponse>(`/api/realtime/events?limit=${limit}`),
   previewPortfolio: (settings: PlatformSettings, portfolio: PortfolioRequest) =>
     apiRequest<SignalsResponse>("/api/portfolio/preview", { method: "POST", body: JSON.stringify({ settings, portfolio }) }),
   previewResearchSignals: (settings: PlatformSettings, min_bars = 60, lookback = 120) =>
@@ -117,7 +182,7 @@ export const api = {
       min_bars: 60,
       lookback: 120,
       universe: "catalog",
-      score_mode: "research"
+      score_mode: "chan_multilevel_daily_anchor"
     }
   ) =>
     apiRequest<ResearchSignalBatchResponse>("/api/research/signals/batch", {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from ai_trade_system.automation.models import (
     AutomationConfig,
     AutomationRunRecord,
     DailyJudgment,
+    WeeklyAnalysisResult,
     WeeklyRadarResult,
 )
 
@@ -38,6 +40,14 @@ class AutomationStore:
         return self.root / "daily_judgments"
 
     @property
+    def weekly_analysis_dir(self) -> Path:
+        return self.root / "weekly_analysis"
+
+    @property
+    def latest_weekly_analysis_path(self) -> Path:
+        return self.root / "weekly_analysis_latest.json"
+
+    @property
     def runs_path(self) -> Path:
         return self.log_root / "runs.jsonl"
 
@@ -65,6 +75,25 @@ class AutomationStore:
     def save_weekly_result(self, result: WeeklyRadarResult) -> None:
         _write_json(self.weekly_path, result.as_dict())
 
+    def weekly_analysis_path(self, week_key: str) -> Path:
+        return self.weekly_analysis_dir / f"{week_key}.json"
+
+    def load_weekly_analysis(self, week_key: str | None = None) -> WeeklyAnalysisResult | None:
+        path = self.weekly_analysis_path(week_key) if week_key else self.latest_weekly_analysis_path
+        payload = _read_json(path)
+        if not payload:
+            return None
+        return WeeklyAnalysisResult.from_dict(payload)
+
+    def load_latest_weekly_analysis(self) -> WeeklyAnalysisResult | None:
+        return self.load_weekly_analysis()
+
+    def save_weekly_analysis(self, result: WeeklyAnalysisResult) -> None:
+        payload = result.as_dict()
+        week_key = week_key_for_datetime(result.generated_at)
+        _write_json(self.weekly_analysis_path(week_key), payload)
+        _write_json(self.latest_weekly_analysis_path, payload)
+
     def load_daily_judgments(self, day: str) -> list[DailyJudgment]:
         payload = _read_json(self.daily_dir / f"{day}.json")
         rows = payload.get("judgments", []) if isinstance(payload, dict) else []
@@ -89,6 +118,12 @@ class AutomationStore:
             if line.strip():
                 records.append(AutomationRunRecord.from_dict(json.loads(line)))
         return records
+
+
+def week_key_for_datetime(value: str) -> str:
+    day = value[:10]
+    year, week, _weekday = date.fromisoformat(day).isocalendar()
+    return f"{year}-W{week:02d}"
 
 
 def _read_json(path: Path) -> dict[str, Any]:

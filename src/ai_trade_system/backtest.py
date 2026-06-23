@@ -62,19 +62,20 @@ def run_backtest(bars: list[Bar], strategy: Strategy, config: BacktestConfig | N
     strategy.on_start()
     try:
         for bar in bars:
+            bar_time = bar.timestamp or bar.trading_day
             marks[bar.symbol] = bar.close_price
             for signal in strategy.on_bar(bar):
                 if signal.action == "buy":
-                    result = broker.buy(signal.symbol, signal.price, signal.volume, trading_day=bar.trading_day)
+                    result = broker.buy(signal.symbol, signal.price, signal.volume, trading_day=bar_time)
                     if result.accepted:
                         trade_attributions.append(_trade_attribution(broker.trades[-1], signal.reason))
                 elif signal.action == "sell":
-                    result = broker.sell(signal.symbol, signal.price, signal.volume, trading_day=bar.trading_day)
+                    result = broker.sell(signal.symbol, signal.price, signal.volume, trading_day=bar_time)
                     if result.accepted:
                         trade_attributions.append(_trade_attribution(broker.trades[-1], signal.reason))
             equity_curve.append(
                 EquityPoint(
-                    trading_day=bar.trading_day,
+                    trading_day=bar_time,
                     equity=broker.equity(marks),
                     cash=broker.cash,
                     close_price=bar.close_price,

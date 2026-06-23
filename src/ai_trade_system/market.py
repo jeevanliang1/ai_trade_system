@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,8 @@ class Bar:
     close_price: float
     volume: float
     turnover: float = 0.0
+    timestamp: datetime | None = None
+    timeframe: str = "daily"
 
 
 @dataclass(frozen=True)

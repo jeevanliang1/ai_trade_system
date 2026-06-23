@@ -9,6 +9,9 @@ logs/
 dist/
 build/
 .DS_Store
+.env
+.env.local
+.env.*.local
 .codegraph/
 frontend/node_modules/
 frontend/dist/

@@ -25,21 +25,27 @@ BAR_COLUMNS = [
     "volume",
     "turnover",
 ]
+INTRADAY_BAR_COLUMNS = ["symbol", "exchange", "trading_day", "timestamp", "timeframe", "open_price", "high_price", "low_price", "close_price", "volume", "turnover"]
 EQUITY_COLUMNS = ["trading_day", "equity", "cash", "close_price"]
 TRADE_COLUMNS = ["trading_day", "side", "symbol", "price", "volume", "commission", "notional"]
 ORDER_EVENT_COLUMNS = ["trading_day", "event", "side", "symbol", "price", "volume", "reason"]
 PAPER_EQUITY_COLUMNS = ["trading_day", "equity", "cash"]
 SIGNAL_COLUMNS = ["trading_day", "action", "symbol", "price", "volume", "reason"]
+INTRADAY_SIGNAL_COLUMNS = ["trading_day", "timestamp", "timeframe", "action", "symbol", "price", "volume", "reason"]
 METRIC_COLUMNS = ["metric", "value"]
 DRAWDOWN_COLUMNS = ["trading_day", "equity", "drawdown_pct"]
 
 
 def bars_to_frame(bars: Iterable[Bar]) -> pd.DataFrame:
+    bar_list = list(bars)
+    columns = INTRADAY_BAR_COLUMNS if any(_is_intraday_bar(bar) for bar in bar_list) else BAR_COLUMNS
     rows = [
         {
             "symbol": bar.symbol,
             "exchange": bar.exchange,
             "trading_day": bar.trading_day,
+            "timestamp": bar.timestamp,
+            "timeframe": bar.timeframe,
             "open_price": bar.open_price,
             "high_price": bar.high_price,
             "low_price": bar.low_price,
@@ -47,9 +53,9 @@ def bars_to_frame(bars: Iterable[Bar]) -> pd.DataFrame:
             "volume": bar.volume,
             "turnover": bar.turnover,
         }
-        for bar in bars
+        for bar in bar_list
     ]
-    return _sorted_frame(rows, BAR_COLUMNS)
+    return _sorted_frame(rows, columns)
 
 
 def equity_curve_to_frame(points: Iterable[EquityPoint]) -> pd.DataFrame:
@@ -82,25 +88,33 @@ def trades_to_frame(trades: Iterable[Trade]) -> pd.DataFrame:
 
 
 def strategy_signals_to_frame(bars: Iterable[Bar], strategy: Strategy) -> pd.DataFrame:
+    bar_list = list(bars)
+    include_intraday = any(_is_intraday_bar(bar) for bar in bar_list)
     rows: list[dict[str, Any]] = []
     strategy.on_init()
     strategy.on_start()
     try:
-        for bar in bars:
+        for bar in bar_list:
             for signal in strategy.on_bar(bar):
-                rows.append(
-                    {
-                        "trading_day": bar.trading_day,
-                        "action": signal.action,
-                        "symbol": signal.symbol,
-                        "price": signal.price,
-                        "volume": signal.volume,
-                        "reason": signal.reason,
-                    }
-                )
+                row = {
+                    "trading_day": bar.trading_day,
+                    "action": signal.action,
+                    "symbol": signal.symbol,
+                    "price": signal.price,
+                    "volume": signal.volume,
+                    "reason": signal.reason,
+                }
+                if include_intraday:
+                    row["timestamp"] = bar.timestamp
+                    row["timeframe"] = bar.timeframe
+                rows.append(row)
     finally:
         strategy.on_stop()
-    return _sorted_frame(rows, SIGNAL_COLUMNS)
+    return _sorted_frame(rows, INTRADAY_SIGNAL_COLUMNS if include_intraday else SIGNAL_COLUMNS)
+
+
+def _is_intraday_bar(bar: Bar) -> bool:
+    return bar.timestamp is not None or bar.timeframe != "daily"
 
 
 def indicator_snapshot_to_frame(snapshot: IndicatorSnapshot) -> pd.DataFrame:

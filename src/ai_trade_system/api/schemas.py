@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ai_trade_system.strategy_defaults import DEFAULT_SCAN_SCORE_MODE
+
 
 class PlatformSettings(BaseModel):
     symbol: str = "000001"
@@ -11,6 +13,7 @@ class PlatformSettings(BaseModel):
     start_date: str = "20220101"
     end_date: str = "20250516"
     adjust: str = "qfq"
+    timeframe: str = "daily"
     csv_path: str = "data/000001_daily.csv"
     log_path: str = "logs/paper_events.jsonl"
     initial_cash: float = 100_000.0
@@ -97,6 +100,7 @@ class DataUpdateWatchlistRequest(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     adjust: str = "qfq"
+    timeframe: str = "daily"
     if_stale: bool = True
 
 
@@ -112,6 +116,11 @@ class StrategyTemplateRequest(BaseModel):
 
 class SignalsRequest(DataRequest):
     strategy: StrategySelection
+
+
+class RealtimeStartRequest(DataRequest):
+    strategy: StrategySelection
+    poll_interval_seconds: float = Field(default=30.0, gt=0, le=3600)
 
 
 class PortfolioPreviewRequest(DataRequest):
@@ -141,7 +150,7 @@ class ResearchSignalBatchRequest(DataRequest):
     min_bars: int = Field(default=60, ge=20, le=500)
     lookback: int = Field(default=120, ge=20, le=500)
     universe: Literal["catalog", "local_csv", "current", "star"] = "catalog"
-    score_mode: Literal["research", "volume_momentum", "chan_structure"] = "research"
+    score_mode: Literal["research", "volume_momentum", "chan_structure", "chan_multilevel_daily_anchor"] = DEFAULT_SCAN_SCORE_MODE
     auto_update_data: bool = False
     if_stale: bool = True
     adjust: str | None = None
@@ -152,6 +161,10 @@ class AutomationConfigRequest(BaseModel):
     top_n: int | None = Field(default=None, ge=1, le=50)
     chan_weight: float | None = Field(default=None, ge=0, le=5)
     volume_weight: float | None = Field(default=None, ge=0, le=5)
+    weekly_analysis_enabled: bool | None = None
+    weekly_analysis_top_n: int | None = Field(default=None, ge=1, le=50)
+    weekly_delivery_enabled: bool | None = None
+    weekly_delivery_channel: str | None = None
 
 
 class PaperRunRequest(DataRequest):
@@ -163,3 +176,73 @@ class PaperRunRequest(DataRequest):
 class RiskEvaluateRequest(BaseModel):
     metrics: dict[str, float | int | None] = Field(default_factory=dict)
     config: RiskConfigView
+
+
+class AgentTaskRequest(BaseModel):
+    prompt: str
+    source: str = "frontend"
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentApprovalRequest(BaseModel):
+    approval: str = "approved"
+
+
+class AgentMemoryRequest(BaseModel):
+    id: str
+    type: str = "note"
+    scope: str = "agent"
+    title: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    source: str = "user"
+    confidence: str = "medium"
+    enabled: bool = True
+    expires_at: str | None = None
+
+
+class AgentMemoryPatchRequest(BaseModel):
+    type: str | None = None
+    scope: str | None = None
+    title: str | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    source: str | None = None
+    confidence: str | None = None
+    enabled: bool | None = None
+    expires_at: str | None = None
+
+
+class AgentSkillRequest(BaseModel):
+    id: str
+    title: str
+    description: str
+    trigger_terms: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    required_confirmations: list[str] = Field(default_factory=list)
+    output_format: str = "agent_report"
+    enabled: bool = True
+
+
+class AgentSkillPatchRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    trigger_terms: list[str] | None = None
+    steps: list[str] | None = None
+    allowed_tools: list[str] | None = None
+    required_confirmations: list[str] | None = None
+    output_format: str | None = None
+    enabled: bool | None = None
+
+
+class AgentPlannerPolicyRequest(BaseModel):
+    max_steps: int | None = Field(default=None, ge=1, le=25)
+    blocked_intents: list[str] | None = None
+    tool_permissions: dict[str, str] | None = None
+    default_output_format: str | None = None
+
+
+class AgentPlanPreviewRequest(BaseModel):
+    prompt: str
+    context: dict[str, Any] = Field(default_factory=dict)

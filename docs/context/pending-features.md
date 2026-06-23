@@ -1,6 +1,6 @@
 # Pending Features
 
-Last updated: 2026-06-20
+Last updated: 2026-06-22
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This file is the durable continuation handoff for broad product requests, replic
 
 ## Current Goal
 
-Replicate the screenshot-style AI量化平台 desktop workbench with a React + FastAPI default interface, then continue into practical A-share strategy development. The current implementation is functional enough to start adding strategy templates that run through the existing strategy registry, backtest, paper trading, and React workbench surfaces.
+Replicate the screenshot-style AI量化平台 desktop workbench with a React + FastAPI default interface, then continue into practical A-share strategy development. The current implementation is functional enough to start adding strategy templates that run through the existing strategy registry, backtest, paper trading, and React workbench surfaces. Current active strategy work: calibrate Chan multilevel reversal after the first daily-plus-30m/15m validation showed lower turnover and drawdown but incomplete public minute-history coverage.
 
 ## Completion Grain
 
@@ -18,7 +18,7 @@ Each pending item below should be small enough to finish in one focused implemen
 
 - React + TypeScript + Vite frontend with default `./scripts/run_app.sh` entry.
 - FastAPI local API for bootstrap, data, strategies, signals, portfolio preview, backtest, AI research, paper run/events, and risk evaluation.
-- Ten React workspaces exist: overview, data center, strategy workshop, portfolio lab, backtest center, signal radar, AI researcher, paper trading, risk, and automation tasks.
+- Twelve React workspaces exist: overview, stock configuration, data center, strategy workshop, portfolio lab, backtest center, signal radar, AI command center, AI researcher, paper trading, risk, and automation tasks.
 - Screenshot-like shell exists with left navigation, top command bar, center work area, right inspector, and bottom status bar.
 - Strategy workshop has strategy list, parameter form, signal preview, K-line, volume, basic result metrics, and source editor state.
 - K-line chart has red-rise/green-fall candlesticks, MA20/MA60 overlays, visible volume bars, and no initial chart animation flicker.
@@ -68,6 +68,7 @@ Each pending item below should be small enough to finish in one focused implemen
 - Signal Radar STAR auto-data maintenance is complete for current scope: batch scans accept `universe=star` for SSE `688*` 科创板 candidates, allow up to 300 candidates, optionally maintain candidate CSVs through `data_manager.update_stock_data` before scanning, return `data_update` plus per-row maintenance status, and React exposes the 科创板 range plus an explicit “扫描前自动更新数据” toggle.
 - Data maintenance freshness fallback is complete for current scope: incremental fetch exceptions with an existing local `latest.csv` now return a skipped maintenance status that preserves usable local rows and scan availability, while first-time no-local-data failures still surface as true failed updates.
 - Automation Radar Maintenance is complete for current scope: `ai_trade_system.automation` now owns config/state/run persistence, STAR plus watchlist weekly maintenance, weekly Chan-primary plus volume-price-assist Top N scanning, daily Top N judgment refresh, FastAPI automation routes, app-lifespan scheduler startup/shutdown, and a React `自动任务` workspace with config and manual run controls.
+- Automation run history and diagnostics are complete for current scope: `/api/automation/status` exposes recent weekly/daily run records plus running, failure, missing-result, and missing-data diagnostics, and the React `自动任务` workspace renders `运行诊断` and `最近运行` panels without requiring direct JSON/JSONL inspection.
 - Strategy Workshop Chan-structure overlays are complete for current scope: `/api/research/signals/preview` returns chart-ready structure payloads, the K-line chart renders fractals, strokes, pivots, and T2/T3 structure markers, and the toolbar can hide or restore the overlay.
 - Chan core deepening first slice is complete for current scope: `research.chan_structure` now builds simplified line segments, stroke/segment recursive pivots, segment-energy divergence records, and divergence/confirmation signals, while preview, batch diagnostics, chart overlays, and `ChanStructureStrategy` consume the expanded structure.
 - Chan strict segment rules first slice is complete for current scope: `research.chan_structure` now builds non-overlapping stateful segments, extends active segments until confirmed breaks, records start/end/break stroke indexes, and preserves segment-level recursive pivots plus confirmation signals on explicit break/rebuild structures.
@@ -99,8 +100,30 @@ Each pending item below should be small enough to finish in one focused implemen
 - Engineering hygiene stale-item cleanup is complete for current scope: current `git status` no longer shows `src/ai_trade_system/web/app.py` or `data/000001_daily.csv`, so the old Streamlit split and generated CSV removal reminders were cleared from the pending list.
 - Reviewable commit split plan is complete for current scope: `docs/runbooks/reviewable-commit-plan.md` groups the current migration into backend API, React Signal Radar, frontend API failure tests, documentation/rules, and local automation commits with staging and verification commands.
 - Signal Radar five-feature QA is complete for current scope: browser-visible acceptance evidence and screenshot path are recorded in `docs/qa/2026-06-14-signal-radar-five-feature-qa.md`.
+- AI Command Center three-stage entrypoint is complete for current scope: `ai_trade_system.agent` now persists audited Agent tasks and reports, FastAPI exposes task/tool/approval routes, `ai-trade agent` provides CLI plus stdio MCP entrypoints, OpenClaw/Weixin sources and external-research connector status are recorded, live-trading intents are blocked, and React adds an `AI指挥台` workspace with task status, tool calls, evidence, report paths, and confirmation visibility.
+- AI Command Center system-tool dispatch is complete for current scope: OpenClaw/Weixin/MCP/CLI/API/React Agent tasks can plan and execute `data.update`, `research.fundamental`, `radar.scan`, `backtest.run`, `risk.evaluate`, and `paper.run`, with each step persisted in `data/agent/tasks/`, summarized in reports, and visible in the React AI指挥台.
+- AI Command Center DeepSeek/background execution upgrade is complete for current scope: local `.env.local` can configure the DeepSeek-compatible LLM provider, the Agent planner can request tool plans from DeepSeek, task creation enters a background queue, confirm-level tools pause with visible approval actions, CLI/MCP approval resumes execution, and React shows queued/waiting/completed status without mobile horizontal overflow.
+- OpenClaw MCP integration is complete for current scope: OpenClaw Gateway and `openclaw-weixin` are healthy, `ai_trade_system` MCP probe/reload/status passes, OpenClaw agent can call `list_agent_tools` and create a completed audited task, and `research.fundamental` can call back into OpenClaw through `scripts/openclaw_external_research.py`.
+- AI Command Center weekly scan share tools are complete for current scope: Agent can plan and execute `automation.weekly_result`, `research.batch_fundamental`, and `share.weixin`, reusing persisted weekly automation Top candidates, calling OpenClaw for batch external research after confirmation, and preparing a Weixin-ready final share response in the audited task report.
+- Autonomous Agent governance layer is complete for current scope: local JSON persistence under `data/agent/` stores Memory, Skills, and Planner Policy; FastAPI exposes governance CRUD plus plan preview; React adds an `Agent治理` workspace for Memory/Skill/Policy management and previewing matched skills, memories, planned steps, permissions, and stop conditions; `AgentOrchestrator` consumes the same governance output so matched Skills drive real task plans and Planner Policy controls real tool confirmation/block permissions.
+- Agent Trace Log is complete for current scope: every Agent request appends chronological events to `data/agent/runs/<task_id>/events.jsonl`; API, CLI, and MCP expose trace lookup; React AI指挥台 task cards can open execution logs with event summaries and raw JSON payloads for OpenClaw/Weixin debugging.
+- OpenClaw weekly scan natural-language routing and self-healing are complete for current scope: MCP now exposes `get_weekly_scan_report` with explicit “这周/本周股票扫描分析结论” semantics; default weekly Skill trigger terms cover “股票扫描/分析结论/输出给我”; `automation.weekly_result` can classify missing weekly results and automatically trigger weekly scanning before handing candidates to downstream Agent analysis.
+- OpenClaw async completion notification is complete for current scope: MCP weekly-scan tasks return immediately with a task id, carry `notify_on_completion` context, and the background Agent queue calls the OpenClaw notification command after waiting-confirmation/completed/failed/blocked states so OpenClaw can send the user a follow-up message instead of holding the original request open.
+- OpenClaw/Weixin Agent hardening is complete for current scope: weekly scan share output now sends a compact Weixin summary with researched and scan-only candidates separated plus report path, stale queued/running tasks can be marked failed with `orphan_task_marked` trace evidence, and MCP repeated prompts reuse a recent unfinished task through `idempotency_key`.
+- OpenClaw external research evidence gate is complete for current scope: `scripts/openclaw_external_research.py` extracts `web_search` and direct session URLs from OpenClaw sessions, and `research.batch_fundamental` downgrades source-less successful summaries to `failed`/`low` with an external-evidence-insufficient reason instead of presenting them as verified fundamentals.
+- Weekly scan deep-analysis delivery is complete for current scope: Saturday automation now maintains 科创板 and 创业板 candidates, runs the default Chan daily-anchor scan, persists board-level Top10 AI deep-analysis caches under `data/automation/weekly_analysis/`, exposes analysis/delivery status, and sends the cached weekly report through OpenClaw Weixin or Feishu notification when configured.
+- AKShare minute-level data support is complete for current scope: `daily` remains default while `1m/5m/15m/30m/60m` propagate through AKShare download, CSV read/write, managed market-data paths, API/CLI requests, React Data Center/Stock Config controls, backtest, paper trading, and signal preview flows.
+- Realtime Monitor first slice is complete for current scope: `ai_trade_system.realtime` runs a background current-symbol minute-bar monitor, warms the selected strategy without alerting historical signals, emits new-bar and strategy-signal events through FastAPI `/api/realtime/*`, and React adds a `实时盯盘` workspace with start/stop/status/event controls.
+- Chan multilevel reversal validation first slice is complete for current scope: `ChanMultiLevelReversalStrategy` is a built-in strategy that keeps daily structure as the main trend, gates entries with `30m` confirmation, uses `15m` only for existing-position risk reduction, and records fixed six-stock daily-plus-minute benchmark evidence in `docs/qa/2026-06-21-chan-multilevel-reversal-qa.md`.
+- Chan multilevel reversal calibration B pass is complete for current scope: `daily_only` fallback now treats lower-level data as missing until `30m` bars have actually been consumed at the current daily cutoff, fixed six-stock calibration is recorded in `docs/qa/2026-06-21-chan-multilevel-calibration-qa.md`, and defaults remain unchanged because the best partial-minute preset still underperforms the daily Chan baseline.
+- Chan multilevel 60m completion pass is complete for current scope: `ChanMultiLevelReversalStrategy` now supports `60m` confirmation and `30m` risk levels, six-stock `60m` fixtures are persisted under managed market-data paths, fixed six-stock benchmark evidence is recorded in `docs/qa/2026-06-21-chan-multilevel-60m-completion-qa.md`, and defaults remain unchanged because the best complete `60m+30m` preset still underperforms the daily Chan baseline.
+- Chan lower-level discovery mode is complete for current scope: `ChanMultiLevelReversalStrategy` now supports `entry_mode=lower_level_discovery`, allowing `60m/30m` high-confidence lower-level buys to open exploratory positions when daily background is not bearish, while fixed eight-stock benchmark evidence including `688733/SSE` and `688072/SSE` is recorded in `docs/qa/2026-06-21-chan-lower-level-discovery-qa.md`.
 
 ## Pending
+
+### AI Command Center
+
+No current pending items.
 
 ### AI Researcher
 
@@ -130,9 +153,15 @@ No current pending items.
 
 No current pending items.
 
+### Realtime Monitoring
+
+- Signal Radar realtimeization: extend the realtime monitor from current-symbol strategy events to watchlist or radar-candidate batches, reuse the default Chan multilevel daily-anchor preset, persist alert history, and support OpenClaw Weixin/Feishu notification for `signal_triggered` events.
+- Tick and broker-grade market data adapters: extract a `MarketDataSource` boundary so the first adapter remains public minute-bar polling while future vn.py, broker gateway, or third-party tick sources can feed the same realtime event model without changing strategies or React event rendering.
+
 ### Strategy Development
 
-No current pending items.
+- Strong Stock Pool A-share local CSV MVP: adapt the "historical strong stock + healthy pullback watchlist" framework into the current Signal Radar/data-manager architecture using local managed A-share daily qfq CSV files first. Implement Layer0 universe filtering, Layer1 daily Top snapshot, Layer2 60-day history profile, and Layer3 pullback monitor as a scanner/watchlist pipeline rather than a single-symbol `Strategy`; defer US-stock provider and fundamental metadata filters.
+- Chan multilevel reversal data-source follow-up: investigate a durable historical intraday source beyond the current public AKShare minute-window limit, then rerun the fixed six-stock `60m/30m` benchmark before considering the multilevel strategy as a default replacement.
 
 ### Engineering And Review Hygiene
 
@@ -140,11 +169,11 @@ No current pending items.
 
 ### Automation Business
 
-- Add recent run history and failure diagnostics to the `自动任务` workspace so weekly/daily scheduler outcomes, skipped maintenance, and failed data updates are visible without reading runtime JSON/JSONL files.
+No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Automation Business - Add recent run history and failure diagnostics to the `自动任务` workspace so weekly/daily scheduler outcomes, skipped maintenance, and failed data updates are visible without reading runtime JSON/JSONL files".
+Start with "Realtime Monitoring - Signal Radar realtimeization: watchlist/radar-candidate batch monitoring, alert persistence, and OpenClaw Weixin/Feishu notification for realtime signal events".
 
 ## Update Rules
 

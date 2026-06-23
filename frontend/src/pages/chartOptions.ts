@@ -2,8 +2,9 @@ import type { BacktestResponse, Bar, ChanFractalOverlay, ResearchSignal, Researc
 
 export function priceOption(bars: Bar[], signals: SignalRow[] = [], chanStructure: ResearchSignalChanStructure | null = null) {
   const start = visibleRangeStart(bars.length);
-  const barsByDay = new Map(bars.map((bar) => [bar.trading_day, bar]));
+  const barsByDay = new Map(bars.flatMap((bar) => [[bar.trading_day, bar], [bar.timestamp ?? bar.trading_day, bar]]));
   const markerOffset = signalMarkerOffset(bars);
+  const xValues = bars.map((bar) => barX(bar));
   return {
     animation: false,
     legend: { top: 0, right: 8, textStyle: { color: "#667085" } },
@@ -13,7 +14,7 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = [], chanStructur
       { type: "inside", start, end: 100 },
       { type: "slider", show: false, start, end: 100 }
     ],
-    xAxis: { type: "category", data: bars.map((bar) => bar.trading_day), axisLabel: { color: "#667085" } },
+    xAxis: { type: "category", data: xValues, axisLabel: { color: "#667085" } },
     yAxis: { type: "value", scale: true, axisLabel: { color: "#667085" }, splitLine: { lineStyle: { color: "#edf1f7" } } },
     series: [
       {
@@ -63,6 +64,10 @@ export function priceOption(bars: Bar[], signals: SignalRow[] = [], chanStructur
       ...chanStructureSeries(chanStructure, barsByDay, markerOffset)
     ]
   };
+}
+
+function barX(bar: Bar): string {
+  return bar.timestamp ?? bar.trading_day;
 }
 
 function chanStructureSeries(chanStructure: ResearchSignalChanStructure | null, barsByDay: Map<string, Bar>, markerOffset: number) {
