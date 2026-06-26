@@ -44,7 +44,10 @@ export function StockConfigPage({ state, actions }: PageProps) {
 
   const addStock = async (stock: Stock) => {
     const next = mergeWatchlist(state.watchlist, stock);
-    await persistWatchlist(next, actions.setWatchlist, setMessage);
+    const saved = await persistWatchlist(next, actions.setWatchlist, setMessage);
+    if (saved) {
+      await actions.updateWatchlistData(fiveYearMaintenanceRequest(state.settings));
+    }
   };
 
   const removeStock = async (stock: Stock) => {
@@ -135,13 +138,15 @@ export function StockConfigPage({ state, actions }: PageProps) {
   );
 }
 
-async function persistWatchlist(stocks: Stock[], setWatchlist: (stocks: Stock[]) => void, setMessage: (message: string) => void) {
+async function persistWatchlist(stocks: Stock[], setWatchlist: (stocks: Stock[]) => void, setMessage: (message: string) => void): Promise<boolean> {
   try {
     const payload = await api.saveWatchlist(stocks);
     setWatchlist(payload.stocks);
     setMessage("自选股已保存");
+    return true;
   } catch (error) {
     setMessage(`自选股保存失败：${formatRequestError(error)}`);
+    return false;
   }
 }
 
@@ -166,5 +171,25 @@ function dataStatusLabel(status: ReturnType<typeof dataStatusFor>): string {
 }
 
 function managedCsvPath(stock: Stock, timeframe: string): string {
-  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_${timeframe || "daily"}_qfq_latest.csv`;
+  const market = stock.exchange === "CRYPTO" ? "crypto" : ["NASDAQ", "NYSE", "AMEX", "US"].includes(stock.exchange) ? "us_stock" : "a_share";
+  return `data/market/${market}/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_${timeframe || "daily"}_qfq_latest.csv`;
+}
+
+function fiveYearMaintenanceRequest(settings: PageProps["state"]["settings"]) {
+  const endDate = settings.end_date;
+  return {
+    start_date: shiftDateYears(endDate, -5),
+    end_date: endDate,
+    adjust: settings.adjust,
+    timeframe: settings.timeframe,
+    if_stale: true
+  };
+}
+
+function shiftDateYears(dateKey: string, years: number): string {
+  const year = Number(dateKey.slice(0, 4));
+  const month = dateKey.slice(4, 6);
+  const day = dateKey.slice(6, 8);
+  if (!Number.isFinite(year) || month.length !== 2 || day.length !== 2) return dateKey;
+  return `${year + years}${month}${day}`;
 }

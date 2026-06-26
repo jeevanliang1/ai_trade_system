@@ -23,7 +23,8 @@ test("renders screenshot-inspired navigation and switches pages", async () => {
   expect(screen.queryByRole("button", { name: "回测设置" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "导出报告" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "收起" })).not.toBeInTheDocument();
-  expect(screen.getByText("路径：data/000001_daily.csv")).toBeInTheDocument();
+  expect(screen.getByText("请选择股票")).toBeInTheDocument();
+  expect(screen.getByText("路径：")).toBeInTheDocument();
   expect(screen.getByText("周期：daily")).toBeInTheDocument();
   expect(screen.getByText("滑点：0.01")).toBeInTheDocument();
   expect(NAV_ITEMS).toHaveLength(14);

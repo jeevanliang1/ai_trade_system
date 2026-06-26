@@ -64,6 +64,39 @@ def test_data_file_for_stock_uses_timeframe_specific_paths(tmp_path: Path, monke
     )
 
 
+def test_data_file_for_stock_preserves_us_and_crypto_symbols(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    us_file = data_file_for_stock({"code": "AAPL", "name": "Apple", "exchange": "NASDAQ"})
+    crypto_file = data_file_for_stock({"code": "BTCUSDT", "name": "Bitcoin", "exchange": "CRYPTO"})
+
+    assert us_file.code == "AAPL"
+    assert us_file.latest_path == Path("data/market/us_stock/NASDAQ/AAPL/AAPL_NASDAQ_daily_qfq_latest.csv")
+    assert crypto_file.code == "BTCUSDT"
+    assert crypto_file.latest_path == Path("data/market/crypto/CRYPTO/BTCUSDT/BTCUSDT_CRYPTO_daily_qfq_latest.csv")
+
+
+def test_update_stock_data_uses_public_fetcher_for_us_and_crypto_daily_data(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    calls: list[tuple[str, str, str, str, str, str]] = []
+
+    def fake_public_fetch(symbol: str, start_date: str, end_date: str, exchange: str, adjust: str, timeframe: str):
+        calls.append((symbol, start_date, end_date, exchange, adjust, timeframe))
+        return [_bar(symbol, exchange, date(2026, 6, 18), 52.0)]
+
+    monkeypatch.setattr("ai_trade_system.data_manager.fetch_public_market_bars", fake_public_fetch)
+
+    us_result = update_stock_data({"code": "AAPL", "name": "Apple", "exchange": "NASDAQ"}, start_date="20210618", end_date="20260618")
+    crypto_result = update_stock_data({"code": "BTCUSDT", "name": "Bitcoin", "exchange": "CRYPTO"}, start_date="20210618", end_date="20260618")
+
+    assert calls == [
+        ("AAPL", "20210618", "20260618", "NASDAQ", "qfq", "daily"),
+        ("BTCUSDT", "20210618", "20260618", "CRYPTO", "qfq", "daily"),
+    ]
+    assert us_result.status == "updated"
+    assert crypto_result.status == "updated"
+
+
 def test_update_stock_data_merges_latest_csv_and_writes_increment_manifest(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     stock = {"code": "601318", "name": "中国平安", "exchange": "SSE"}

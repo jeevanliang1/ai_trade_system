@@ -3,9 +3,9 @@
 ## 当前模块
 
 - `market`: 统一的 `Bar` 和 `Signal` 数据模型；`Bar` 支持默认日线和可选分钟级 `timestamp`/`timeframe`。
-- `data`: AKShare 日线/分钟级数据标准化、CSV 读写，分钟周期支持 `1m`、`5m`、`15m`、`30m`、`60m`。
-- `data_manager`: 自选股本地行情文件管理，维护按 `timeframe` 区分的规范主 CSV、增量 CSV、manifest 索引和批量更新流程。
-- `stock_catalog`: 本地 A股股票目录加载、搜索、刷新和交易所推断。
+- `data`: AKShare A股日线/分钟级数据标准化、Yahoo 美股日线、Binance 数字货币日线、CSV 读写；A股分钟周期支持 `1m`、`5m`、`15m`、`30m`、`60m`。
+- `data_manager`: 自选股本地行情文件管理，维护按 `timeframe` 区分的规范主 CSV、增量 CSV、manifest 索引和批量更新流程；A股、美股、数字货币分别落在 `data/market/a_share/`、`data/market/us_stock/`、`data/market/crypto/`。
+- `stock_catalog`: 本地 A股股票目录加载、搜索、刷新和交易所推断，并提供少量美股/数字货币公开标的默认项供跨市场搜索入口使用。
 - `strategy`: 策略抽象接口。
 - `strategy_registry`: 发现内置和 `strategies/` 用户策略、读取/保存策略源码、按构造函数生成参数。
 - `indicators`: 计算均线、RSI、布林带、动量、回撤和最新技术指标快照。
@@ -17,7 +17,8 @@
 - `deepseek`: DeepSeek 本地客户端，读取 `.env.local`/环境变量，调用 `https://api.deepseek.com/chat/completions` 并解析 JSON 输出。
 - `agent`: AI 指挥台内核，持久化 Agent 任务、步骤、工具调用、权限确认、OpenClaw 外部研究状态和报告；同时提供本地 Memory、Skill、Planner Policy 和计划预览治理能力，并通过 API/CLI/MCP 复用同一套可恢复编排逻辑。
 - `automation`: 本地自动化雷达维护内核，持久化配置、状态、周扫描、日判断和运行记录，并向 API/React 暴露最近运行历史与失败诊断。
-- `realtime`: 第一版实时盯盘内核，后台轮询当前标的分钟级公开行情，预热策略状态，只对新增 K 线输出 `bar_updated`、`signal_triggered`、心跳和错误事件。
+- `realtime`: 实时盯盘内核，后台轮询当前标的、自选股、周末自动扫描优质股、美股公开标的或数字货币公开标的的分钟级行情，预热策略状态，只对新增 K 线输出 `bar_updated`、`signal_triggered`、心跳和错误事件。
+- `realtime_sources`: 实时行情源适配边界；A股继续使用 AKShare/public 分钟 K 线，美股优先使用 Yahoo chart public endpoint，数字货币优先使用 Binance Spot Kline public endpoint，外部接口失败时回退 deterministic demo 源以保持研究界面可测。
 - `strategies`: 示例策略和后续自定义策略目录。
 - `paper`: 纸面账户、风控限制、订单执行模拟。
 - `backtest`: 单品种事件式回测。
@@ -30,15 +31,16 @@
 ## 数据流
 
 ```text
-AKShare/public stock list -> stock_catalog -> data/a_share_stocks.csv -> Web/CLI search
+AKShare/public stock list + built-in US/crypto defaults -> stock_catalog -> data/a_share_stocks.csv -> React picker/API/CLI search
 AKShare/public daily or minute data -> normalize_bars -> CSV/local storage
-watchlist -> data_manager -> data/market/a_share/{exchange}/{code}/{code}_{exchange}_{timeframe}_{adjust}_latest.csv + increments/ + manifest*.json
+watchlist -> data_manager -> data/market/{market}/{exchange}/{code}/{code}_{exchange}_{timeframe}_{adjust}_latest.csv + increments/ + manifest*.json
+React stock picker / automation scheduler -> watchlist data maintenance -> five-year initial fetch when local data is missing, incremental refresh when local data exists
 CSV/local storage -> Strategy.on_bar -> Signal -> PaperBroker -> equity/trades/logs
 CSV/local storage -> indicators/analytics/signal attribution -> FastAPI -> React charts/tables
 CSV/local storage -> research Chan/RSI/Chan structure preview -> FastAPI -> React Strategy Workshop
 stock_catalog + optional data_manager pre-update + local CSV files -> default Chan multi-level daily-anchor strategy scan, optional research/volume/Chan-structure batch scan -> FastAPI -> React Signal Radar
 automation scheduler/manual trigger -> data_manager/default scan -> board Top10 weekly AI deep analysis cache -> OpenClaw Weixin/Feishu notification -> automation state/run logs -> FastAPI -> React 自动任务 diagnostics
-current settings + selected Strategy -> realtime monitor -> public minute bars polling -> Strategy.on_bar on new bars -> realtime event cache -> FastAPI -> React 实时盯盘
+current settings + selected Strategy + watchlist/weekly radar Top candidates + US/crypto public candidates -> realtime monitor -> MarketDataSource adapters with demo fallback -> per-stock Strategy.on_bar on new bars -> realtime event cache -> FastAPI -> React 实时盯盘
 strategies/*.py -> strategy registry -> selected Strategy -> backtest/paper service
 selected Strategy[] -> portfolio aggregation -> backtest/paper service
 technical snapshot + information notes + risk context -> MockLLMProvider or DeepSeekLLMProvider -> LLMInsight
@@ -103,14 +105,11 @@ EventEngine + MainEngine + Gateway + CtaStrategyApp/CtaBacktesterApp
 
 ## 内置策略
 
-内置策略聚焦当前单股票、日线、长仓回测引擎可以直接支持的常见策略族：
+默认内置策略面聚焦缠论核心策略族：
 
-- 趋势跟随：双均线。
-- 均值回归：RSI、布林带。
-- 研究信号策略：缠论 + 增强 RSI 预览包装策略、按买卖点确定性、背驰确认、低确定性 T2 门控和动态仓位上限分层调仓的缠论结构策略。
-- 突破：Donchian/Turtle 通道突破。
-- 动量：固定回看窗口价格动量、放量确认动量。
-- MACD 趋势：快慢 EMA 的 MACD 金叉/死叉配合趋势均线过滤。
-- 波动突破：ATR 突破入场、ATR 初始止损、ATR 跟踪退出。
+- `ChanRsiResearchStrategy`: 缠论 + 增强 RSI 预览包装策略。
+- `ChanStructureStrategy`: 按买卖点确定性、背驰确认、低确定性 T2 门控和动态仓位上限分层调仓的缠论结构策略。
+- `ChanVolumeFusionStrategy`: 以缠论结构为主、量价动量辅助确认和增强的融合策略。
+- `ChanMultiLevelReversalStrategy`: 以日线结构为锚点，结合 60m/30m 低级别确认、执行价优化和风险控制的多级别策略。
 
-当前组合层支持多个策略在同一标的、同一 K线序列上的信号聚合。`PortfolioStrategy` 支持加权投票、等权投票、优先级和主策略辅助确认四种模式；主策略辅助确认要求第一条启用 allocation 先触发信号，辅助策略只能过滤冲突买入或小幅增强顺向买入。`portfolio_presets` 提供稳健趋势均值、动量突破、缠论研究和缠论进攻融合四组预设组合，它们都会展开成普通 `PortfolioStrategy` allocation 后再进入组合预览、回测和纸面交易。配对交易、统计套利和多因子轮动仍需要多标的数据结构、组合层和仓位分配模块扩展，暂不内置到当前单标的策略引擎。
+当前组合层支持多个策略在同一标的、同一 K线序列上的信号聚合。`PortfolioStrategy` 支持加权投票、等权投票、优先级和主策略辅助确认四种模式；主策略辅助确认要求第一条启用 allocation 先触发信号，辅助策略只能过滤冲突买入或小幅增强顺向买入。`portfolio_presets` 默认只提供缠论研究、缠论进攻融合和缠论多级别执行三组组合。简单趋势、均值回归、突破、MACD、ATR 等模板代码仍可作为历史测试、CLI 或自定义策略参考，但不再进入默认策略列表和默认组合入口。配对交易、统计套利和多因子轮动仍需要多标的数据结构、组合层和仓位分配模块扩展，暂不内置到当前单标的策略引擎。

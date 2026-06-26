@@ -227,10 +227,12 @@ test("AutomationPage saves config and runs manual automation tasks", async () =>
   render(<AutomationPage {...makeProps()} />);
 
   await screen.findByText("自动任务管理");
-  await user.clear(screen.getByLabelText("Top N 数量"));
-  await user.type(screen.getByLabelText("Top N 数量"), "8");
-  await user.clear(screen.getByLabelText("量价权重"));
-  await user.type(screen.getByLabelText("量价权重"), "0.5");
+  const topNInput = await screen.findByLabelText("Top N 数量");
+  const volumeWeightInput = await screen.findByLabelText("量价权重");
+  await user.clear(topNInput);
+  await user.type(topNInput, "8");
+  await user.clear(volumeWeightInput);
+  await user.type(volumeWeightInput, "0.5");
   await user.click(screen.getByRole("button", { name: "保存配置" }));
   await user.click(screen.getByRole("button", { name: "立即跑周扫描" }));
   await user.click(screen.getByRole("button", { name: "立即跑日判断" }));

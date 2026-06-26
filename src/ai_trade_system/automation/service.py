@@ -151,6 +151,60 @@ class AutomationService:
         finally:
             self._lock.release()
 
+    def run_watchlist_data_maintenance(self, now: datetime | None = None) -> dict[str, Any]:
+        current = now or datetime.now()
+        if not self._lock.acquire(blocking=False):
+            raise BusyAutomationError("automation task is already running")
+        started_at = current.replace(microsecond=0).isoformat()
+        try:
+            config = self.store.load_config()
+            start_date, end_date = _five_year_date_range(current.date())
+            stocks = self.load_watchlist()
+            updated = skipped = failed = 0
+            files: list[dict[str, Any]] = []
+            for stock in stocks:
+                try:
+                    result = self.update_stock_data(
+                        stock,
+                        start_date=start_date,
+                        end_date=end_date,
+                        adjust=config.adjust,
+                        if_stale=True,
+                    )
+                    payload = result.as_dict() if hasattr(result, "as_dict") else dict(result)
+                    files.append(payload)
+                    if payload.get("status") == "updated":
+                        updated += 1
+                    elif payload.get("status") == "skipped":
+                        skipped += 1
+                    else:
+                        failed += 1
+                except Exception as exc:
+                    failed += 1
+                    files.append({"code": stock.code, "name": stock.name, "exchange": stock.exchange, "status": "failed", "message": str(exc)})
+            status = "success" if failed == 0 else "partial"
+            finished_at = datetime.now().replace(microsecond=0).isoformat()
+            message = f"watchlist data maintenance: {updated} updated, {skipped} skipped, {failed} failed"
+            run = _run_payload("watchlist_data", status, started_at, finished_at, message)
+            state = self.store.load_state()
+            state.update(
+                {
+                    "last_watchlist_data_success_date": current.date().isoformat() if status in {"success", "partial"} else state.get("last_watchlist_data_success_date"),
+                    "last_watchlist_data_run": run,
+                }
+            )
+            self.store.save_state(state)
+            self.store.append_run(AutomationRunRecord.from_dict(run))
+            return {"updated": updated, "skipped": skipped, "failed": failed, "files": files}
+        except Exception as exc:
+            finished_at = datetime.now().replace(microsecond=0).isoformat()
+            run = _run_payload("watchlist_data", "failed", started_at, finished_at, str(exc))
+            self.store.save_state({**self.store.load_state(), "last_watchlist_data_run": run})
+            self.store.append_run(AutomationRunRecord.from_dict(run))
+            raise
+        finally:
+            self._lock.release()
+
     def status(self, now: datetime | None = None) -> AutomationStatus:
         state = self.store.load_state()
         weekly = self.store.load_weekly_result()
@@ -198,6 +252,14 @@ def _two_year_date_range(today: date) -> tuple[str, str]:
         start = today.replace(year=today.year - 2)
     except ValueError:
         start = today.replace(year=today.year - 2, day=28)
+    return start.strftime("%Y%m%d"), today.strftime("%Y%m%d")
+
+
+def _five_year_date_range(today: date) -> tuple[str, str]:
+    try:
+        start = today.replace(year=today.year - 5)
+    except ValueError:
+        start = today.replace(year=today.year - 5, day=28)
     return start.strftime("%Y%m%d"), today.strftime("%Y%m%d")
 
 

@@ -342,15 +342,41 @@ test("AppShell exposes a global watchlist selector that changes the current stoc
     limits: {}
   });
   apiMock.api.loadData.mockResolvedValueOnce(loadedDataResponse());
+  apiMock.api.stocks.mockResolvedValueOnce([{ code: "601318", name: "中国平安", exchange: "SSE" }]);
+  apiMock.api.updateWatchlistData.mockResolvedValueOnce({ updated: 1, skipped: 0, failed: 0, files: [] });
+  apiMock.api.managedData.mockResolvedValueOnce({ files: [] });
 
   render(<AppShell />);
 
   await screen.findByText("已加载 1 根K线");
-  await user.selectOptions(screen.getByLabelText("全局自选股票"), "SSE:601318");
+  await user.click(screen.getByRole("button", { name: "全局自选股票 000001 平安银行 SZSE" }));
+  await user.click(screen.getByRole("button", { name: "选择 601318 中国平安 SSE" }));
 
   await waitFor(() => expect(screen.getByText("路径：data/market/a_share/SSE/601318/601318_SSE_daily_qfq_latest.csv")).toBeInTheDocument());
   expect(screen.getByText("601318 SSE")).toBeInTheDocument();
   expect(screen.getByText("已切换数据目标：601318 SSE，请加载或下载行情")).toBeInTheDocument();
+  expect(apiMock.api.updateWatchlistData).toHaveBeenCalledWith(
+    expect.objectContaining({ start_date: "20191231", end_date: "20241231", if_stale: true })
+  );
+});
+
+test("AppShell does not bootstrap into the removed 000001 default when no stock is selected", async () => {
+  apiMock.api.bootstrap.mockResolvedValue({
+    settings: { ...settings, symbol: "", exchange: "", csv_path: "" },
+    watchlist: [],
+    catalog_available: true,
+    catalog_size: 2,
+    stocks: [],
+    strategies: [strategy],
+    limits: {}
+  });
+
+  render(<AppShell />);
+
+  await screen.findByText("请选择股票");
+  expect(apiMock.api.loadData).not.toHaveBeenCalled();
+  expect(apiMock.api.demoData).not.toHaveBeenCalled();
+  expect(screen.queryByText("000001 SZSE")).not.toBeInTheDocument();
 });
 
 test("AppShell shows backtest API errors and clears the active run mode", async () => {

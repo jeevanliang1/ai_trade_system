@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { formatRequestError } from "../api/errors";
 import { MetricStrip } from "../components/MetricStrip";
 import { ToolbarButton } from "../components/ToolbarButton";
-import type { RealtimeMonitorEvent, RealtimeMonitorStatus } from "../types";
+import type { RealtimeMarketSource, RealtimeMonitorEvent, RealtimeMonitorSource, RealtimeMonitorStatus } from "../types";
 import { currentStrategy, strategyDisplayName } from "./pageTypes";
 import type { PageProps } from "./pageTypes";
 
@@ -17,6 +17,8 @@ const EMPTY_STATUS: RealtimeMonitorStatus = {
   stopped_at: null,
   strategy_id: null,
   symbols: [],
+  stock_sources: {},
+  source_counts: {},
   timeframe: null,
   poll_interval_seconds: null,
   event_count: 0,
@@ -29,6 +31,8 @@ export function RealtimePage({ state, actions }: PageProps) {
   const [status, setStatus] = useState<RealtimeMonitorStatus>(state.realtime?.status ?? EMPTY_STATUS);
   const [events, setEvents] = useState<RealtimeMonitorEvent[]>(state.realtime?.events ?? []);
   const [pollInterval, setPollInterval] = useState(30);
+  const [monitorSources, setMonitorSources] = useState<RealtimeMonitorSource[]>(["watchlist", "weekly_quality"]);
+  const [marketSources, setMarketSources] = useState<RealtimeMarketSource[]>(["a_share", "us_stock", "crypto"]);
   const [action, setAction] = useState<RealtimeAction>(null);
   const [message, setMessage] = useState("");
 
@@ -61,7 +65,9 @@ export function RealtimePage({ state, actions }: PageProps) {
   const start = async () => {
     setAction("start");
     try {
-      await actions.startRealtimeMonitor(pollInterval);
+      const sources: RealtimeMonitorSource[] = monitorSources.length ? monitorSources : ["current"];
+      const markets: RealtimeMarketSource[] = marketSources.length ? marketSources : ["a_share"];
+      await actions.startRealtimeMonitor(pollInterval, sources, markets);
       setMessage("实时盯盘已启动");
       await refresh();
     } catch (error) {
@@ -86,6 +92,7 @@ export function RealtimePage({ state, actions }: PageProps) {
 
   const selectedStrategy = strategyDisplayName(currentStrategy(state)) ?? "-";
   const latestSignal = events.find((event) => event.event === "signal_triggered");
+  const sourceCounts = status.source_counts ?? {};
   const metrics = useMemo(
     () => [
       { label: "运行状态", value: status.running ? "运行中" : "已停止", tone: status.running ? "positive" as const : "neutral" as const },
@@ -121,6 +128,40 @@ export function RealtimePage({ state, actions }: PageProps) {
             onChange={(event) => setPollInterval(Number(event.currentTarget.value) || 30)}
           />
         </label>
+        <div className="realtime-source-controls" aria-label="盯盘股票来源">
+          <SourceCheckbox
+            checked={monitorSources.includes("watchlist")}
+            label="自选股"
+            onChange={(checked) => setMonitorSources(nextSources(monitorSources, "watchlist", checked))}
+          />
+          <SourceCheckbox
+            checked={monitorSources.includes("weekly_quality")}
+            label="周榜优质股"
+            onChange={(checked) => setMonitorSources(nextSources(monitorSources, "weekly_quality", checked))}
+          />
+          <SourceCheckbox
+            checked={monitorSources.includes("current")}
+            label="当前标的"
+            onChange={(checked) => setMonitorSources(nextSources(monitorSources, "current", checked))}
+          />
+        </div>
+        <div className="realtime-source-controls" aria-label="实时行情市场">
+          <SourceCheckbox
+            checked={marketSources.includes("a_share")}
+            label="A股"
+            onChange={(checked) => setMarketSources(nextMarketSources(marketSources, "a_share", checked))}
+          />
+          <SourceCheckbox
+            checked={marketSources.includes("us_stock")}
+            label="美股演示"
+            onChange={(checked) => setMarketSources(nextMarketSources(marketSources, "us_stock", checked))}
+          />
+          <SourceCheckbox
+            checked={marketSources.includes("crypto")}
+            label="数字货币演示"
+            onChange={(checked) => setMarketSources(nextMarketSources(marketSources, "crypto", checked))}
+          />
+        </div>
         <div className="button-row automation-actions">
           <ToolbarButton icon={<Play size={16} />} variant="success" disabled={action !== null} onClick={start}>
             启动盯盘
@@ -151,6 +192,10 @@ export function RealtimePage({ state, actions }: PageProps) {
           <div className="realtime-status-grid">
             <StatusItem label="策略 ID" value={status.strategy_id ?? "-"} />
             <StatusItem label="监听列表" value={status.symbols.length ? status.symbols.join(", ") : `${state.settings.symbol}.${state.settings.exchange}`} />
+            <StatusItem label="自选股批次" value={sourceCounts.watchlist ?? 0} />
+            <StatusItem label="周榜优质股" value={sourceCounts.weekly_quality ?? 0} />
+            <StatusItem label="美股演示" value={status.market_counts?.us_stock ?? 0} />
+            <StatusItem label="数字货币演示" value={status.market_counts?.crypto ?? 0} />
             <StatusItem label="事件时间" value={status.last_event_at ? formatDateTime(status.last_event_at) : "-"} />
             <StatusItem label="错误" value={status.last_error ?? "-"} tone={status.last_error ? "warning" : "neutral"} />
           </div>
@@ -171,6 +216,7 @@ export function RealtimePage({ state, actions }: PageProps) {
                   </header>
                   <div className="realtime-event-meta">
                     <span>{event.symbol ? `${event.symbol} ${event.exchange ?? ""}` : event.symbols?.join(", ") ?? "-"}</span>
+                    <span>{marketLabel(event.market ?? status.stock_markets?.[`${event.symbol}.${event.exchange}`])}</span>
                     <span>{event.timeframe ?? status.timeframe ?? state.settings.timeframe}</span>
                     <span>{event.bar_time ? formatDateTime(event.bar_time) : "-"}</span>
                   </div>
@@ -185,6 +231,29 @@ export function RealtimePage({ state, actions }: PageProps) {
       </section>
     </div>
   );
+}
+
+function SourceCheckbox({ checked, label, onChange }: { checked: boolean; label: string; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="chart-check">
+      <input type="checkbox" aria-label={label} checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function nextSources(sources: RealtimeMonitorSource[], source: RealtimeMonitorSource, checked: boolean): RealtimeMonitorSource[] {
+  if (checked) {
+    return sources.includes(source) ? sources : [...sources, source];
+  }
+  return sources.filter((item) => item !== source);
+}
+
+function nextMarketSources(sources: RealtimeMarketSource[], source: RealtimeMarketSource, checked: boolean): RealtimeMarketSource[] {
+  if (checked) {
+    return sources.includes(source) ? sources : [...sources, source];
+  }
+  return sources.filter((item) => item !== source);
 }
 
 function StatusItem({ label, value, tone = "neutral" }: { label: string; value: string | number; tone?: "ok" | "warning" | "neutral" }) {
@@ -219,6 +288,13 @@ function eventReason(event: RealtimeMonitorEvent): string {
 function signalSideLabel(side: string | undefined): string {
   if (side === "buy") return "买入";
   if (side === "sell") return "卖出";
+  return "-";
+}
+
+function marketLabel(market: string | undefined): string {
+  if (market === "a_share") return "A股";
+  if (market === "us_stock") return "美股";
+  if (market === "crypto") return "数字货币";
   return "-";
 }
 

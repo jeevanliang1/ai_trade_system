@@ -12,6 +12,13 @@ class FakeService:
         self.store = store
         self.weekly_calls = 0
         self.daily_calls = 0
+        self.watchlist_data_calls = 0
+
+    def run_watchlist_data_maintenance(self, now=None):
+        self.watchlist_data_calls += 1
+        state = self.store.load_state()
+        state["last_watchlist_data_success_date"] = now.date().isoformat()
+        self.store.save_state(state)
 
     def run_weekly_full_maintenance(self, now=None):
         self.weekly_calls += 1
@@ -94,3 +101,21 @@ def test_scheduler_runs_daily_when_weekly_top10_exists(tmp_path):
     scheduler.run_due_tasks(now=datetime(2026, 6, 23, 10, 5))
 
     assert service.daily_calls == 1
+
+
+def test_scheduler_runs_watchlist_data_maintenance_once_per_day(tmp_path):
+    store = AutomationStore(root=tmp_path / "data" / "automation", log_root=tmp_path / "logs" / "automation")
+    store.save_state({
+        "last_weekly_success_date": "2026-06-20",
+        "last_daily_success_date": "2026-06-23",
+        "last_weekly_run": None,
+        "last_daily_run": None,
+    })
+    service = FakeService(store)
+    scheduler = AutomationScheduler(service=service, store=store, config=AutomationConfig(enabled=True))
+
+    scheduler.run_due_tasks(now=datetime(2026, 6, 23, 9, 0))
+    scheduler.run_due_tasks(now=datetime(2026, 6, 23, 9, 5))
+
+    assert service.watchlist_data_calls == 1
+    assert service.weekly_calls == 0

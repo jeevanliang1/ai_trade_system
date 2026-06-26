@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -206,6 +206,106 @@ def fetch_akshare_bars(
     return fetch_akshare_minute_bars(symbol, start_date, end_date, exchange, adjust, clean_timeframe)
 
 
+def fetch_public_market_bars(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    exchange: str,
+    adjust: str = "qfq",
+    timeframe: str = "daily",
+) -> list[Bar]:
+    clean_timeframe = normalize_timeframe(timeframe)
+    if clean_timeframe != "daily":
+        raise ValueError("public US/crypto historical maintenance currently supports daily bars only")
+    clean_exchange = str(exchange or "").strip().upper()
+    if clean_exchange == "CRYPTO":
+        return fetch_binance_daily_bars(symbol, start_date, end_date, clean_exchange)
+    return fetch_yahoo_daily_bars(symbol, start_date, end_date, clean_exchange)
+
+
+def fetch_yahoo_daily_bars(symbol: str, start_date: str, end_date: str, exchange: str) -> list[Bar]:
+    start = _parse_date_key(start_date)
+    end = _parse_date_key(end_date) + timedelta(days=1)
+    params = {
+        "period1": int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
+        "period2": int(datetime.combine(end, datetime.min.time(), tzinfo=timezone.utc).timestamp()),
+        "interval": "1d",
+        "events": "history",
+    }
+    response = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}", params=params, timeout=10)
+    response.raise_for_status()
+    result = response.json().get("chart", {}).get("result") or []
+    if not result:
+        return []
+    payload = result[0]
+    timestamps = payload.get("timestamp") or []
+    quote = ((payload.get("indicators") or {}).get("quote") or [{}])[0]
+    bars: list[Bar] = []
+    for index, timestamp in enumerate(timestamps):
+        open_price = _series_value(quote, "open", index)
+        high_price = _series_value(quote, "high", index)
+        low_price = _series_value(quote, "low", index)
+        close_price = _series_value(quote, "close", index)
+        if None in {open_price, high_price, low_price, close_price}:
+            continue
+        volume = _series_value(quote, "volume", index) or 0
+        day = datetime.fromtimestamp(int(timestamp), tz=timezone.utc).date()
+        bars.append(
+            Bar(
+                symbol=symbol,
+                exchange=exchange,
+                trading_day=day,
+                open_price=float(open_price),
+                high_price=float(high_price),
+                low_price=float(low_price),
+                close_price=float(close_price),
+                volume=float(volume),
+                turnover=0,
+            )
+        )
+    return bars
+
+
+def fetch_binance_daily_bars(symbol: str, start_date: str, end_date: str, exchange: str = "CRYPTO") -> list[Bar]:
+    start = _parse_date_key(start_date)
+    end = _parse_date_key(end_date)
+    start_ms = int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp() * 1000)
+    end_ms = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp() * 1000) - 1
+    rows: list[list] = []
+    while start_ms <= end_ms:
+        response = requests.get(
+            "https://api.binance.com/api/v3/klines",
+            params={"symbol": symbol.upper(), "interval": "1d", "startTime": start_ms, "endTime": end_ms, "limit": 1000},
+            timeout=10,
+        )
+        response.raise_for_status()
+        chunk = response.json()
+        if not chunk:
+            break
+        rows.extend(chunk)
+        next_start = int(chunk[-1][0]) + 24 * 60 * 60 * 1000
+        if next_start <= start_ms:
+            break
+        start_ms = next_start
+    bars: list[Bar] = []
+    for row in rows:
+        day = datetime.fromtimestamp(int(row[0]) / 1000, tz=timezone.utc).date()
+        bars.append(
+            Bar(
+                symbol=symbol.upper(),
+                exchange=exchange,
+                trading_day=day,
+                open_price=float(row[1]),
+                high_price=float(row[2]),
+                low_price=float(row[3]),
+                close_price=float(row[4]),
+                volume=float(row[5]),
+                turnover=float(row[7]) if len(row) > 7 else 0,
+            )
+        )
+    return bars
+
+
 def fetch_akshare_minute_bars(
     symbol: str,
     start_date: str,
@@ -325,6 +425,13 @@ def _filter_bars_by_day(bars: Iterable[Bar], start_date: str, end_date: str) -> 
     start = _parse_date_key(start_date)
     end = _parse_date_key(end_date)
     return [bar for bar in bars if start <= bar.trading_day <= end]
+
+
+def _series_value(quote: dict, key: str, index: int):
+    values = quote.get(key) or []
+    if index >= len(values):
+        return None
+    return values[index]
 
 
 def _parse_date(value) -> date:

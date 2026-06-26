@@ -21,6 +21,8 @@ class AutomationConfig:
     weekly_analysis_top_n: int = 10
     weekly_delivery_enabled: bool = True
     weekly_delivery_channel: str = "weixin"
+    watchlist_data_enabled: bool = True
+    watchlist_data_time: str = "09:00"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

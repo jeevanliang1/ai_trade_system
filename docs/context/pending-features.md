@@ -1,6 +1,6 @@
 # Pending Features
 
-Last updated: 2026-06-22
+Last updated: 2026-06-26
 
 ## Purpose
 
@@ -8,7 +8,7 @@ This file is the durable continuation handoff for broad product requests, replic
 
 ## Current Goal
 
-Replicate the screenshot-style AI量化平台 desktop workbench with a React + FastAPI default interface, then continue into practical A-share strategy development. The current implementation is functional enough to start adding strategy templates that run through the existing strategy registry, backtest, paper trading, and React workbench surfaces. Current active strategy work: calibrate Chan multilevel reversal after the first daily-plus-30m/15m validation showed lower turnover and drawdown but incomplete public minute-history coverage.
+Replicate the screenshot-style AI量化平台 desktop workbench with a React + FastAPI default interface, then continue into practical A-share strategy development. The current implementation is functional enough to start adding strategy templates that run through the existing strategy registry, backtest, paper trading, and React workbench surfaces. Current active product work: design and implement a TradingView-style Chan chart workspace that can display K-line data with Chan fractals, strokes, segments, pivots/centers, divergences, and buy/sell points, while supporting fullscreen, drag/zoom/pan, and timeframe switching through the existing watchlist/data-manager flow.
 
 ## Completion Grain
 
@@ -53,8 +53,9 @@ Each pending item below should be small enough to finish in one focused implemen
 - Strategy metadata localization is complete for current scope: built-in strategies expose Chinese display names and plain-language descriptions through the registry/API, custom strategies get a safe default description, and React strategy/backtest/portfolio/paper/status displays prefer the Chinese name while retaining English class names for source traceability.
 - Workbench information architecture cleanup is complete for current scope: side navigation is grouped by workflow stage, the global top bar now summarizes context and navigates to the next workspace instead of running page-owned tasks, and Strategy Workshop focuses on strategy selection, signal preview, research preview, and source editing while Backtest Center remains the owner for full backtest execution and results.
 - Strategy parameter guidance is complete for current scope: strategy parameters now expose Chinese labels, plain-language purpose, and simple increase/decrease tuning impact through the registry/API, and the shared React parameter form renders that guidance under each control.
-- Stock Configuration Center is complete for current scope: FastAPI persists a local watchlist in `config/watchlist.json`, bootstrap exposes the watchlist and a dynamic two-year default data range, React adds a `股票配置` workspace, and shared watchlist dropdowns update the global stock target through one `selectStock` action.
-- Watchlist Data Management is complete for current scope: `data_manager` owns canonical local market-data paths under `data/market/a_share/{exchange}/{code}/`, writes latest CSV plus dated increment CSV snapshots and manifest files, exposes API/CLI batch watchlist updates, and the React stock configuration center shows status plus update controls.
+- Stock Configuration Center is complete for current scope: FastAPI persists a local watchlist in `config/watchlist.json`, bootstrap exposes the watchlist without hardcoding `000001`, React adds a `股票配置` workspace, and shared searchable picker dialogs update the global stock target through one `selectStock` action.
+- Watchlist Data Management is complete for current scope: `data_manager` owns canonical local market-data paths under `data/market/{a_share|us_stock|crypto}/{exchange}/{code}/`, writes latest CSV plus dated increment CSV snapshots and manifest files, exposes API/CLI batch watchlist updates, and the React stock configuration center shows status plus update controls.
+- Watchlist auto-maintenance is complete for current scope: adding or selecting a自选标的 triggers a five-year managed-data maintenance request, and the app-lifespan automation scheduler runs daily `watchlist_data` maintenance for saved self-selected stocks.
 - Market Analysis Strategy Fusion first slice is complete for current scope: backend `ai_trade_system.research` modules generate lightweight Chan plus enhanced RSI previews, FastAPI exposes `/api/research/signals/preview`, and Strategy Workshop can request and render score, blockers, and signal rows.
 - Market Analysis Strategy Fusion backtest wrapper is complete for current scope: `ChanRsiResearchStrategy` is a built-in `Strategy` that reuses the research preview semantics, appears in strategy discovery, emits backtestable `Signal` objects, and can run through the existing local backtest engine.
 - Chan Structure Strategy first slice is complete for current scope: `research.chan_structure` normalizes contained K-lines, identifies fractals, strokes, simplified pivots, and T2/T3 signals, and `ChanStructureStrategy` exposes those signals as a built-in backtestable strategy with Chinese registry metadata and parameter guidance.
@@ -114,6 +115,9 @@ Each pending item below should be small enough to finish in one focused implemen
 - Weekly scan deep-analysis delivery is complete for current scope: Saturday automation now maintains 科创板 and 创业板 candidates, runs the default Chan daily-anchor scan, persists board-level Top10 AI deep-analysis caches under `data/automation/weekly_analysis/`, exposes analysis/delivery status, and sends the cached weekly report through OpenClaw Weixin or Feishu notification when configured.
 - AKShare minute-level data support is complete for current scope: `daily` remains default while `1m/5m/15m/30m/60m` propagate through AKShare download, CSV read/write, managed market-data paths, API/CLI requests, React Data Center/Stock Config controls, backtest, paper trading, and signal preview flows.
 - Realtime Monitor first slice is complete for current scope: `ai_trade_system.realtime` runs a background current-symbol minute-bar monitor, warms the selected strategy without alerting historical signals, emits new-bar and strategy-signal events through FastAPI `/api/realtime/*`, and React adds a `实时盯盘` workspace with start/stop/status/event controls.
+- Realtime Monitor batch-source expansion is complete for current scope: `/api/realtime/start` accepts current-symbol, watchlist, and weekly-quality source selections, resolves self-selected stocks plus the latest persisted weekly radar Top candidates, deduplicates by `code.exchange`, records per-batch counts/source membership, and React defaults realtime monitoring to the two requested batches: 自选股 and 周榜优质股.
+- Chan-first strategy surface refactor is complete for current scope: default built-in strategy discovery and React fallback now expose only `ChanRsiResearchStrategy`, `ChanStructureStrategy`, `ChanVolumeFusionStrategy`, and `ChanMultiLevelReversalStrategy`; default portfolio presets were reduced to Chan research, Chan offensive fusion, and Chan multilevel execution combinations, while simple template strategy classes remain importable for history, CLI, and custom-strategy reference.
+- Cross-market realtime public sources are complete for current scope: `realtime_sources` defines the `MarketDataSource` boundary, A-share realtime polling remains on AKShare/public minute bars, US-stock realtime uses the Yahoo chart public endpoint for `AAPL.NASDAQ`, crypto realtime uses the Binance Spot Kline public endpoint for `BTCUSDT.CRYPTO`, and both non-A-share sources fall back to deterministic demo bars when the external provider is unavailable while preserving `market_counts` and per-event market diagnostics visible in React.
 - Chan multilevel reversal validation first slice is complete for current scope: `ChanMultiLevelReversalStrategy` is a built-in strategy that keeps daily structure as the main trend, gates entries with `30m` confirmation, uses `15m` only for existing-position risk reduction, and records fixed six-stock daily-plus-minute benchmark evidence in `docs/qa/2026-06-21-chan-multilevel-reversal-qa.md`.
 - Chan multilevel reversal calibration B pass is complete for current scope: `daily_only` fallback now treats lower-level data as missing until `30m` bars have actually been consumed at the current daily cutoff, fixed six-stock calibration is recorded in `docs/qa/2026-06-21-chan-multilevel-calibration-qa.md`, and defaults remain unchanged because the best partial-minute preset still underperforms the daily Chan baseline.
 - Chan multilevel 60m completion pass is complete for current scope: `ChanMultiLevelReversalStrategy` now supports `60m` confirmation and `30m` risk levels, six-stock `60m` fixtures are persisted under managed market-data paths, fixed six-stock benchmark evidence is recorded in `docs/qa/2026-06-21-chan-multilevel-60m-completion-qa.md`, and defaults remain unchanged because the best complete `60m+30m` preset still underperforms the daily Chan baseline.
@@ -155,11 +159,13 @@ No current pending items.
 
 ### Realtime Monitoring
 
-- Signal Radar realtimeization: extend the realtime monitor from current-symbol strategy events to watchlist or radar-candidate batches, reuse the default Chan multilevel daily-anchor preset, persist alert history, and support OpenClaw Weixin/Feishu notification for `signal_triggered` events.
-- Tick and broker-grade market data adapters: extract a `MarketDataSource` boundary so the first adapter remains public minute-bar polling while future vn.py, broker gateway, or third-party tick sources can feed the same realtime event model without changing strategies or React event rendering.
+- Realtime alert persistence and notification: persist realtime `signal_triggered` alert history for watchlist/weekly-quality batches, and support OpenClaw Weixin/Feishu notification for new realtime signal events.
+- Configurable US-stock and crypto realtime providers: add owner-approved provider configuration, credential handling when needed, rate-limit diagnostics, and source-specific symbol management beyond the current built-in `AAPL.NASDAQ` and `BTCUSDT.CRYPTO` public-source defaults.
+- Tick and broker-grade market data adapters: add vn.py, broker gateway, or third-party tick sources behind the existing `MarketDataSource` boundary without changing strategies or React event rendering.
 
 ### Strategy Development
 
+- Chan TradingView-style chart workspace MVP: add a dedicated React workspace for single-stock Chan chart analysis. Reuse managed A-share CSV data, shared stock selection, `timeframe`, and existing `/api/research/signals/preview` Chan structure overlays first. First version should provide a large K-line canvas, volume panel, layer toggles for 分型/笔/线段/中枢/递归中枢/背驰/买卖点, fullscreen mode, ECharts inside drag/zoom/pan, timeframe switching across `daily/60m/30m/15m/5m/1m`, and a right-side structure inspector. Defer manual drawing persistence, user-created trendlines, multi-chart layout, and broker-grade realtime streaming until the MVP is verified.
 - Strong Stock Pool A-share local CSV MVP: adapt the "historical strong stock + healthy pullback watchlist" framework into the current Signal Radar/data-manager architecture using local managed A-share daily qfq CSV files first. Implement Layer0 universe filtering, Layer1 daily Top snapshot, Layer2 60-day history profile, and Layer3 pullback monitor as a scanner/watchlist pipeline rather than a single-symbol `Strategy`; defer US-stock provider and fundamental metadata filters.
 - Chan multilevel reversal data-source follow-up: investigate a durable historical intraday source beyond the current public AKShare minute-window limit, then rerun the fixed six-stock `60m/30m` benchmark before considering the multilevel strategy as a default replacement.
 
@@ -173,7 +179,7 @@ No current pending items.
 
 ## Next Recommended Feature
 
-Start with "Realtime Monitoring - Signal Radar realtimeization: watchlist/radar-candidate batch monitoring, alert persistence, and OpenClaw Weixin/Feishu notification for realtime signal events".
+Start with "Strategy Development - Chan TradingView-style chart workspace MVP: add the dedicated Chan chart workspace with K-line, Chan overlays, fullscreen, drag/zoom/pan, timeframe switching, and structure inspector".
 
 ## Update Rules
 

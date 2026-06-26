@@ -4,16 +4,13 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime
 import threading
-from typing import Callable, Iterable
+from typing import Iterable
 from uuid import uuid4
 
-from ai_trade_system.data import fetch_akshare_bars
 from ai_trade_system.market import Bar
+from ai_trade_system.realtime_sources import BarFetcher, MarketDataSource, default_realtime_market_data_sources
 from ai_trade_system.stock_catalog import StockInfo
 from ai_trade_system.strategy import Strategy
-
-
-BarFetcher = Callable[[str, str, str, str, str, str], list[Bar]]
 
 
 @dataclass(frozen=True)
@@ -24,21 +21,33 @@ class RealtimeMonitorConfig:
     adjust: str
     timeframe: str
     poll_interval_seconds: float
+    stock_sources: dict[str, list[str]]
+    source_counts: dict[str, int]
+    stock_markets: dict[str, str]
+    market_counts: dict[str, int]
 
 
 class RealtimeMonitorService:
     def __init__(
         self,
         *,
-        fetch_bars: BarFetcher = fetch_akshare_bars,
+        fetch_bars: BarFetcher | None = None,
+        market_data_sources: dict[str, MarketDataSource] | None = None,
         max_events: int = 500,
     ) -> None:
         self.fetch_bars = fetch_bars
+        if market_data_sources is not None:
+            self._market_data_sources = market_data_sources
+        elif fetch_bars is not None:
+            self._market_data_sources = default_realtime_market_data_sources(fetch_bars)
+        else:
+            self._market_data_sources = default_realtime_market_data_sources()
         self._events: deque[dict] = deque(maxlen=max_events)
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._strategy: Strategy | None = None
+        self._strategies: dict[str, Strategy] = {}
         self._config: RealtimeMonitorConfig | None = None
         self._started_at: str | None = None
         self._stopped_at: str | None = None
@@ -57,6 +66,11 @@ class RealtimeMonitorService:
         timeframe: str = "1m",
         poll_interval_seconds: float = 30.0,
         background: bool = True,
+        strategies: dict[str, Strategy] | None = None,
+        stock_sources: dict[str, list[str]] | None = None,
+        source_counts: dict[str, int] | None = None,
+        stock_markets: dict[str, str] | None = None,
+        market_counts: dict[str, int] | None = None,
     ) -> dict:
         clean_stocks = list(stocks)
         if not clean_stocks:
@@ -71,6 +85,7 @@ class RealtimeMonitorService:
             self._seen_bars.clear()
             self._stop_event.clear()
             self._strategy = strategy
+            self._strategies = strategies or {_stock_key(stock): strategy for stock in clean_stocks}
             self._config = RealtimeMonitorConfig(
                 strategy_id=strategy_id,
                 stocks=clean_stocks,
@@ -78,18 +93,25 @@ class RealtimeMonitorService:
                 adjust=adjust,
                 timeframe=timeframe,
                 poll_interval_seconds=poll_interval_seconds,
+                stock_sources=stock_sources or {_stock_key(stock): ["current"] for stock in clean_stocks},
+                source_counts=source_counts or {"current": len(clean_stocks)},
+                stock_markets=stock_markets or {_stock_key(stock): "a_share" for stock in clean_stocks},
+                market_counts=market_counts or {"a_share": len(clean_stocks)},
             )
             self._started_at = _now_iso()
             self._stopped_at = None
             self._last_error = None
             self._last_bar_time = None
-            strategy.on_init()
-            strategy.on_start()
+            for monitor_strategy in _unique_strategies(self._strategies.values()):
+                monitor_strategy.on_init()
+                monitor_strategy.on_start()
             self._append_event(
                 {
                     "event": "monitor_started",
                     "strategy_id": strategy_id,
                     "symbols": [_stock_key(stock) for stock in clean_stocks],
+                    "source_counts": self._config.source_counts,
+                    "market_counts": self._config.market_counts,
                     "timeframe": timeframe,
                 }
             )
@@ -104,6 +126,7 @@ class RealtimeMonitorService:
         strategy: Strategy | None
         with self._lock:
             strategy = self._strategy
+            strategies = list(_unique_strategies(self._strategies.values()))
             if strategy is None and not self.running:
                 return self.status()
             self._stop_event.set()
@@ -112,11 +135,13 @@ class RealtimeMonitorService:
             thread.join(timeout=3)
         with self._lock:
             if strategy is not None:
-                strategy.on_stop()
+                for monitor_strategy in strategies:
+                    monitor_strategy.on_stop()
             if self._stopped_at is None:
                 self._stopped_at = _now_iso()
                 self._append_event({"event": "monitor_stopped"})
             self._strategy = None
+            self._strategies = {}
             self._thread = None
             return self.status()
 
@@ -131,12 +156,17 @@ class RealtimeMonitorService:
             updated = 0
             signals = 0
             for stock in config.stocks:
+                market = config.stock_markets.get(_stock_key(stock), "a_share")
+                data_source = self._market_data_sources.get(market)
+                if data_source is None:
+                    raise ValueError(f"unsupported realtime market source: {market}")
+                stock_strategy = self._strategies.get(_stock_key(stock), strategy)
                 bars = sorted(
-                    self.fetch_bars(
+                    data_source.fetch_bars(
                         stock.code,
+                        stock.exchange,
                         config.start_date,
                         _today_key(),
-                        stock.exchange,
                         config.adjust,
                         config.timeframe,
                     ),
@@ -148,11 +178,12 @@ class RealtimeMonitorService:
                             "event": "data_empty",
                             "symbol": stock.code,
                             "exchange": stock.exchange,
+                            "market": market,
                             "timeframe": config.timeframe,
                         }
                     )
                     continue
-                stock_updates, stock_signals = self._consume_stock_bars(strategy, stock, bars, config.timeframe)
+                stock_updates, stock_signals = self._consume_stock_bars(stock_strategy, stock, bars, config.timeframe, market)
                 updated += stock_updates
                 signals += stock_signals
             self._last_error = None
@@ -171,6 +202,10 @@ class RealtimeMonitorService:
                 "stopped_at": self._stopped_at,
                 "strategy_id": config.strategy_id if config else None,
                 "symbols": [_stock_key(stock) for stock in config.stocks] if config else [],
+                "stock_sources": config.stock_sources if config else {},
+                "source_counts": config.source_counts if config else {},
+                "stock_markets": config.stock_markets if config else {},
+                "market_counts": config.market_counts if config else {},
                 "timeframe": config.timeframe if config else None,
                 "poll_interval_seconds": config.poll_interval_seconds if config else None,
                 "event_count": len(self._events),
@@ -197,7 +232,7 @@ class RealtimeMonitorService:
                 interval = config.poll_interval_seconds if config else 30.0
             self._stop_event.wait(interval)
 
-    def _consume_stock_bars(self, strategy: Strategy, stock: StockInfo, bars: list[Bar], timeframe: str) -> tuple[int, int]:
+    def _consume_stock_bars(self, strategy: Strategy, stock: StockInfo, bars: list[Bar], timeframe: str, market: str) -> tuple[int, int]:
         existing_keys = [self._bar_key(bar) for bar in bars]
         first_poll = not any(key in self._seen_bars for key in existing_keys)
         new_bars = bars if first_poll else [bar for bar in bars if self._bar_key(bar) not in self._seen_bars]
@@ -219,6 +254,7 @@ class RealtimeMonitorService:
                         "symbol": stock.code,
                         "name": stock.name,
                         "exchange": stock.exchange,
+                        "market": market,
                         "timeframe": bar.timeframe or timeframe,
                         "bar_time": bar_time,
                         "close_price": bar.close_price,
@@ -236,6 +272,7 @@ class RealtimeMonitorService:
                         "symbol": signal.symbol,
                         "name": stock.name,
                         "exchange": stock.exchange,
+                        "market": market,
                         "timeframe": bar.timeframe or timeframe,
                         "bar_time": bar_time,
                         "side": signal.action,
@@ -256,6 +293,18 @@ class RealtimeMonitorService:
 
 def _stock_key(stock: StockInfo) -> str:
     return f"{stock.code}.{stock.exchange}"
+
+
+def _unique_strategies(strategies: Iterable[Strategy]) -> list[Strategy]:
+    unique: list[Strategy] = []
+    seen: set[int] = set()
+    for strategy in strategies:
+        identity = id(strategy)
+        if identity in seen:
+            continue
+        unique.append(strategy)
+        seen.add(identity)
+    return unique
 
 
 def _bar_time(bar: Bar) -> str:

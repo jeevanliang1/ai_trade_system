@@ -7,12 +7,14 @@ from fastapi.testclient import TestClient
 from time import monotonic, sleep
 
 from ai_trade_system import data_manager
+from ai_trade_system.automation.models import RadarCandidateScore, WeeklyRadarResult
 from ai_trade_system.api import service
 from ai_trade_system.api.app import create_app
 from ai_trade_system.data import write_bars_csv
 from ai_trade_system.data_manager import DataUpdateResult, data_file_for_stock
 from ai_trade_system.market import Bar
 from ai_trade_system.stock_catalog import StockInfo, write_stock_catalog
+from ai_trade_system.watchlist import save_watchlist
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
@@ -21,6 +23,8 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setenv("AI_TRADE_OPENCLAW_NOTIFY_COMMAND", "")
     monkeypatch.setenv("AI_TRADE_LLM_PROVIDER", "mock")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    service._AUTOMATION_SERVICE = None
+    service._AUTOMATION_SCHEDULER = None
     service._AGENT_ORCHESTRATOR = None
     service._AGENT_QUEUE = None
     service._AGENT_GOVERNANCE = None
@@ -50,8 +54,8 @@ def test_app_lifespan_starts_and_stops_automation_scheduler(tmp_path, monkeypatc
 
 def _strategy_payload() -> dict:
     return {
-        "id": "builtin:dual_moving_average:DualMovingAverageStrategy",
-        "params": {"symbol": "000001", "fast": 5, "slow": 20, "size": 100},
+        "id": "builtin:popular:ChanStructureStrategy",
+        "params": {"symbol": "000001", "trade_size": 100},
     }
 
 
@@ -97,8 +101,10 @@ def test_realtime_routes_start_status_events_and_stop(tmp_path, monkeypatch):
                 "running": self.started,
                 "started_at": "2026-06-22T10:00:00" if self.started else None,
                 "stopped_at": None if self.started else "2026-06-22T10:01:00",
-                "strategy_id": "builtin:dual_moving_average:DualMovingAverageStrategy" if self.started else None,
-                "symbols": ["000001.SZSE"] if self.started else [],
+                "strategy_id": "builtin:popular:ChanStructureStrategy" if self.started else None,
+                "symbols": ["000001.SZSE", "AAPL.NASDAQ", "BTCUSDT.CRYPTO"] if self.started else [],
+                "stock_markets": {"000001.SZSE": "a_share", "AAPL.NASDAQ": "us_stock", "BTCUSDT.CRYPTO": "crypto"} if self.started else {},
+                "market_counts": {"a_share": 1, "us_stock": 1, "crypto": 1} if self.started else {},
                 "timeframe": "1m" if self.started else None,
                 "poll_interval_seconds": 1 if self.started else None,
                 "event_count": 1 if self.started else 0,
@@ -128,15 +134,24 @@ def test_realtime_routes_start_status_events_and_stop(tmp_path, monkeypatch):
             "settings": {**_settings_payload(), "timeframe": "1m"},
             "strategy": _strategy_payload(),
             "poll_interval_seconds": 1,
+            "market_sources": ["a_share", "us_stock", "crypto"],
         },
     )
     assert start_response.status_code == 200
     assert start_response.json()["running"] is True
     assert fake.started_payload["stocks"][0].code == "000001"
+    assert [stock.code for stock in fake.started_payload["stocks"]] == ["000001", "AAPL", "BTCUSDT"]
+    assert fake.started_payload["stock_markets"] == {
+        "000001.SZSE": "a_share",
+        "AAPL.NASDAQ": "us_stock",
+        "BTCUSDT.CRYPTO": "crypto",
+    }
+    assert fake.started_payload["market_counts"] == {"a_share": 1, "us_stock": 1, "crypto": 1}
 
     status_response = client.get("/api/realtime/status")
     assert status_response.status_code == 200
-    assert status_response.json()["symbols"] == ["000001.SZSE"]
+    assert status_response.json()["symbols"] == ["000001.SZSE", "AAPL.NASDAQ", "BTCUSDT.CRYPTO"]
+    assert status_response.json()["market_counts"] == {"a_share": 1, "us_stock": 1, "crypto": 1}
 
     events_response = client.get("/api/realtime/events?limit=25")
     assert events_response.status_code == 200
@@ -145,6 +160,91 @@ def test_realtime_routes_start_status_events_and_stop(tmp_path, monkeypatch):
     stop_response = client.post("/api/realtime/stop")
     assert stop_response.status_code == 200
     assert stop_response.json()["running"] is False
+
+
+def test_realtime_start_can_monitor_watchlist_and_weekly_quality_batches(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    save_watchlist(
+        [
+            StockInfo("000001", "平安银行", "SZSE"),
+            StockInfo("600519", "贵州茅台", "SSE"),
+        ]
+    )
+    service.get_automation_service().store.save_weekly_result(
+        WeeklyRadarResult(
+            run_id="weekly-1",
+            generated_at="2026-06-22T09:30:00",
+            status="success",
+            total_candidates=2,
+            scanned=2,
+            missing=0,
+            top=[
+                _weekly_candidate("688981", "中芯国际", "SSE", rank=1),
+                _weekly_candidate("600519", "贵州茅台", "SSE", rank=2),
+            ],
+        )
+    )
+
+    class FakeRealtimeMonitor:
+        def __init__(self):
+            self.started_payload = None
+
+        def start(self, **kwargs):
+            self.started_payload = kwargs
+            return {
+                "running": True,
+                "started_at": "2026-06-22T10:00:00",
+                "stopped_at": None,
+                "strategy_id": kwargs["strategy_id"],
+                "symbols": [f"{stock.code}.{stock.exchange}" for stock in kwargs["stocks"]],
+                "source_counts": kwargs["source_counts"],
+                "timeframe": kwargs["timeframe"],
+                "poll_interval_seconds": kwargs["poll_interval_seconds"],
+                "event_count": 1,
+                "last_event_at": "2026-06-22T10:00:00",
+                "last_bar_time": None,
+                "last_error": None,
+            }
+
+    fake = FakeRealtimeMonitor()
+    monkeypatch.setattr(service, "get_realtime_monitor_service", lambda: fake)
+
+    response = client.post(
+        "/api/realtime/start",
+        json={
+            "settings": {**_settings_payload(), "timeframe": "1m"},
+            "strategy": _strategy_payload(),
+            "poll_interval_seconds": 1,
+            "monitor_sources": ["watchlist", "weekly_quality"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["symbols"] == ["000001.SZSE", "600519.SSE", "688981.SSE"]
+    assert response.json()["source_counts"] == {"watchlist": 2, "weekly_quality": 2}
+    assert fake.started_payload["stock_sources"] == {
+        "000001.SZSE": ["watchlist"],
+        "600519.SSE": ["watchlist", "weekly_quality"],
+        "688981.SSE": ["weekly_quality"],
+    }
+
+
+def _weekly_candidate(code: str, name: str, exchange: str, rank: int) -> RadarCandidateScore:
+    return RadarCandidateScore(
+        code=code,
+        name=name,
+        exchange=exchange,
+        rank=rank,
+        composite_score=80.0 - rank,
+        chan_score=60.0,
+        volume_score=20.0,
+        latest_day="2026-06-19",
+        latest_close=10.0,
+        chan_signal_title="观察",
+        chan_signal_action="watch",
+        volume_entry_ready=True,
+        reason="weekly quality candidate",
+    )
 
 
 def _bar(symbol: str, exchange: str, day: date, close: float, volume: float = 1000) -> Bar:
@@ -233,18 +333,19 @@ def test_bootstrap_returns_defaults_and_strategy_metadata(tmp_path, monkeypatch)
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["settings"]["csv_path"] == "data/000001_daily.csv"
+    assert payload["settings"]["symbol"] == ""
+    assert payload["settings"]["exchange"] == ""
+    assert payload["settings"]["csv_path"] == ""
     assert payload["watchlist"] == []
-    assert payload["catalog_available"] is False
+    assert payload["catalog_available"] is True
     assert payload["strategies"][0]["id"].startswith("builtin:")
     assert payload["strategies"][0]["display_name"]
     assert payload["strategies"][0]["description"]
     assert payload["strategies"][0]["parameters"]
-    fast_window = next(parameter for parameter in payload["strategies"][0]["parameters"] if parameter["name"] == "fast_window")
-    assert fast_window["display_name"] == "快线周期"
-    assert "短期均线" in fast_window["description"]
-    assert "更平滑" in fast_window["increase_effect"]
-    assert "更敏感" in fast_window["decrease_effect"]
+    assert payload["strategies"][0]["name"] == "ChanRsiResearchStrategy"
+    trade_size = next(parameter for parameter in payload["strategies"][0]["parameters"] if parameter["name"] == "trade_size")
+    assert trade_size["display_name"] == "每次交易股数"
+    assert "仓位" in trade_size["increase_effect"]
 
 
 def test_agent_routes_create_list_show_and_approve_tasks(tmp_path, monkeypatch):
@@ -412,24 +513,22 @@ def test_bootstrap_returns_portfolio_presets_for_strategy_combinations(tmp_path,
     assert response.status_code == 200
     payload = response.json()
     presets = payload["portfolio_presets"]
-    conservative = next(preset for preset in presets if preset["id"] == "conservative_trend_reversion")
+    research = next(preset for preset in presets if preset["id"] == "chan_research_stack")
 
-    assert conservative["name"] == "稳健趋势均值组合"
-    assert conservative["mode"] == "weighted_vote"
-    assert "趋势" in conservative["description"]
-    assert "均值回归" in conservative["description"]
-    assert len(conservative["allocations"]) >= 4
-    strategy_ids = [allocation["strategy"]["id"] for allocation in conservative["allocations"]]
-    assert "builtin:dual_moving_average:DualMovingAverageStrategy" in strategy_ids
-    assert "builtin:popular:RsiMeanReversionStrategy" in strategy_ids
-    assert "builtin:popular:AtrVolatilityBreakoutStrategy" in strategy_ids
-    assert conservative["allocations"][0]["strategy"]["params"]["symbol"] == "000001"
-    assert conservative["allocations"][0]["weight"] > 0
-    assert conservative["allocations"][0]["enabled"] is True
-    assert {preset["id"] for preset in presets} >= {
-        "conservative_trend_reversion",
-        "momentum_breakout_stack",
+    assert research["name"] == "缠论研究组合"
+    assert research["mode"] == "weighted_vote"
+    assert "缠论结构" in research["description"]
+    assert len(research["allocations"]) == 2
+    strategy_ids = [allocation["strategy"]["id"] for allocation in research["allocations"]]
+    assert "builtin:popular:ChanStructureStrategy" in strategy_ids
+    assert "builtin:popular:ChanRsiResearchStrategy" in strategy_ids
+    assert research["allocations"][0]["strategy"]["params"]["symbol"] == ""
+    assert research["allocations"][0]["weight"] > 0
+    assert research["allocations"][0]["enabled"] is True
+    assert {preset["id"] for preset in presets} == {
         "chan_research_stack",
+        "chan_offensive_fusion_stack",
+        "chan_multilevel_execution_stack",
     }
     offensive = next(preset for preset in presets if preset["id"] == "chan_offensive_fusion_stack")
 
@@ -438,11 +537,13 @@ def test_bootstrap_returns_portfolio_presets_for_strategy_combinations(tmp_path,
     assert "进攻" in offensive["description"]
     assert offensive["allocations"][0]["strategy"]["id"] == "builtin:popular:ChanVolumeFusionStrategy"
     assert offensive["allocations"][0]["weight"] > offensive["allocations"][1]["weight"]
-    assert offensive["allocations"][0]["strategy"]["params"]["symbol"] == "000001"
+    assert offensive["allocations"][0]["strategy"]["params"]["symbol"] == ""
     assert offensive["allocations"][0]["strategy"]["params"]["weak_volume_requires_trend_break"] is True
     assert offensive["allocations"][0]["strategy"]["params"]["high_confidence_units"] == 2
     assert offensive["allocations"][0]["strategy"]["params"]["max_units"] == 3
     assert offensive["allocations"][0]["strategy"]["params"]["severe_weak_momentum_pct"] == -0.04
+    multilevel = next(preset for preset in presets if preset["id"] == "chan_multilevel_execution_stack")
+    assert multilevel["allocations"][0]["strategy"]["id"] == "builtin:popular:ChanMultiLevelReversalStrategy"
 
 
 def test_portfolio_preview_accepts_bootstrap_preset_allocations(tmp_path, monkeypatch):
@@ -451,7 +552,7 @@ def test_portfolio_preview_accepts_bootstrap_preset_allocations(tmp_path, monkey
     demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 120})
     assert demo_response.status_code == 200
     bootstrap = client.get("/api/bootstrap").json()
-    preset = next(item for item in bootstrap["portfolio_presets"] if item["id"] == "conservative_trend_reversion")
+    preset = next(item for item in bootstrap["portfolio_presets"] if item["id"] == "chan_research_stack")
 
     preview_response = client.post(
         "/api/portfolio/preview",
@@ -471,15 +572,15 @@ def test_portfolio_preview_accepts_bootstrap_preset_allocations(tmp_path, monkey
 
     assert preview_response.status_code == 200
     payload = preview_response.json()
-    assert payload["allocations"][0]["name"] == "双均线趋势"
+    assert payload["allocations"][0]["name"] == "缠论结构策略"
     assert len(payload["allocations"]) == len(preset["allocations"])
     assert payload["breakdown"]["mode"] == "weighted_vote"
 
 
-def test_default_settings_use_two_year_range_from_current_date():
+def test_default_settings_use_five_year_range_from_current_date():
     settings = service.default_settings(today=date(2026, 6, 18))
 
-    assert settings.start_date == "20240618"
+    assert settings.start_date == "20210618"
     assert settings.end_date == "20260618"
 
 
@@ -510,6 +611,15 @@ def test_watchlist_routes_persist_local_stock_configuration(tmp_path, monkeypatc
     }
     assert (tmp_path / "config/watchlist.json").exists()
     assert client.get("/api/watchlist").json() == save_response.json()
+
+
+def test_stocks_route_searches_a_share_us_stock_and_crypto_defaults(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    write_stock_catalog([StockInfo("601318", "中国平安", "SSE")], tmp_path / "data/a_share_stocks.csv")
+
+    assert client.get("/api/stocks", params={"query": "平安"}).json()[0] == {"code": "601318", "name": "中国平安", "exchange": "SSE"}
+    assert client.get("/api/stocks", params={"query": "aap"}).json()[0] == {"code": "AAPL", "name": "Apple", "exchange": "NASDAQ"}
+    assert client.get("/api/stocks", params={"query": "bitcoin"}).json()[0] == {"code": "BTCUSDT", "name": "Bitcoin", "exchange": "CRYPTO"}
 
 
 def test_managed_data_routes_report_and_update_watchlist_files(tmp_path, monkeypatch):
@@ -747,8 +857,8 @@ def test_portfolio_preview_returns_breakdown_contract(tmp_path, monkeypatch):
     demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
     assert demo_response.status_code == 200
     strategies = client.get("/api/bootstrap").json()["strategies"]
-    dual = next(strategy for strategy in strategies if strategy["name"] == "DualMovingAverageStrategy")
-    rsi = next(strategy for strategy in strategies if strategy["name"] == "RsiMeanReversionStrategy")
+    structure = next(strategy for strategy in strategies if strategy["name"] == "ChanStructureStrategy")
+    chan_rsi = next(strategy for strategy in strategies if strategy["name"] == "ChanRsiResearchStrategy")
 
     response = client.post(
         "/api/portfolio/preview",
@@ -760,12 +870,12 @@ def test_portfolio_preview_returns_breakdown_contract(tmp_path, monkeypatch):
                 "ai_direction": None,
                 "allocations": [
                     {
-                        "strategy": {"id": dual["id"], "params": {"symbol": "000001", "fast": 5, "slow": 20, "size": 100}},
+                        "strategy": {"id": structure["id"], "params": {"symbol": "000001", "trade_size": 100}},
                         "weight": 2,
                         "enabled": True,
                     },
                     {
-                        "strategy": {"id": rsi["id"], "params": {"symbol": "000001", "rsi_period": 14, "trade_size": 100}},
+                        "strategy": {"id": chan_rsi["id"], "params": {"symbol": "000001", "trade_size": 100}},
                         "weight": 1,
                         "enabled": True,
                     },
@@ -779,9 +889,9 @@ def test_portfolio_preview_returns_breakdown_contract(tmp_path, monkeypatch):
     assert payload["breakdown"]["mode"] == "weighted_vote"
     assert "contributions" in payload["breakdown"]
     assert payload["allocations"][0]["index"] == 0
-    assert payload["allocations"][0]["name"] == "双均线趋势"
+    assert payload["allocations"][0]["name"] == "缠论结构策略"
     assert payload["allocations"][1]["index"] == 1
-    assert payload["allocations"][1]["name"] == "RSI均值回归"
+    assert payload["allocations"][1]["name"] == "缠论RSI研究"
 
 
 def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkeypatch):
@@ -790,8 +900,8 @@ def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkey
     demo_response = client.post("/api/data/demo", json={"settings": settings, "count": 80})
     assert demo_response.status_code == 200
     strategies = client.get("/api/bootstrap").json()["strategies"]
-    dual = next(strategy for strategy in strategies if strategy["name"] == "DualMovingAverageStrategy")
-    rsi = next(strategy for strategy in strategies if strategy["name"] == "RsiMeanReversionStrategy")
+    structure = next(strategy for strategy in strategies if strategy["name"] == "ChanStructureStrategy")
+    chan_rsi = next(strategy for strategy in strategies if strategy["name"] == "ChanRsiResearchStrategy")
 
     response = client.post(
         "/api/portfolio/preview",
@@ -803,12 +913,12 @@ def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkey
                 "ai_direction": "bullish",
                 "allocations": [
                     {
-                        "strategy": {"id": dual["id"], "params": {"symbol": "000001", "fast": 5, "slow": 20, "size": 100}},
+                        "strategy": {"id": structure["id"], "params": {"symbol": "000001", "trade_size": 100}},
                         "weight": 2,
                         "enabled": True,
                     },
                     {
-                        "strategy": {"id": rsi["id"], "params": {"symbol": "000001", "rsi_period": 14, "trade_size": 100}},
+                        "strategy": {"id": chan_rsi["id"], "params": {"symbol": "000001", "trade_size": 100}},
                         "weight": 1,
                         "enabled": True,
                     },
@@ -826,13 +936,13 @@ def test_portfolio_preview_returns_ai_adjustment_weight_preview(tmp_path, monkey
         "delta": 0.05,
     }
     assert payload["allocations"][0]["base_weight"] == 2
-    assert payload["allocations"][0]["name"] == "双均线趋势"
+    assert payload["allocations"][0]["name"] == "缠论结构策略"
     assert payload["allocations"][0]["adjusted_weight"] == 2.05
     assert payload["allocations"][0]["ai_delta"] == 0.05
     assert payload["allocations"][0]["ai_adjusted"] is True
     assert payload["allocations"][0]["weight"] == 2.05
     assert payload["allocations"][1]["base_weight"] == 1
-    assert payload["allocations"][1]["name"] == "RSI均值回归"
+    assert payload["allocations"][1]["name"] == "缠论RSI研究"
     assert payload["allocations"][1]["adjusted_weight"] == 1.05
 
 

@@ -10,19 +10,14 @@ Web 操作台会自动发现这个目录下的 `.py` 文件。文件中需要定
 src/ai_trade_system/strategies/
 ```
 
-已内置的常见策略：
+默认内置策略聚焦缠论核心：
 
-- `DualMovingAverageStrategy`: 双均线趋势跟随。
-- `RsiMeanReversionStrategy`: RSI 均值回归。
-- `BollingerMeanReversionStrategy`: 布林带均值回归。
 - `ChanRsiResearchStrategy`: 缠论 + 增强 RSI 研究预览策略。
 - `ChanStructureStrategy`: 包含关系、分型、笔和中枢驱动的缠论结构策略，并按二买/背驰确认/三买等确定性分层调整仓位单位；普通二买/二卖 T2 默认还会经过低确定性门控，买入目标仓位还会受动态风险预算约束。
 - `ChanVolumeFusionStrategy`: 缠论结构主导、量价动量辅助的融合策略；二买默认需要放量确认，三买/确认买点可放量加仓，弱量价时结合延续趋势破坏、严重弱动量和缠论空头上下文再减仓。
-- `DonchianBreakoutStrategy`: 通道突破。
-- `PriceMomentumStrategy`: 价格动量。
-- `VolumeConfirmedMomentumStrategy`: 价格动量 + 放量确认 + 趋势过滤，并加入跟踪止盈和时间退出。
-- `MacdTrendStrategy`: MACD 金叉/死叉趋势策略。
-- `AtrVolatilityBreakoutStrategy`: ATR 波动突破策略，包含初始止损、跟踪止损和时间退出。
+- `ChanMultiLevelReversalStrategy`: 以日线结构作为主锚点，结合 `60m/30m` 等低级别确认、执行价优化和持仓风险控制。
+
+简单趋势、均值回归、突破、MACD、ATR 等模板代码仍保留在源码中供历史测试、CLI 或自定义策略参考，但不再作为默认策略列表或默认组合入口展示。
 
 建议先把策略核心写成纯 Python，确认数据、回测、纸面交易都能跑通；实盘券商接口确定后，再添加 vn.py 包装层。
 

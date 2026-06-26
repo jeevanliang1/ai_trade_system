@@ -40,6 +40,20 @@ class FakeUpdater:
         return {"status": "updated", "code": stock.code, "latest_rows": 80, "message": "ok"}
 
 
+def test_watchlist_data_maintenance_requests_recent_five_years_and_persists_run(tmp_path):
+    store = AutomationStore(root=tmp_path / "data" / "automation", log_root=tmp_path / "logs" / "automation")
+    updater = FakeUpdater()
+    service = AutomationService(store=store, load_watchlist=FakeWatchlist(), update_stock_data=updater)
+
+    result = service.run_watchlist_data_maintenance(now=datetime(2026, 6, 23, 9, 0))
+
+    assert updater.calls == [("601318", "20210623", "20260623", "qfq", True)]
+    assert result["updated"] == 1
+    state = store.load_state()
+    assert state["last_watchlist_data_success_date"] == "2026-06-23"
+    assert state["last_watchlist_data_run"]["task"] == "watchlist_data"
+
+
 def test_weekly_analysis_prompt_and_message_include_chan_multilevel_basis():
     captured: list[tuple[str, dict]] = []
 

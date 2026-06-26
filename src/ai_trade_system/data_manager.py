@@ -7,13 +7,13 @@ import inspect
 from pathlib import Path
 from typing import Callable, Iterable
 
-from ai_trade_system.data import fetch_akshare_bars, fetch_akshare_daily_bars, normalize_timeframe, read_bars_csv, write_bars_csv
+from ai_trade_system.data import fetch_akshare_bars, fetch_akshare_daily_bars, fetch_public_market_bars, normalize_timeframe, read_bars_csv, write_bars_csv
 from ai_trade_system.market import Bar
 from ai_trade_system.stock_catalog import StockInfo
 from ai_trade_system.watchlist import normalize_watchlist
 
 
-DEFAULT_MARKET_DATA_ROOT = Path("data/market/a_share")
+DEFAULT_MARKET_DATA_ROOT = Path("data/market")
 DEFAULT_ADJUST = "qfq"
 
 BarFetcher = Callable[..., list[Bar]]
@@ -108,7 +108,7 @@ def data_file_for_stock(
     item = normalized[0]
     clean_adjust = str(adjust or DEFAULT_ADJUST).strip().lower()
     clean_timeframe = normalize_timeframe(timeframe)
-    directory = Path(root) / item.exchange / item.code
+    directory = Path(root) / _market_group(item.exchange) / item.exchange / item.code
     latest_path = directory / f"{item.code}_{item.exchange}_{clean_timeframe}_{clean_adjust}_latest.csv"
     increments_dir = directory / "increments"
     manifest_name = "manifest.json" if clean_timeframe == "daily" and clean_adjust == DEFAULT_ADJUST else f"manifest_{clean_timeframe}_{clean_adjust}.json"
@@ -210,8 +210,8 @@ def update_stock_data(
     root: str | Path = DEFAULT_MARKET_DATA_ROOT,
 ) -> DataUpdateResult:
     clean_timeframe = normalize_timeframe(timeframe)
-    fetch = fetcher or (fetch_akshare_daily_bars if clean_timeframe == "daily" else fetch_akshare_bars)
     data_file = data_file_for_stock(stock, adjust=adjust, timeframe=clean_timeframe, root=root)
+    fetch = fetcher or _default_fetcher(data_file.exchange, clean_timeframe)
     requested_start = _date_key(start_date)
     requested_end = _date_key(end_date)
     manifest = data_file.load_manifest()
@@ -336,6 +336,22 @@ def update_stock_data(
         increment_path=increment_path.as_posix(),
         message=f"updated {len(fetched_bars)} bars",
     )
+
+
+def _market_group(exchange: str) -> str:
+    clean_exchange = str(exchange or "").strip().upper()
+    if clean_exchange == "CRYPTO":
+        return "crypto"
+    if clean_exchange in {"NASDAQ", "NYSE", "AMEX", "US"}:
+        return "us_stock"
+    return "a_share"
+
+
+def _default_fetcher(exchange: str, timeframe: str) -> BarFetcher:
+    clean_exchange = str(exchange or "").strip().upper()
+    if clean_exchange == "CRYPTO" or clean_exchange in {"NASDAQ", "NYSE", "AMEX", "US"}:
+        return fetch_public_market_bars
+    return fetch_akshare_daily_bars if timeframe == "daily" else fetch_akshare_bars
 
 
 def _read_existing_bars(path: Path) -> list[Bar]:

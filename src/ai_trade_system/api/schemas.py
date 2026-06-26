@@ -8,13 +8,13 @@ from ai_trade_system.strategy_defaults import DEFAULT_SCAN_SCORE_MODE
 
 
 class PlatformSettings(BaseModel):
-    symbol: str = "000001"
-    exchange: str = "SZSE"
+    symbol: str = ""
+    exchange: str = ""
     start_date: str = "20220101"
     end_date: str = "20250516"
     adjust: str = "qfq"
     timeframe: str = "daily"
-    csv_path: str = "data/000001_daily.csv"
+    csv_path: str = ""
     log_path: str = "logs/paper_events.jsonl"
     initial_cash: float = 100_000.0
     commission_rate: float = 0.0003
@@ -121,6 +121,9 @@ class SignalsRequest(DataRequest):
 class RealtimeStartRequest(DataRequest):
     strategy: StrategySelection
     poll_interval_seconds: float = Field(default=30.0, gt=0, le=3600)
+    monitor_sources: list[Literal["current", "watchlist", "weekly_quality"]] = Field(default_factory=lambda: ["current"])
+    market_sources: list[Literal["a_share", "us_stock", "crypto"]] = Field(default_factory=lambda: ["a_share"])
+    weekly_quality_limit: int = Field(default=10, ge=1, le=50)
 
 
 class PortfolioPreviewRequest(DataRequest):

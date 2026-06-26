@@ -26,47 +26,19 @@ class PortfolioPresetSpec:
 
 PORTFOLIO_PRESETS: tuple[PortfolioPresetSpec, ...] = (
     PortfolioPresetSpec(
-        id="conservative_trend_reversion",
-        name="稳健趋势均值组合",
-        description="用双均线和ATR突破确认趋势方向，再用RSI/布林带均值回归控制震荡修复机会。",
-        mode="weighted_vote",
-        allocations=(
-            PortfolioPresetAllocationSpec("DualMovingAverageStrategy", 1.0, "趋势底座"),
-            PortfolioPresetAllocationSpec("AtrVolatilityBreakoutStrategy", 0.8, "波动突破"),
-            PortfolioPresetAllocationSpec("VolumeConfirmedMomentumStrategy", 0.7, "量价确认"),
-            PortfolioPresetAllocationSpec("RsiMeanReversionStrategy", 0.55, "超卖修复"),
-            PortfolioPresetAllocationSpec("BollingerMeanReversionStrategy", 0.45, "通道回归"),
-        ),
-    ),
-    PortfolioPresetSpec(
-        id="momentum_breakout_stack",
-        name="动量突破组合",
-        description="集中使用价格动量、量价动量、MACD、Donchian和ATR突破策略，适合验证强趋势行情。",
-        mode="weighted_vote",
-        allocations=(
-            PortfolioPresetAllocationSpec("VolumeConfirmedMomentumStrategy", 1.0, "量价动量"),
-            PortfolioPresetAllocationSpec("AtrVolatilityBreakoutStrategy", 0.9, "ATR突破"),
-            PortfolioPresetAllocationSpec("DonchianBreakoutStrategy", 0.75, "通道突破"),
-            PortfolioPresetAllocationSpec("PriceMomentumStrategy", 0.65, "价格动量"),
-            PortfolioPresetAllocationSpec("MacdTrendStrategy", 0.55, "MACD确认"),
-        ),
-    ),
-    PortfolioPresetSpec(
         id="chan_research_stack",
         name="缠论研究组合",
-        description="以缠论结构策略为主，叠加缠论RSI研究和量价动量确认，用于验证结构信号和技术动量是否同向。",
+        description="以缠论结构策略为主，叠加缠论RSI研究，用于验证结构买卖点与研究信号是否同向。",
         mode="weighted_vote",
         allocations=(
             PortfolioPresetAllocationSpec("ChanStructureStrategy", 1.0, "缠论结构"),
             PortfolioPresetAllocationSpec("ChanRsiResearchStrategy", 0.75, "缠论RSI"),
-            PortfolioPresetAllocationSpec("VolumeConfirmedMomentumStrategy", 0.55, "量价确认"),
-            PortfolioPresetAllocationSpec("AtrVolatilityBreakoutStrategy", 0.45, "波动确认"),
         ),
     ),
     PortfolioPresetSpec(
         id="chan_offensive_fusion_stack",
         name="缠论进攻融合组合",
-        description="以缠论量价融合为主的进攻组合，辅助策略只做冲突过滤和顺向小幅加仓，目标是在强趋势中提高收益上限并保留下限控制。",
+        description="以缠论量价融合为主的进攻组合，缠论结构和缠论多级别反转只做冲突过滤和顺向小幅加仓。",
         mode="primary_assist",
         allocations=(
             PortfolioPresetAllocationSpec(
@@ -83,9 +55,18 @@ PORTFOLIO_PRESETS: tuple[PortfolioPresetSpec, ...] = (
                 },
             ),
             PortfolioPresetAllocationSpec("ChanStructureStrategy", 0.25, "缠论结构确认"),
-            PortfolioPresetAllocationSpec("VolumeConfirmedMomentumStrategy", 0.2, "量价趋势确认"),
-            PortfolioPresetAllocationSpec("MacdTrendStrategy", 0.15, "趋势延续确认"),
-            PortfolioPresetAllocationSpec("AtrVolatilityBreakoutStrategy", 0.15, "波动突破确认"),
+            PortfolioPresetAllocationSpec("ChanMultiLevelReversalStrategy", 0.2, "多级别执行确认"),
+        ),
+    ),
+    PortfolioPresetSpec(
+        id="chan_multilevel_execution_stack",
+        name="缠论多级别执行组合",
+        description="以日线缠论结构为核心，用多级别反转策略提供 60m/30m 执行确认，并保留缠论量价融合做顺向增强。",
+        mode="weighted_vote",
+        allocations=(
+            PortfolioPresetAllocationSpec("ChanMultiLevelReversalStrategy", 1.0, "日线锚定与低级别确认"),
+            PortfolioPresetAllocationSpec("ChanStructureStrategy", 0.8, "日线结构底座"),
+            PortfolioPresetAllocationSpec("ChanVolumeFusionStrategy", 0.6, "量价融合增强"),
         ),
     ),
 )

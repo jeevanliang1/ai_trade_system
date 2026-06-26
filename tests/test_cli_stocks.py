@@ -5,8 +5,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from ai_trade_system.data import write_bars_csv
 from ai_trade_system.cli import main
 from ai_trade_system.market import Bar
+from ai_trade_system.strategies.popular import ChanStructureStrategy
 
 
 def _bar(symbol: str, exchange: str, day: date, close: float) -> Bar:
@@ -92,3 +94,39 @@ def test_cli_data_update_watchlist_writes_managed_csv_files(monkeypatch, tmp_pat
     assert "updated=1 skipped=0 failed=0" in output
     assert "601318\tSSE\tupdated" in output
     assert (tmp_path / "data/market/a_share/SSE/601318/601318_SSE_daily_qfq_latest.csv").exists()
+
+
+def test_cli_backtest_uses_chan_structure_strategy(monkeypatch, tmp_path: Path, capsys):
+    data_path = tmp_path / "bars.csv"
+    write_bars_csv([_bar("000001", "SZSE", date(2026, 6, 18), 10.0)], data_path)
+    seen = {}
+
+    class FakeResult:
+        final_equity = 100000.0
+        trades = []
+
+    def fake_run_backtest(bars, strategy, config):
+        seen["strategy"] = strategy
+        return FakeResult()
+
+    monkeypatch.setattr("ai_trade_system.cli.run_backtest", fake_run_backtest)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "ai-trade",
+            "backtest",
+            "--data",
+            str(data_path),
+            "--symbol",
+            "000001",
+            "--size",
+            "200",
+        ],
+    )
+
+    main()
+
+    assert isinstance(seen["strategy"], ChanStructureStrategy)
+    assert seen["strategy"].trade_size == 200
+    assert "final_equity=100000.00" in capsys.readouterr().out

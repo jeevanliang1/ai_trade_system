@@ -38,7 +38,7 @@ from ai_trade_system.research import preview_research_signals as build_research_
 from ai_trade_system.research.chan_structure import scan_chan_structure
 from ai_trade_system.research.dataframe import bars_to_frame
 from ai_trade_system.risk import RiskGuardrailConfig, evaluate_risk_guardrails
-from ai_trade_system.stock_catalog import StockInfo, load_stock_catalog, search_stock_catalog
+from ai_trade_system.stock_catalog import StockInfo, load_stock_catalog, load_symbol_catalog, search_stock_catalog
 from ai_trade_system.strategy import Strategy
 from ai_trade_system.strategy_registry import (
     StrategySpec,
@@ -91,14 +91,16 @@ VOLUME_MOMENTUM_MIN_MOMENTUM_PCT = 0.08
 VOLUME_MOMENTUM_VOLUME_WINDOW = 20
 VOLUME_MOMENTUM_VOLUME_MULTIPLIER = 1.5
 VOLUME_MOMENTUM_TREND_WINDOW = 60
+US_STOCK_REALTIME_DEMO_STOCKS = (StockInfo("AAPL", "Apple", "NASDAQ"),)
+CRYPTO_REALTIME_DEMO_STOCKS = (StockInfo("BTCUSDT", "Bitcoin", "CRYPTO"),)
 
 
 def default_settings(today: date | None = None) -> PlatformSettings:
     current = today or date.today()
     try:
-        start = current.replace(year=current.year - 2)
+        start = current.replace(year=current.year - 5)
     except ValueError:
-        start = current.replace(year=current.year - 2, day=28)
+        start = current.replace(year=current.year - 5, day=28)
     return PlatformSettings(start_date=start.strftime("%Y%m%d"), end_date=current.strftime("%Y%m%d"))
 
 
@@ -112,9 +114,14 @@ _REALTIME_MONITOR: RealtimeMonitorService | None = None
 
 
 def bootstrap() -> dict[str, Any]:
-    catalog = load_stock_catalog()
+    catalog = load_symbol_catalog()
     settings = default_settings()
     watchlist = list_watchlist()["stocks"]
+    if watchlist:
+        first = watchlist[0]
+        settings.symbol = first["code"]
+        settings.exchange = first["exchange"]
+        settings.csv_path = data_file_for_stock(first, adjust=settings.adjust, timeframe=settings.timeframe).latest_path.as_posix()
     strategies = discover_strategies()
     return {
         "settings": settings.model_dump(),
@@ -134,7 +141,7 @@ def bootstrap() -> dict[str, Any]:
 
 
 def list_stocks(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
-    return [_stock_view(stock) for stock in search_stock_catalog(load_stock_catalog(), query, limit)]
+    return [_stock_view(stock) for stock in search_stock_catalog(load_symbol_catalog(), query, limit)]
 
 
 def list_watchlist() -> dict[str, Any]:
@@ -221,16 +228,26 @@ def get_realtime_monitor_service() -> RealtimeMonitorService:
 
 
 def start_realtime_monitor(request: RealtimeStartRequest) -> dict[str, Any]:
-    stock = StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)
-    strategy = _build_strategy(request.strategy)
+    stocks, stock_sources, source_counts, stock_markets, market_counts = _realtime_monitor_stocks(request)
+    primary_symbol = stocks[0].code if stocks else request.settings.symbol
+    strategy = _build_strategy(request.strategy, symbol=primary_symbol)
+    strategies = {
+        _stock_key(stock): _build_strategy(request.strategy, symbol=stock.code)
+        for stock in stocks
+    }
     return get_realtime_monitor_service().start(
         strategy=strategy,
         strategy_id=request.strategy.id,
-        stocks=[stock],
+        stocks=stocks,
         start_date=request.settings.start_date,
         adjust=request.settings.adjust,
         timeframe=normalize_timeframe(request.settings.timeframe),
         poll_interval_seconds=request.poll_interval_seconds,
+        strategies=strategies,
+        stock_sources=stock_sources,
+        source_counts=source_counts,
+        stock_markets=stock_markets,
+        market_counts=market_counts,
     )
 
 
@@ -244,6 +261,61 @@ def realtime_monitor_status() -> dict[str, Any]:
 
 def realtime_monitor_events(limit: int = 100) -> dict[str, Any]:
     return {"events": get_realtime_monitor_service().events(limit=limit)}
+
+
+def _realtime_monitor_stocks(request: RealtimeStartRequest) -> tuple[list[StockInfo], dict[str, list[str]], dict[str, int], dict[str, str], dict[str, int]]:
+    sources = request.monitor_sources or ["current"]
+    markets = request.market_sources or ["a_share"]
+    selected: list[tuple[str, str, StockInfo]] = []
+    source_counts: dict[str, int] = {}
+    market_counts: dict[str, int] = {}
+
+    if "a_share" in markets and "current" in sources:
+        current = StockInfo(request.settings.symbol, request.settings.symbol, request.settings.exchange)
+        selected.append(("current", "a_share", current))
+        source_counts["current"] = 1
+
+    if "a_share" in markets and "watchlist" in sources:
+        watchlist_stocks = load_watchlist()
+        selected.extend(("watchlist", "a_share", stock) for stock in watchlist_stocks)
+        source_counts["watchlist"] = len(watchlist_stocks)
+
+    if "a_share" in markets and "weekly_quality" in sources:
+        weekly = get_automation_service().store.load_weekly_result()
+        weekly_stocks = [
+            StockInfo(candidate.code, candidate.name, candidate.exchange)
+            for candidate in (weekly.top[: request.weekly_quality_limit] if weekly else [])
+        ]
+        selected.extend(("weekly_quality", "a_share", stock) for stock in weekly_stocks)
+        source_counts["weekly_quality"] = len(weekly_stocks)
+
+    if "us_stock" in markets:
+        selected.extend(("us_stock_demo", "us_stock", stock) for stock in US_STOCK_REALTIME_DEMO_STOCKS)
+        source_counts["us_stock_demo"] = len(US_STOCK_REALTIME_DEMO_STOCKS)
+
+    if "crypto" in markets:
+        selected.extend(("crypto_demo", "crypto", stock) for stock in CRYPTO_REALTIME_DEMO_STOCKS)
+        source_counts["crypto_demo"] = len(CRYPTO_REALTIME_DEMO_STOCKS)
+
+    stocks: list[StockInfo] = []
+    stock_sources: dict[str, list[str]] = {}
+    stock_markets: dict[str, str] = {}
+    seen: set[str] = set()
+    for source, market, stock in selected:
+        key = _stock_key(stock)
+        stock_sources.setdefault(key, []).append(source)
+        stock_markets[key] = market
+        if key in seen:
+            continue
+        stocks.append(stock)
+        seen.add(key)
+        market_counts[market] = market_counts.get(market, 0) + 1
+
+    return stocks, stock_sources, source_counts, stock_markets, market_counts
+
+
+def _stock_key(stock: StockInfo) -> str:
+    return f"{stock.code}.{stock.exchange}"
 
 
 def get_agent_orchestrator() -> AgentOrchestrator:
@@ -1106,9 +1178,9 @@ def _load_bars(settings: PlatformSettings) -> list[Bar]:
         raise ApiInputError(f"failed to read CSV data: {exc}") from exc
 
 
-def _build_strategy(selection: StrategySelection) -> Strategy:
+def _build_strategy(selection: StrategySelection, symbol: str | None = None) -> Strategy:
     spec = _find_strategy(selection.id)
-    params = _params_with_symbol_defaults(spec, selection.params)
+    params = _params_with_symbol_defaults(spec, selection.params, symbol=symbol)
     return instantiate_strategy(spec, params)
 
 
@@ -1180,11 +1252,11 @@ def _find_strategy(strategy_id: str) -> StrategySpec:
     raise ApiInputError(f"strategy not found: {strategy_id}")
 
 
-def _params_with_symbol_defaults(spec: StrategySpec, params: dict[str, Any]) -> dict[str, Any]:
+def _params_with_symbol_defaults(spec: StrategySpec, params: dict[str, Any], symbol: str | None = None) -> dict[str, Any]:
     merged = dict(params)
     for param in inspect_strategy_parameters(spec):
-        if param.name == "symbol" and not merged.get("symbol"):
-            merged["symbol"] = DEFAULT_SETTINGS.symbol
+        if param.name == "symbol" and (symbol is not None or not merged.get("symbol")):
+            merged["symbol"] = symbol or DEFAULT_SETTINGS.symbol
     return merged
 
 

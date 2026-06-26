@@ -40,7 +40,17 @@ import { StrategyPage } from "../pages/StrategyPage";
 import { currentSelection, strategyDisplayName } from "../pages/pageTypes";
 import type { PlatformActions, PlatformState } from "../pages/pageTypes";
 import { defaultTwoYearDateRange } from "../utils/dateRange";
-import type { BootstrapResponse, PlatformSettings, PortfolioPreset, PortfolioRequest, Stock, StrategySpec } from "../types";
+import type {
+  BootstrapResponse,
+  PlatformSettings,
+  PortfolioPreset,
+  PortfolioRequest,
+  RealtimeMarketSource,
+  RealtimeMonitorSource,
+  Stock,
+  StrategySpec,
+  WatchlistDataUpdateRequest
+} from "../types";
 
 export const NAV_GROUPS = [
   {
@@ -91,13 +101,13 @@ type PageId = (typeof NAV_GROUPS)[number]["items"][number]["id"];
 const DEFAULT_RANGE = defaultTwoYearDateRange();
 
 const DEFAULT_SETTINGS: PlatformSettings = {
-  symbol: "000001",
-  exchange: "SZSE",
+  symbol: "",
+  exchange: "",
   start_date: DEFAULT_RANGE.start_date,
   end_date: DEFAULT_RANGE.end_date,
   adjust: "qfq",
   timeframe: "daily",
-  csv_path: "data/000001_daily.csv",
+  csv_path: "",
   log_path: "logs/paper_events.jsonl",
   initial_cash: 100000,
   commission_rate: 0.0003,
@@ -112,19 +122,17 @@ const DEFAULT_SETTINGS: PlatformSettings = {
 
 const FALLBACK_STRATEGIES: StrategySpec[] = [
   {
-    id: "builtin:dual_moving_average:DualMovingAverageStrategy",
-    name: "DualMovingAverageStrategy",
-    display_name: "双均线趋势",
-    description: "快慢均线金叉买入、死叉卖出，适合趋势行情。",
-    class_name: "DualMovingAverageStrategy",
+    id: "builtin:popular:ChanStructureStrategy",
+    name: "ChanStructureStrategy",
+    display_name: "缠论结构策略",
+    description: "从分型、笔和中枢结构中识别缠论买卖点。",
+    class_name: "ChanStructureStrategy",
     source: "builtin",
     path: null,
     editable: false,
     parameters: [
-      { name: "symbol", annotation: "str", default: "000001" },
-      { name: "fast", annotation: "int", default: 5 },
-      { name: "slow", annotation: "int", default: 20 },
-      { name: "size", annotation: "int", default: 100 }
+      { name: "symbol", annotation: "str", default: "" },
+      { name: "trade_size", annotation: "int", default: 100 }
     ]
   }
 ];
@@ -137,7 +145,7 @@ function initialState(): PlatformState {
     strategies: FALLBACK_STRATEGIES,
     portfolioPresets: [],
     selectedStrategyId: FALLBACK_STRATEGIES[0].id,
-    strategyParams: { symbol: "000001", fast: 5, slow: 20, size: 100 },
+    strategyParams: { symbol: "", trade_size: 100 },
     bars: [],
     dataSummary: null,
     signals: null,
@@ -167,14 +175,16 @@ export function AppShell() {
         const bootstrap = await api.bootstrap();
         if (!mounted) return;
         setState((current) => fromBootstrap(current, bootstrap));
-        try {
-          const data = await api.loadData(bootstrap.settings);
-          if (!mounted) return;
-          setState((current) => ({ ...current, bars: data.bars, dataSummary: data.summary, message: `已加载 ${data.bars.length} 根K线` }));
-        } catch {
-          const demo = await api.demoData(bootstrap.settings, 260);
-          if (!mounted) return;
-          setState((current) => ({ ...current, bars: demo.bars, dataSummary: demo.summary, message: `已生成 ${demo.bars.length} 根演示K线` }));
+        if (bootstrap.settings.symbol && bootstrap.settings.csv_path) {
+          try {
+            const data = await api.loadData(bootstrap.settings);
+            if (!mounted) return;
+            setState((current) => ({ ...current, bars: data.bars, dataSummary: data.summary, message: `已加载 ${data.bars.length} 根K线` }));
+          } catch {
+            const demo = await api.demoData(bootstrap.settings, 260);
+            if (!mounted) return;
+            setState((current) => ({ ...current, bars: demo.bars, dataSummary: demo.summary, message: `已生成 ${demo.bars.length} 根演示K线` }));
+          }
         }
       } catch (error) {
         if (!mounted) return;
@@ -193,18 +203,27 @@ export function AppShell() {
         setState((current) => {
           return applySettings(current, settings);
         }),
-      selectStock: (stock) => setState((current) => applyStockSelection(current, stock)),
+      selectStock: (stock) => {
+        let request: WatchlistDataUpdateRequest | null = null;
+        setState((current) => {
+          request = fiveYearMaintenanceRequest(current.settings);
+          return applyStockSelection(current, stock);
+        });
+        if (request) void refreshManagedData(setState, request);
+      },
       setWatchlist: (watchlist) => setState((current) => ({ ...current, watchlist })),
-      updateWatchlistData: () =>
+      updateWatchlistData: (request = {}) =>
         runTask(setState, "更新自选股数据", async (current) => {
-          await api.updateWatchlistData({
+          const updateRequest = {
             start_date: current.settings.start_date,
             end_date: current.settings.end_date,
             adjust: current.settings.adjust,
             timeframe: current.settings.timeframe,
-            if_stale: true
-          });
-          const managed = await api.managedData(current.settings.timeframe, current.settings.adjust);
+            if_stale: true,
+            ...request
+          };
+          await api.updateWatchlistData(updateRequest);
+          const managed = await api.managedData(updateRequest.timeframe ?? "daily", updateRequest.adjust ?? "qfq");
           return { managedData: managed.files };
         }),
       setSelectedStrategyId: (id) => {
@@ -282,9 +301,13 @@ export function AppShell() {
         runTask(setState, "检查风控", async (current) => ({
           riskStatus: await api.evaluateRisk({ max_drawdown_pct: current.backtest?.metrics.max_drawdown_pct ?? 0 }, current.settings)
         })),
-      startRealtimeMonitor: (pollIntervalSeconds = 30) =>
+      startRealtimeMonitor: (
+        pollIntervalSeconds = 30,
+        monitorSources: RealtimeMonitorSource[] = ["current"],
+        marketSources: RealtimeMarketSource[] = ["a_share"]
+      ) =>
         runTask(setState, "启动实时盯盘", async (current) => {
-          const status = await api.startRealtimeMonitor(current.settings, currentSelection(current), pollIntervalSeconds);
+          const status = await api.startRealtimeMonitor(current.settings, currentSelection(current), pollIntervalSeconds, monitorSources, marketSources);
           const events = await api.realtimeEvents(100);
           return { realtime: { status, events: events.events } };
         }),
@@ -384,18 +407,19 @@ function TopCommandBar({
   onStockSelect: (stock: Stock) => void;
 }) {
   const selectedStrategy = strategyDisplayName(state.strategies.find((item) => item.id === state.selectedStrategyId)) ?? "-";
+  const selectedStockLabel = state.settings.symbol && state.settings.exchange ? `${state.settings.symbol} ${state.settings.exchange}` : "请选择股票";
   const nextStep = nextStepFor(activePage);
   return (
     <header className="topbar">
       <div className="market-status">
-        <strong>{state.settings.symbol} {state.settings.exchange}</strong>
+        <strong>{selectedStockLabel}</strong>
         <span className="dot" />
         <span>已连接</span>
         <span>数据日期：{state.bars.at(-1)?.trading_day ?? state.settings.end_date}</span>
         <span>策略：{selectedStrategy}</span>
       </div>
       <div className="toolbar">
-        <StockQuickSelect label="全局自选股票" value={state.settings} stocks={state.watchlist} onSelect={onStockSelect} compact />
+        <StockQuickSelect label="全局自选股票" value={state.settings} stocks={state.watchlist} onSelect={onStockSelect} onSearch={api.stocks} compact />
         <ToolbarButton icon={<ArrowRight size={15} />} variant="primary" onClick={() => setActivePage(nextStep.page)}>
           {nextStep.label}
         </ToolbarButton>
@@ -504,7 +528,8 @@ function applyStockSelection(current: PlatformState, stock: Stock): PlatformStat
 function managedCsvPath(stock: Stock, adjust: string, timeframe: string): string {
   const cleanAdjust = (adjust || "qfq").toLowerCase();
   const cleanTimeframe = normalizeTimeframe(timeframe);
-  return `data/market/a_share/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_${cleanTimeframe}_${cleanAdjust}_latest.csv`;
+  const market = stock.exchange === "CRYPTO" ? "crypto" : ["NASDAQ", "NYSE", "AMEX", "US"].includes(stock.exchange) ? "us_stock" : "a_share";
+  return `data/market/${market}/${stock.exchange}/${stock.code}/${stock.code}_${stock.exchange}_${cleanTimeframe}_${cleanAdjust}_latest.csv`;
 }
 
 function upsertManagedData(files: PlatformState["managedData"], file: PlatformState["managedData"][number]) {
@@ -544,7 +569,7 @@ function defaultPortfolio(strategyId: string): PortfolioRequest {
     mode: "weighted_vote",
     ai_adjust: false,
     ai_direction: null,
-    allocations: [{ strategy: { id: strategyId, params: { symbol: "000001", fast: 5, slow: 20, size: 100 } }, weight: 1, enabled: true }]
+    allocations: [{ strategy: { id: strategyId, params: { symbol: "", fast: 5, slow: 20, size: 100 } }, weight: 1, enabled: true }]
   };
 }
 
@@ -562,6 +587,36 @@ function dataRequestChanged(previous: PlatformSettings, next: PlatformSettings):
 
 function normalizeTimeframe(timeframe: string): string {
   return timeframe || "daily";
+}
+
+function fiveYearMaintenanceRequest(settings: PlatformSettings): WatchlistDataUpdateRequest {
+  const endDate = settings.end_date || DEFAULT_RANGE.end_date;
+  return {
+    start_date: shiftDateYears(endDate, -5),
+    end_date: endDate,
+    adjust: settings.adjust,
+    timeframe: settings.timeframe,
+    if_stale: true
+  };
+}
+
+function shiftDateYears(dateKey: string, years: number): string {
+  const year = Number(dateKey.slice(0, 4));
+  const month = dateKey.slice(4, 6);
+  const day = dateKey.slice(6, 8);
+  if (!Number.isFinite(year) || month.length !== 2 || day.length !== 2) return dateKey;
+  return `${year + years}${month}${day}`;
+}
+
+async function refreshManagedData(setState: React.Dispatch<React.SetStateAction<PlatformState>>, request: WatchlistDataUpdateRequest) {
+  try {
+    await api.updateWatchlistData(request);
+    const managed = await api.managedData(request.timeframe ?? "daily", request.adjust ?? "qfq");
+    if (!managed?.files) return;
+    setState((current) => ({ ...current, managedData: managed.files }));
+  } catch {
+    // Keep stock selection responsive; the stock configuration page exposes manual retry details.
+  }
 }
 
 function timeframeLabel(timeframe: string): string {

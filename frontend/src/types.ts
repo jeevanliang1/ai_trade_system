@@ -79,6 +79,10 @@ export type RealtimeMonitorStatus = {
   stopped_at: string | null;
   strategy_id: string | null;
   symbols: string[];
+  stock_sources?: Record<string, string[]>;
+  source_counts?: Record<string, number>;
+  stock_markets?: Record<string, RealtimeMarketSource>;
+  market_counts?: Partial<Record<RealtimeMarketSource, number>>;
   timeframe: string | null;
   poll_interval_seconds: number | null;
   event_count: number;
@@ -87,6 +91,9 @@ export type RealtimeMonitorStatus = {
   last_error: string | null;
 };
 
+export type RealtimeMonitorSource = "current" | "watchlist" | "weekly_quality";
+export type RealtimeMarketSource = "a_share" | "us_stock" | "crypto";
+
 export type RealtimeMonitorEvent = {
   id: string;
   event: string;
@@ -94,6 +101,7 @@ export type RealtimeMonitorEvent = {
   symbol?: string;
   name?: string;
   exchange?: string;
+  market?: RealtimeMarketSource | string;
   timeframe?: string;
   bar_time?: string;
   close_price?: number;
@@ -104,6 +112,8 @@ export type RealtimeMonitorEvent = {
   warmup?: boolean;
   message?: string;
   symbols?: string[];
+  source_counts?: Record<string, number>;
+  market_counts?: Partial<Record<RealtimeMarketSource, number>>;
   updated_bars?: number;
   signals?: number;
 };

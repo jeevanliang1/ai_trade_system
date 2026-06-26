@@ -44,6 +44,8 @@ class AutomationScheduler:
         config = self.config
         if not config.enabled:
             return
+        if self._watchlist_data_due(current, config):
+            self.service.run_watchlist_data_maintenance(now=current)
         if self._weekly_due(current, config):
             self.service.run_weekly_full_maintenance(now=current)
             return
@@ -73,6 +75,12 @@ class AutomationScheduler:
             return False
         last_daily = state.get("last_daily_success_date")
         return last_daily != now.date().isoformat()
+
+    def _watchlist_data_due(self, now: datetime, config: AutomationConfig) -> bool:
+        if not getattr(config, "watchlist_data_enabled", True):
+            return False
+        state = self.store.load_state()
+        return state.get("last_watchlist_data_success_date") != now.date().isoformat()
 
 
 def _weekly_period_start(day: date, weekday: int) -> date:

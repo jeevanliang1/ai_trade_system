@@ -90,9 +90,9 @@ test("renders memory skill policy and plan preview governance areas", async () =
   expect(screen.getByText("Skills")).toBeInTheDocument();
   expect(screen.getByText("Planner Policy")).toBeInTheDocument();
   expect(screen.getByText("Plan Preview")).toBeInTheDocument();
-  expect(screen.getByText("本周扫描结果优先复用")).toBeInTheDocument();
-  expect(screen.getByText("weekly_scan_share")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("8")).toBeInTheDocument();
+  expect(await screen.findByText("本周扫描结果优先复用")).toBeInTheDocument();
+  expect(await screen.findByText("weekly_scan_share")).toBeInTheDocument();
+  expect(await screen.findByDisplayValue("8")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "预览计划" }));
 

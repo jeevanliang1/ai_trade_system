@@ -10,24 +10,29 @@ from ai_trade_system.strategy_registry import (
 )
 
 
-def test_discover_strategies_includes_builtin_dual_moving_average():
+def test_discover_strategies_exposes_chan_builtins_by_default():
     specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
 
     names = [spec.name for spec in specs]
 
-    assert "DualMovingAverageStrategy" in names
+    assert names == [
+        "ChanRsiResearchStrategy",
+        "ChanStructureStrategy",
+        "ChanVolumeFusionStrategy",
+        "ChanMultiLevelReversalStrategy",
+    ]
 
 
 def test_builtin_strategy_specs_expose_chinese_names_and_descriptions():
     specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
 
-    dual = next(spec for spec in specs if spec.class_name == "DualMovingAverageStrategy")
-    rsi = next(spec for spec in specs if spec.class_name == "RsiMeanReversionStrategy")
+    structure = next(spec for spec in specs if spec.class_name == "ChanStructureStrategy")
+    multilevel = next(spec for spec in specs if spec.class_name == "ChanMultiLevelReversalStrategy")
 
-    assert dual.display_name == "双均线趋势"
-    assert "快慢均线金叉" in dual.description
-    assert rsi.display_name == "RSI均值回归"
-    assert "超卖" in rsi.description
+    assert structure.display_name == "缠论结构策略"
+    assert "分型" in structure.description
+    assert multilevel.display_name == "缠论多级别反转"
+    assert "日线结构" in multilevel.description
 
 
 def test_discover_strategies_loads_user_strategy_from_file(tmp_path):
@@ -88,83 +93,25 @@ class ParamStrategy(Strategy):
 
 def test_strategy_parameters_include_chinese_guidance_for_tuning():
     specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
-    dual = next(spec for spec in specs if spec.class_name == "DualMovingAverageStrategy")
+    structure = next(spec for spec in specs if spec.class_name == "ChanStructureStrategy")
 
-    params = {param.name: param for param in inspect_strategy_parameters(dual)}
+    params = {param.name: param for param in inspect_strategy_parameters(structure)}
 
-    assert params["fast_window"].display_name == "快线周期"
-    assert "短期均线" in params["fast_window"].description
-    assert "更平滑" in params["fast_window"].increase_effect
-    assert "更敏感" in params["fast_window"].decrease_effect
+    assert params["min_stroke_bars"].display_name == "成笔最小间隔"
+    assert "分型" in params["min_stroke_bars"].description
+    assert "交易更少" in params["min_signal_score"].increase_effect
     assert params["trade_size"].display_name == "每次交易股数"
     assert "仓位" in params["trade_size"].increase_effect
 
 
-def test_volume_confirmed_momentum_strategy_metadata_and_parameter_guidance():
+def test_simple_template_strategies_are_not_default_builtin_choices():
     specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
-    spec = next(item for item in specs if item.name == "VolumeConfirmedMomentumStrategy")
+    names = {spec.name for spec in specs}
 
-    assert spec.display_name == "量价动量策略"
-    assert "成交量放大" in spec.description
-
-    params = {param.name: param for param in inspect_strategy_parameters(spec)}
-    assert params["momentum_window"].display_name == "动量回看周期"
-    assert "价格涨幅" in params["min_momentum_pct"].description
-    assert "成交量" in params["volume_multiplier"].description
-    assert "持仓" in params["max_holding_bars"].description
-    assert params["trailing_stop_pct"].display_name == "跟踪止盈回撤"
-    assert "最高收盘价回撤" in params["trailing_stop_pct"].description
-
-
-def test_volume_confirmed_momentum_registry_exposes_tuned_defaults():
-    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
-    spec = next(item for item in specs if item.name == "VolumeConfirmedMomentumStrategy")
-
-    defaults = {param.name: param.default for param in inspect_strategy_parameters(spec)}
-
-    assert defaults["momentum_window"] == 15
-    assert defaults["min_momentum_pct"] == 0.10
-    assert defaults["volume_window"] == 20
-    assert defaults["volume_multiplier"] == 1.1
-    assert defaults["trend_window"] == 60
-    assert defaults["max_holding_bars"] == 45
-    assert defaults["trailing_stop_pct"] == 0.18
-
-
-def test_macd_and_atr_strategies_expose_metadata_and_guidance():
-    specs = discover_strategies(user_dir=Path("/tmp/nonexistent-ai-trade-strategies"))
-    macd = next(item for item in specs if item.name == "MacdTrendStrategy")
-    atr = next(item for item in specs if item.name == "AtrVolatilityBreakoutStrategy")
-
-    assert macd.display_name == "MACD趋势策略"
-    assert "MACD" in macd.description
-    assert atr.display_name == "ATR波动突破"
-    assert "ATR" in atr.description
-
-    macd_params = {param.name: param for param in inspect_strategy_parameters(macd)}
-    assert macd_params["fast_period"].display_name == "MACD快线周期"
-    assert "EMA" in macd_params["slow_period"].description
-    assert "金叉" in macd_params["signal_period"].description
-
-    atr_params = {param.name: param for param in inspect_strategy_parameters(atr)}
-    assert atr_params["breakout_window"].display_name == "突破观察窗口"
-    assert "ATR" in atr_params["atr_window"].description
-    assert "止损" in atr_params["stop_atr_multiplier"].description
-    assert "跟踪" in atr_params["trailing_atr_multiplier"].description
-
-    macd_defaults = {param.name: param.default for param in macd_params.values()}
-    assert macd_defaults["fast_period"] == 12
-    assert macd_defaults["slow_period"] == 18
-    assert macd_defaults["signal_period"] == 9
-    assert macd_defaults["trend_window"] == 90
-
-    atr_defaults = {param.name: param.default for param in atr_params.values()}
-    assert atr_defaults["breakout_window"] == 30
-    assert atr_defaults["atr_window"] == 10
-    assert atr_defaults["entry_atr_multiplier"] == 0.0
-    assert atr_defaults["stop_atr_multiplier"] == 2.0
-    assert atr_defaults["trailing_atr_multiplier"] == 3.0
-    assert atr_defaults["max_holding_bars"] == 45
+    assert "VolumeConfirmedMomentumStrategy" not in names
+    assert "MacdTrendStrategy" not in names
+    assert "AtrVolatilityBreakoutStrategy" not in names
+    assert "RsiMeanReversionStrategy" not in names
 
 
 def test_chan_structure_strategy_metadata_and_parameter_guidance():

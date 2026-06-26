@@ -71,7 +71,7 @@ export function DataPage({ state, actions }: PageProps) {
     <div className="page-grid">
       <section className="panel side-panel">
         <div className="panel-title">数据中心工作区</div>
-        <StockQuickSelect label="数据中心自选股票" value={state.settings} stocks={state.watchlist} onSelect={actions.selectStock} />
+        <StockQuickSelect label="数据中心自选股票" value={state.settings} stocks={state.watchlist} onSelect={actions.selectStock} onSearch={api.stocks} />
         <label className="field">
           <span>搜索股票名称或代码</span>
           <div className="search-box">
@@ -108,6 +108,9 @@ export function DataPage({ state, actions }: PageProps) {
             <option>SZSE</option>
             <option>SSE</option>
             <option>BSE</option>
+            <option>NASDAQ</option>
+            <option>NYSE</option>
+            <option>CRYPTO</option>
           </select>
         </label>
         <label className="field">

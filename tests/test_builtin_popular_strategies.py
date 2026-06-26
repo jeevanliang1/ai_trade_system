@@ -8,6 +8,7 @@ from ai_trade_system.strategies import popular as popular_strategies
 from ai_trade_system.strategies.popular import (
     AtrVolatilityBreakoutStrategy,
     BollingerMeanReversionStrategy,
+    ChanMultiLevelReversalStrategy,
     ChanStructureStrategy,
     ChanRsiResearchStrategy,
     DonchianBreakoutStrategy,
@@ -201,17 +202,23 @@ def collect_volume_momentum_signals(closes: list[float], volumes: list[float], *
 def test_registry_includes_popular_builtin_strategies():
     names = {spec.name for spec in discover_strategies(user_dir="/tmp/nonexistent-ai-trade-strategies")}
 
-    assert {
-        "AtrVolatilityBreakoutStrategy",
-        "BollingerMeanReversionStrategy",
+    assert names == {
         "ChanRsiResearchStrategy",
-        "DonchianBreakoutStrategy",
-        "MacdTrendStrategy",
-        "PriceMomentumStrategy",
-        "RsiMeanReversionStrategy",
-        "VolumeConfirmedMomentumStrategy",
+        "ChanStructureStrategy",
         "ChanVolumeFusionStrategy",
-    }.issubset(names)
+        "ChanMultiLevelReversalStrategy",
+    }
+
+
+def test_simple_strategy_classes_remain_importable_for_backtests():
+    assert RsiMeanReversionStrategy
+    assert BollingerMeanReversionStrategy
+    assert DonchianBreakoutStrategy
+    assert MacdTrendStrategy
+    assert AtrVolatilityBreakoutStrategy
+    assert PriceMomentumStrategy
+    assert VolumeConfirmedMomentumStrategy
+    assert ChanMultiLevelReversalStrategy
 
 
 def test_rsi_mean_reversion_buys_oversold_and_sells_overbought():

@@ -25,6 +25,8 @@ import type {
   PlatformSettings,
   PortfolioRequest,
   RealtimeMonitorEventsResponse,
+  RealtimeMarketSource,
+  RealtimeMonitorSource,
   RealtimeMonitorStatus,
   ResearchSignalBatchScoreMode,
   ResearchSignalBatchResponse,
@@ -149,10 +151,16 @@ export const api = {
     apiRequest<DataResponse>("/api/data/download", { method: "POST", body: JSON.stringify({ settings }) }),
   previewSignals: (settings: PlatformSettings, strategy: StrategySelection) =>
     apiRequest<SignalsResponse>("/api/signals/preview", { method: "POST", body: JSON.stringify({ settings, strategy }) }),
-  startRealtimeMonitor: (settings: PlatformSettings, strategy: StrategySelection, poll_interval_seconds = 30) =>
+  startRealtimeMonitor: (
+    settings: PlatformSettings,
+    strategy: StrategySelection,
+    poll_interval_seconds = 30,
+    monitor_sources: RealtimeMonitorSource[] = ["current"],
+    market_sources: RealtimeMarketSource[] = ["a_share"]
+  ) =>
     apiRequest<RealtimeMonitorStatus>("/api/realtime/start", {
       method: "POST",
-      body: JSON.stringify({ settings, strategy, poll_interval_seconds })
+      body: JSON.stringify({ settings, strategy, poll_interval_seconds, monitor_sources, market_sources })
     }),
   stopRealtimeMonitor: () => apiRequest<RealtimeMonitorStatus>("/api/realtime/stop", { method: "POST" }),
   realtimeStatus: () => apiRequest<RealtimeMonitorStatus>("/api/realtime/status"),

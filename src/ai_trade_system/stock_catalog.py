@@ -10,6 +10,16 @@ import pandas as pd
 
 
 DEFAULT_STOCK_CATALOG_PATH = Path("data/a_share_stocks.csv")
+DEFAULT_CROSS_MARKET_STOCKS = (
+    # Built-in public-market defaults keep the selector useful before a
+    # dedicated owner-approved US/crypto catalog provider is configured.
+    ("AAPL", "Apple", "NASDAQ"),
+    ("MSFT", "Microsoft", "NASDAQ"),
+    ("TSLA", "Tesla", "NASDAQ"),
+    ("SPY", "SPDR S&P 500 ETF", "NYSE"),
+    ("BTCUSDT", "Bitcoin", "CRYPTO"),
+    ("ETHUSDT", "Ethereum", "CRYPTO"),
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +43,19 @@ def load_stock_catalog(path: str | Path = DEFAULT_STOCK_CATALOG_PATH) -> list[St
         ]
 
 
+def load_symbol_catalog(path: str | Path = DEFAULT_STOCK_CATALOG_PATH) -> list[StockInfo]:
+    stocks = load_stock_catalog(path)
+    seen = {(stock.exchange, stock.code) for stock in stocks}
+    for code, name, exchange in DEFAULT_CROSS_MARKET_STOCKS:
+        stock = _normalize_stock(code, name, exchange)
+        key = (stock.exchange, stock.code)
+        if key in seen:
+            continue
+        stocks.append(stock)
+        seen.add(key)
+    return stocks
+
+
 def search_stock_catalog(stocks: Iterable[StockInfo], query: str, limit: int = 20) -> list[StockInfo]:
     stock_list = list(stocks)
     normalized_query = _search_key(query)
@@ -41,7 +64,7 @@ def search_stock_catalog(stocks: Iterable[StockInfo], query: str, limit: int = 2
 
     matches: list[StockInfo] = []
     for stock in stock_list:
-        if stock.code.startswith(normalized_query):
+        if _search_key(stock.code).startswith(normalized_query):
             matches.append(stock)
         elif normalized_query in _search_key(stock.name):
             matches.append(stock)
@@ -99,14 +122,20 @@ def _stocks_from_frame(frame: pd.DataFrame) -> list[StockInfo]:
 
 
 def _normalize_stock(code: object, name: object, exchange: object) -> StockInfo:
-    normalized_code = _normalize_code(code)
+    normalized_exchange = str(exchange or "").strip().upper()
+    normalized_code = _normalize_code(code, normalized_exchange)
     normalized_name = str(name).strip()
-    normalized_exchange = str(exchange or "").strip().upper() or infer_exchange(normalized_code)
+    normalized_exchange = normalized_exchange or infer_exchange(normalized_code)
     return StockInfo(normalized_code, normalized_name, normalized_exchange)
 
 
-def _normalize_code(code: object) -> str:
-    return str(code).strip().zfill(6)
+def _normalize_code(code: object, exchange: str = "") -> str:
+    raw = str(code).strip().upper()
+    if exchange and exchange not in {"SSE", "SZSE", "BSE"}:
+        return raw
+    if raw.isdigit():
+        return raw.zfill(6)
+    return raw
 
 
 def _search_key(value: object) -> str:

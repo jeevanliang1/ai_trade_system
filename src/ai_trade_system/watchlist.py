@@ -47,14 +47,23 @@ def normalize_watchlist(stocks: Iterable[object]) -> list[StockInfo]:
 
 def _normalize_stock(item: object) -> StockInfo:
     if isinstance(item, StockInfo):
-        return StockInfo(code=item.code.zfill(6), name=item.name.strip(), exchange=(item.exchange or infer_exchange(item.code)).upper())
+        exchange = (item.exchange or infer_exchange(item.code)).upper()
+        return StockInfo(code=_normalize_code(item.code, exchange), name=item.name.strip(), exchange=exchange)
     if isinstance(item, dict):
-        code = str(item.get("code", "")).strip().zfill(6)
+        raw_code = str(item.get("code", "")).strip()
         name = str(item.get("name", "")).strip()
-        exchange = str(item.get("exchange", "") or infer_exchange(code)).strip().upper()
+        exchange = str(item.get("exchange", "") or infer_exchange(raw_code)).strip().upper()
+        code = _normalize_code(raw_code, exchange)
         return StockInfo(code=code, name=name, exchange=exchange)
     return StockInfo(code="", name="", exchange="")
 
 
 def _stock_payload(stock: StockInfo) -> dict[str, str]:
     return {"code": stock.code, "name": stock.name, "exchange": stock.exchange}
+
+
+def _normalize_code(code: object, exchange: str) -> str:
+    raw = str(code).strip().upper()
+    if exchange in {"SSE", "SZSE", "BSE"} and raw.isdigit():
+        return raw.zfill(6)
+    return raw

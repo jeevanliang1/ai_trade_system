@@ -8,13 +8,16 @@ import type {
   PlatformSettings,
   PortfolioPreset,
   PortfolioRequest,
+  RealtimeMonitorSource,
+  RealtimeMarketSource,
   RealtimeMonitorState,
   ResearchSignalPreview,
   RiskStatus,
   SignalsResponse,
   Stock,
   StrategySelection,
-  StrategySpec
+  StrategySpec,
+  WatchlistDataUpdateRequest
 } from "../types";
 
 export type PlatformState = {
@@ -46,7 +49,7 @@ export type PlatformActions = {
   setSettings: (settings: PlatformSettings) => void;
   selectStock: (stock: Stock) => void;
   setWatchlist: (stocks: Stock[]) => void;
-  updateWatchlistData: () => Promise<void>;
+  updateWatchlistData: (request?: WatchlistDataUpdateRequest) => Promise<void>;
   setSelectedStrategyId: (id: string) => void;
   setStrategyParams: (params: Record<string, unknown>) => void;
   setPortfolio: (portfolio: PortfolioRequest) => void;
@@ -62,7 +65,7 @@ export type PlatformActions = {
   runPaper: (mode?: "single" | "portfolio") => Promise<void>;
   loadPaperEvents: () => Promise<void>;
   evaluateRisk: () => Promise<void>;
-  startRealtimeMonitor: (pollIntervalSeconds?: number) => Promise<void>;
+  startRealtimeMonitor: (pollIntervalSeconds?: number, monitorSources?: RealtimeMonitorSource[], marketSources?: RealtimeMarketSource[]) => Promise<void>;
   stopRealtimeMonitor: () => Promise<void>;
   refreshRealtimeMonitor: () => Promise<void>;
 };

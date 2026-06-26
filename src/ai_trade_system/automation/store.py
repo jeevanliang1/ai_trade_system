@@ -141,6 +141,8 @@ def _default_state() -> dict[str, Any]:
     return {
         "last_weekly_run": None,
         "last_daily_run": None,
+        "last_watchlist_data_run": None,
         "last_weekly_success_date": None,
         "last_daily_success_date": None,
+        "last_watchlist_data_success_date": None,
     }

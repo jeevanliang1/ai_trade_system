@@ -16,7 +16,7 @@ from ai_trade_system.stock_catalog import (
     refresh_stock_catalog,
     search_stock_catalog,
 )
-from ai_trade_system.strategies.dual_moving_average import DualMovingAverageStrategy
+from ai_trade_system.strategies.popular import ChanStructureStrategy
 from ai_trade_system.watchlist import load_watchlist
 
 
@@ -33,19 +33,15 @@ def main() -> None:
     download.add_argument("--adjust", default="qfq")
     download.add_argument("--timeframe", default="daily", help="daily, 1m, 5m, 15m, 30m, or 60m")
 
-    backtest = subparsers.add_parser("backtest", help="Run dual moving average backtest from CSV")
+    backtest = subparsers.add_parser("backtest", help="Run Chan structure backtest from CSV")
     backtest.add_argument("--data", required=True)
     backtest.add_argument("--symbol", required=True)
-    backtest.add_argument("--fast", type=int, default=5)
-    backtest.add_argument("--slow", type=int, default=20)
     backtest.add_argument("--size", type=int, default=100)
     backtest.add_argument("--cash", type=float, default=100_000)
 
     paper = subparsers.add_parser("paper", help="Replay CSV bars through paper trading service")
     paper.add_argument("--data", required=True)
     paper.add_argument("--symbol", required=True)
-    paper.add_argument("--fast", type=int, default=5)
-    paper.add_argument("--slow", type=int, default=20)
     paper.add_argument("--size", type=int, default=100)
     paper.add_argument("--cash", type=float, default=100_000)
     paper.add_argument("--log", default="logs/paper_events.jsonl")
@@ -100,13 +96,13 @@ def main() -> None:
         print(f"wrote {len(bars)} bars to {args.output}")
     elif args.command == "backtest":
         bars = read_bars_csv(args.data)
-        strategy = DualMovingAverageStrategy(args.symbol, args.fast, args.slow, args.size)
+        strategy = ChanStructureStrategy(args.symbol, trade_size=args.size)
         result = run_backtest(bars, strategy, BacktestConfig(initial_cash=args.cash))
         print(f"final_equity={result.final_equity:.2f}")
         print(f"trades={len(result.trades)}")
     elif args.command == "paper":
         bars = read_bars_csv(args.data)
-        strategy = DualMovingAverageStrategy(args.symbol, args.fast, args.slow, args.size)
+        strategy = ChanStructureStrategy(args.symbol, trade_size=args.size)
         service = PaperTradingService(strategy=strategy, initial_cash=args.cash)
         events = service.run(bars, log_path=args.log)
         print(f"events={len(events)}")

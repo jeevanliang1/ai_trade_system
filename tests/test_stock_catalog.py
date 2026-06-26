@@ -6,6 +6,7 @@ from ai_trade_system.stock_catalog import (
     StockInfo,
     infer_exchange,
     load_stock_catalog,
+    load_symbol_catalog,
     refresh_stock_catalog,
     search_stock_catalog,
 )
@@ -40,6 +41,28 @@ def test_search_stock_catalog_matches_code_prefix_and_compact_name():
     assert [stock.code for stock in search_stock_catalog(stocks, "00000")] == ["000001", "000002"]
     assert [stock.code for stock in search_stock_catalog(stocks, "万科")] == ["000002"]
     assert [stock.code for stock in search_stock_catalog(stocks, "  银行  ", limit=1)] == ["000001"]
+
+
+def test_load_symbol_catalog_adds_us_stock_and_crypto_defaults(tmp_path: Path):
+    catalog_path = tmp_path / "stocks.csv"
+    catalog_path.write_text("code,name,exchange\n000001,平安银行,SZSE\n", encoding="utf-8")
+
+    stocks = load_symbol_catalog(catalog_path)
+
+    assert StockInfo("000001", "平安银行", "SZSE") in stocks
+    assert StockInfo("AAPL", "Apple", "NASDAQ") in stocks
+    assert StockInfo("BTCUSDT", "Bitcoin", "CRYPTO") in stocks
+
+
+def test_search_stock_catalog_matches_non_a_share_symbols_without_zero_fill():
+    stocks = [
+        StockInfo("000001", "平安银行", "SZSE"),
+        StockInfo("AAPL", "Apple", "NASDAQ"),
+        StockInfo("BTCUSDT", "Bitcoin", "CRYPTO"),
+    ]
+
+    assert search_stock_catalog(stocks, "aap")[0] == StockInfo("AAPL", "Apple", "NASDAQ")
+    assert search_stock_catalog(stocks, "bitcoin")[0] == StockInfo("BTCUSDT", "Bitcoin", "CRYPTO")
 
 
 def test_infer_exchange_covers_main_a_share_prefixes():

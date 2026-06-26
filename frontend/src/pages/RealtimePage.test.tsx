@@ -39,11 +39,11 @@ function makeProps(): PageProps {
     managedData: [],
     strategies: [
       {
-        id: "builtin:dual_moving_average:DualMovingAverageStrategy",
-        name: "DualMovingAverageStrategy",
-        display_name: "双均线趋势",
-        description: "快慢均线交叉",
-        class_name: "DualMovingAverageStrategy",
+        id: "builtin:popular:ChanStructureStrategy",
+        name: "ChanStructureStrategy",
+        display_name: "缠论结构策略",
+        description: "缠论结构买卖点",
+        class_name: "ChanStructureStrategy",
         source: "builtin",
         path: null,
         editable: false,
@@ -51,8 +51,8 @@ function makeProps(): PageProps {
       }
     ],
     portfolioPresets: [],
-    selectedStrategyId: "builtin:dual_moving_average:DualMovingAverageStrategy",
-    strategyParams: { symbol: "000001", fast_window: 5, slow_window: 20, size: 100 },
+    selectedStrategyId: "builtin:popular:ChanStructureStrategy",
+    strategyParams: { symbol: "000001", trade_size: 100 },
     bars: [],
     dataSummary: null,
     signals: null,
@@ -103,6 +103,8 @@ beforeEach(() => {
     stopped_at: null,
     strategy_id: null,
     symbols: [],
+    stock_markets: {},
+    market_counts: {},
     timeframe: null,
     poll_interval_seconds: null,
     event_count: 0,
@@ -119,6 +121,7 @@ beforeEach(() => {
         symbol: "000001",
         name: "平安银行",
         exchange: "SZSE",
+        market: "a_share",
         timeframe: "1m",
         bar_time: "2026-06-22T10:02:00",
         side: "buy",
@@ -132,8 +135,10 @@ beforeEach(() => {
     running: true,
     started_at: "2026-06-22T10:00:00",
     stopped_at: null,
-    strategy_id: "builtin:dual_moving_average:DualMovingAverageStrategy",
-    symbols: ["000001.SZSE"],
+    strategy_id: "builtin:popular:ChanStructureStrategy",
+    symbols: ["000001.SZSE", "AAPL.NASDAQ", "BTCUSDT.CRYPTO"],
+    stock_markets: { "000001.SZSE": "a_share", "AAPL.NASDAQ": "us_stock", "BTCUSDT.CRYPTO": "crypto" },
+    market_counts: { a_share: 1, us_stock: 1, crypto: 1 },
     timeframe: "1m",
     poll_interval_seconds: 30,
     event_count: 1,
@@ -147,6 +152,8 @@ beforeEach(() => {
     stopped_at: "2026-06-22T10:03:00",
     strategy_id: null,
     symbols: [],
+    stock_markets: {},
+    market_counts: {},
     timeframe: null,
     poll_interval_seconds: null,
     event_count: 2,
@@ -161,11 +168,16 @@ test("RealtimePage refreshes events and wires monitor controls", async () => {
   render(<RealtimePage {...props} />);
 
   expect(await screen.findByText("实时盯盘")).toBeVisible();
+  expect(screen.getByLabelText("自选股")).toBeChecked();
+  expect(screen.getByLabelText("周榜优质股")).toBeChecked();
+  expect(screen.getByLabelText("A股")).toBeChecked();
+  expect(screen.getByLabelText("美股演示")).toBeChecked();
+  expect(screen.getByLabelText("数字货币演示")).toBeChecked();
   expect(screen.getByText("threshold reached")).toBeVisible();
   expect(screen.getAllByText("000001 SZSE").length).toBeGreaterThan(0);
 
   await userEvent.click(screen.getByRole("button", { name: "启动盯盘" }));
-  expect(props.actions.startRealtimeMonitor).toHaveBeenCalledWith(30);
+  expect(props.actions.startRealtimeMonitor).toHaveBeenCalledWith(30, ["watchlist", "weekly_quality"], ["a_share", "us_stock", "crypto"]);
 
   await userEvent.click(screen.getByRole("button", { name: "停止盯盘" }));
   expect(props.actions.stopRealtimeMonitor).toHaveBeenCalled();

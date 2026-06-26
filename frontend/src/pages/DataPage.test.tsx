@@ -145,7 +145,8 @@ test("DataPage can switch the current stock from the shared watchlist dropdown",
 
   render(<DataPage {...props} />);
 
-  await user.selectOptions(screen.getByLabelText("数据中心自选股票"), "SSE:601318");
+  await user.click(screen.getByRole("button", { name: "数据中心自选股票 000001 平安银行 SZSE" }));
+  await user.click(screen.getByRole("button", { name: "选择 601318 中国平安 SSE" }));
 
   expect(props.actions.selectStock).toHaveBeenCalledWith({ code: "601318", name: "中国平安", exchange: "SSE" });
 });
